@@ -3,8 +3,8 @@
 Date: 12 August 2026
 Runtime: Node.js 24 in CI, pnpm 11.9.0
 Browser method: GitHub Actions Playwright projects at desktop and narrow
-responsive Chromium sizes; see the [v0.3.5 runtime and test-code verification
-run for commit `e381b6c`](https://github.com/Sion612/rubrictrail/actions/runs/31545829172)
+responsive Chromium sizes; see the [v0.3.6 runtime and test-code verification
+run for commit `322928e`](https://github.com/Sion612/rubrictrail/actions/runs/31548185076)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
@@ -13,7 +13,7 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 14 files, 160/160 tests passed |
+| `pnpm test` | 14 files, 185/185 tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed |
 | `pnpm test:e2e --workers=1` | GitHub Actions: 22/22 executions passed (11 scenarios × 2 Chromium viewports) |
 | `pnpm audit --audit-level high` | No known vulnerabilities found |
@@ -48,6 +48,11 @@ The narrow projects do not emulate a mobile user agent or touch device:
 - Next.js upgraded from 16.2.10 to 16.3.0.
 - PDF.js upgraded from 6.1.200 to 6.2.108.
 - PDF scripting and evaluation are disabled.
+- Real-file parsing stops above 200 pages per PDF or 400 discovered pages
+  across the selected PDF set, and above 2,000,000 normalized characters,
+  50,000 merged lines or 100,000 merged whitespace-delimited words. PDF text
+  budgets are checked after each page so later pages are not read after a
+  retained-text limit is exhausted.
 - Pasted source intake is rejected above 100,000 characters or 10,000 lines
   before entering the existing bounded plain-text parser.
 - Live routes reject disabled, unauthenticated, wrong-content-type and oversized

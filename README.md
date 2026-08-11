@@ -176,14 +176,14 @@ and narrow responsive browser suite:
 pnpm test:e2e --workers=1
 ```
 
-Current v0.3.5 runtime and test-code verification on 12 August 2026
-([commit `e381b6c`, GitHub Actions run 31545829172](https://github.com/Sion612/rubrictrail/actions/runs/31545829172)):
+Current v0.3.6 runtime and test-code verification on 12 August 2026
+([commit `322928e`, GitHub Actions run 31548185076](https://github.com/Sion612/rubrictrail/actions/runs/31548185076)):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 160/160 tests passed across 14 files |
+| Vitest | 185/185 tests passed across 14 files |
 | Next.js production build | Passed |
 | Playwright | GitHub Actions: 22/22 executions passed (11 scenarios × 1440×900 and 390×844 Chromium viewports), including planning-depth persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |

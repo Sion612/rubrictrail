@@ -2,9 +2,9 @@
 
 Date: 12 August 2026  
 Runtime: Node.js 24.14.0, pnpm 11.16.0  
-Browser method: GitHub Actions Playwright projects at desktop and mobile sizes.
-The v0.3.3 exact-commit result is pending; see the
-[main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
+Browser method: GitHub Actions Playwright projects at desktop and mobile sizes;
+see the [v0.3.3 feature verification run](https://github.com/Sion612/rubrictrail/actions/runs/31536881385)
+and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
 
@@ -14,8 +14,8 @@ The v0.3.3 exact-commit result is pending; see the
 | `pnpm typecheck` | Passed |
 | `pnpm test` | 14 files, 125/125 tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed |
-| `pnpm test:e2e --workers=1` | Exact-commit GitHub Actions pending; expanded suite contains 18 desktop/mobile flows |
-| `pnpm audit --audit-level high` | Latest published v0.3.2 run found no known vulnerabilities; v0.3.3 exact-commit run pending |
+| `pnpm test:e2e --workers=1` | GitHub Actions: 18/18 desktop/mobile flows passed |
+| `pnpm audit --audit-level high` | No known vulnerabilities found |
 
 The browser suite runs each scenario at 1440×900 and 390×844, with targeted
 mobile checks narrowed to 320×700:
@@ -45,6 +45,8 @@ mobile checks narrowed to 320×700:
   before entering the existing bounded plain-text parser.
 - Live routes reject disabled, unauthenticated, wrong-content-type and oversized
   requests before provider creation.
+- Autosave, page-close flushing, restore and reset refuse to replace a project
+  changed by another browser tab without an explicit user choice.
 - Source scan found no committed key, token, private key, email or user-specific
   absolute path.
 
@@ -56,8 +58,8 @@ mobile checks narrowed to 320×700:
   active workflow state, project context, confirmed weight and rubric summary.
 - The existing production captures have no development badge, stale toast,
   preserved old scroll position or document-level horizontal overflow. The
-  paste and mixed-batch flows are functionally covered in CI but were not
-  recaptured locally.
+  paste, mixed-batch and multi-tab conflict flows are functionally covered in CI
+  but were not recaptured locally.
 
 See `docs/VISUAL_QA_REPORT.md` for the concept-to-implementation comparison and
 intentional responsive deviations.

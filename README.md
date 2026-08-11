@@ -134,7 +134,7 @@ and mobile browser suite:
 pnpm test:e2e --workers=1
 ```
 
-Current v0.3.3 candidate verification on 12 August 2026:
+Current v0.3.3 verification on 12 August 2026:
 
 | Gate | Result |
 | --- | --- |
@@ -142,7 +142,7 @@ Current v0.3.3 candidate verification on 12 August 2026:
 | TypeScript | Passed |
 | Vitest | 125/125 tests passed across 14 files |
 | Next.js production build | Passed |
-| Playwright | Exact-commit GitHub Actions pending; the expanded suite contains 18 desktop/mobile flows. Latest published v0.3.2 result: 16/16 passed |
+| Playwright | GitHub Actions: 18/18 flows passed at 1440×900 and 390×844, including the two-tab overwrite regression and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,

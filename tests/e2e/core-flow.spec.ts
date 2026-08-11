@@ -12,7 +12,7 @@ async function resetProject(page: Page) {
 function visibleWorkflowButton(page: Page, label: string) {
   return page
     .locator("nav.mobile-workflow button:visible, aside.workflow-rail button:visible")
-    .filter({ hasText: label })
+    .filter({ hasText: new RegExp(`\\b${label}\\b`) })
     .first();
 }
 

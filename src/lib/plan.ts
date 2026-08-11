@@ -4,6 +4,7 @@ import {
   planTaskTemplateSchema,
   type ActionPlan,
   type CriterionProgress,
+  type PlanningDepth,
   type ParsedPlanGenerationInput,
   type PlanGenerationInput,
   type PlanTask,
@@ -276,7 +277,7 @@ const templateCandidates = [
       "Replace vague claims with bounded, evidence-linked language and verify source use.",
     priority: "medium",
     baseMinutes: 45,
-    minTargetGrade: 70,
+    minPlanningDepth: "standard",
     dependencies: ["p12"],
     doneDefinition: [
       "Vague terms have a metric, source or qualification",
@@ -295,7 +296,7 @@ const templateCandidates = [
       "Stress-test whether the selected concepts and diagnosis remain defensible under data limitations.",
     priority: "medium",
     baseMinutes: 60,
-    minTargetGrade: 75,
+    minPlanningDepth: "thorough",
     dependencies: ["p12"],
     doneDefinition: [
       "At least one alternative explanation is tested",
@@ -314,7 +315,7 @@ const templateCandidates = [
       "Test whether recommendations remain sensible if demand, capacity or resource assumptions change.",
     priority: "medium",
     baseMinutes: 75,
-    minTargetGrade: 80,
+    minPlanningDepth: "extended",
     dependencies: ["p9", "p12"],
     doneDefinition: [
       "At least two key assumptions are varied",
@@ -335,7 +336,7 @@ export const DEFAULT_PLAN_TASK_TEMPLATES = templateCandidates.map((template) =>
 
 export const DEFAULT_PLAN_INPUT = {
   weeklyHours: 10,
-  targetGrade: 70,
+  planningDepth: "standard",
   startDate: "2026-07-20",
   dueDate: "2026-08-07",
   asOfDate: "2026-07-20",
@@ -372,11 +373,77 @@ function capacityForDay(weeklyHours: number, value: string): number {
   return (weeklyHours * 60 * dayWeight(value)) / 5.5;
 }
 
-export function getTargetEffortFactor(targetGrade: number): number {
-  if (targetGrade < 65) return 0.85;
-  if (targetGrade < 75) return 1;
-  if (targetGrade < 85) return 1.2;
-  return 1.35;
+export const PLANNING_DEPTH_OPTIONS = [
+  {
+    value: "focused",
+    label: "Focused",
+    description: "A lean pass through the essential evidence and submission checks.",
+    effortFactor: 0.85,
+    legacyTargetGrade: 60,
+  },
+  {
+    value: "standard",
+    label: "Standard",
+    description: "A balanced plan with a source-and-language review pass.",
+    effortFactor: 1,
+    legacyTargetGrade: 70,
+  },
+  {
+    value: "thorough",
+    label: "Thorough",
+    description: "More time for limitations, alternatives and deeper review.",
+    effortFactor: 1.2,
+    legacyTargetGrade: 75,
+  },
+  {
+    value: "extended",
+    label: "Extended",
+    description: "The widest review scope, including sensitivity and counterargument checks.",
+    // v0.3.4's highest visible option used the same 1.2 multiplier as 75,
+    // while adding the final review gate. Keep that operational behaviour so
+    // state-v3 values do not change the generated plan after the copy fix.
+    effortFactor: 1.2,
+    legacyTargetGrade: 80,
+  },
+] as const satisfies readonly {
+  value: PlanningDepth;
+  label: string;
+  description: string;
+  effortFactor: number;
+  legacyTargetGrade: number;
+}[];
+
+const planningDepthRank = new Map(
+  PLANNING_DEPTH_OPTIONS.map((option, index) => [option.value, index]),
+);
+
+export function getPlanningDepthEffortFactor(planningDepth: PlanningDepth): number {
+  return (
+    PLANNING_DEPTH_OPTIONS.find((option) => option.value === planningDepth)
+      ?.effortFactor ?? 1
+  );
+}
+
+export function planningDepthFromLegacyTargetGrade(targetGrade: number): PlanningDepth {
+  if (targetGrade < 65) return "focused";
+  if (targetGrade < 75) return "standard";
+  if (targetGrade < 80) return "thorough";
+  return "extended";
+}
+
+export function legacyTargetGradeForPlanningDepth(planningDepth: PlanningDepth): number {
+  return (
+    PLANNING_DEPTH_OPTIONS.find((option) => option.value === planningDepth)
+      ?.legacyTargetGrade ?? 70
+  );
+}
+
+function includesPlanningDepth(
+  selected: PlanningDepth,
+  minimum: PlanningDepth | undefined,
+): boolean {
+  if (!minimum) return true;
+  return (planningDepthRank.get(selected) ?? 0) >= (planningDepthRank.get(minimum) ?? 0);
 }
 
 function roundUpToQuarterHour(minutes: number): number {
@@ -554,7 +621,7 @@ export function generateActionPlan(
   );
   const initiallyActiveTemplates = parsedTemplates.filter(
     (template) =>
-      (template.minTargetGrade ?? 0) <= input.targetGrade ||
+      includesPlanningDepth(input.planningDepth, template.minPlanningDepth) ||
       requestedCompletedIds.has(template.id),
   );
   const activeQualityGateIds = initiallyActiveTemplates
@@ -584,7 +651,7 @@ export function generateActionPlan(
       completedIds.add(template.id);
     }
   }
-  const effortFactor = getTargetEffortFactor(input.targetGrade);
+  const effortFactor = getPlanningDepthEffortFactor(input.planningDepth);
   const asOfDate = input.asOfDate ?? input.startDate;
   const scheduleStart = laterDate(input.startDate, asOfDate);
   const dueDateById = new Map<string, string>();
@@ -647,7 +714,7 @@ export function generateActionPlan(
   return actionPlanSchema.parse({
     profile: {
       weeklyHours: input.weeklyHours,
-      targetGrade: input.targetGrade,
+      planningDepth: input.planningDepth,
       startDate: input.startDate,
       dueDate: input.dueDate,
       asOfDate,
@@ -667,7 +734,7 @@ export function generateActionPlan(
 export type PlanRebalanceOverrides = Partial<
   Pick<
     PlanGenerationInput,
-    "weeklyHours" | "targetGrade" | "startDate" | "dueDate" | "asOfDate"
+    "weeklyHours" | "planningDepth" | "startDate" | "dueDate" | "asOfDate"
   >
 > & {
   completedTaskIds?: string[];
@@ -681,7 +748,8 @@ export function rebalanceActionPlan(
   return generateActionPlan(
     {
       weeklyHours: overrides.weeklyHours ?? existingPlan.profile.weeklyHours,
-      targetGrade: overrides.targetGrade ?? existingPlan.profile.targetGrade,
+      planningDepth:
+        overrides.planningDepth ?? existingPlan.profile.planningDepth,
       startDate: overrides.startDate ?? existingPlan.profile.startDate,
       dueDate: overrides.dueDate ?? existingPlan.profile.dueDate,
       asOfDate: overrides.asOfDate ?? existingPlan.profile.asOfDate,

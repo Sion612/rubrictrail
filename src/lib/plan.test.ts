@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PLAN_INPUT,
   DEFAULT_PLAN_TASK_TEMPLATES,
+  PLANNING_DEPTH_OPTIONS,
   calculateAvailableMinutes,
   generateActionPlan,
-  getTargetEffortFactor,
+  getPlanningDepthEffortFactor,
+  legacyTargetGradeForPlanningDepth,
+  planningDepthFromLegacyTargetGrade,
   rebalanceActionPlan,
 } from "@/lib/plan";
 
@@ -23,22 +26,28 @@ describe("generateActionPlan", () => {
     }
   });
 
-  it("adds quality gates at higher targets before final submission QA", () => {
-    const passPlan = generateActionPlan({ ...DEFAULT_PLAN_INPUT, targetGrade: 60 });
-    const distinctionPlan = generateActionPlan({ ...DEFAULT_PLAN_INPUT, targetGrade: 80 });
-    const finalQa = distinctionPlan.tasks.find((task) => task.id === "p13");
-    const activeGateIds = distinctionPlan.tasks
+  it("adds quality gates at deeper review levels before final submission QA", () => {
+    const focusedPlan = generateActionPlan({
+      ...DEFAULT_PLAN_INPUT,
+      planningDepth: "focused",
+    });
+    const extendedPlan = generateActionPlan({
+      ...DEFAULT_PLAN_INPUT,
+      planningDepth: "extended",
+    });
+    const finalQa = extendedPlan.tasks.find((task) => task.id === "p13");
+    const activeGateIds = extendedPlan.tasks
       .filter((task) => task.id.startsWith("s"))
       .map((task) => task.id);
-    const finalQaIndex = distinctionPlan.tasks.findIndex((task) => task.id === "p13");
+    const finalQaIndex = extendedPlan.tasks.findIndex((task) => task.id === "p13");
 
-    expect(distinctionPlan.tasks.length).toBeGreaterThan(passPlan.tasks.length);
-    expect(distinctionPlan.totalMinutes).toBeGreaterThan(passPlan.totalMinutes);
+    expect(extendedPlan.tasks.length).toBeGreaterThan(focusedPlan.tasks.length);
+    expect(extendedPlan.totalMinutes).toBeGreaterThan(focusedPlan.totalMinutes);
     expect(activeGateIds).toEqual(["s1", "s2", "s3"]);
     expect(finalQa?.dependencies).toEqual(expect.arrayContaining(activeGateIds));
     expect(
       activeGateIds.every(
-        (id) => distinctionPlan.tasks.findIndex((task) => task.id === id) < finalQaIndex,
+        (id) => extendedPlan.tasks.findIndex((task) => task.id === id) < finalQaIndex,
       ),
     ).toBe(true);
   });
@@ -90,9 +99,52 @@ describe("rebalanceActionPlan", () => {
 });
 
 describe("plan helpers", () => {
-  it("applies stable effort factors", () => {
-    expect(getTargetEffortFactor(60)).toBeLessThan(getTargetEffortFactor(80));
+  it("applies stable planning-depth factors without exposing grade semantics", () => {
+    expect(getPlanningDepthEffortFactor("focused")).toBeLessThan(
+      getPlanningDepthEffortFactor("extended"),
+    );
+    expect(PLANNING_DEPTH_OPTIONS.map((option) => option.value)).toEqual([
+      "focused",
+      "standard",
+      "thorough",
+      "extended",
+    ]);
+    expect(
+      PLANNING_DEPTH_OPTIONS.map((option) =>
+        getPlanningDepthEffortFactor(option.value),
+      ),
+    ).toEqual([0.85, 1, 1.2, 1.2]);
     expect(DEFAULT_PLAN_TASK_TEMPLATES.length).toBeGreaterThan(10);
+  });
+
+  it("maps legacy stored numbers to planning depth and back", () => {
+    expect(planningDepthFromLegacyTargetGrade(60)).toBe("focused");
+    expect(planningDepthFromLegacyTargetGrade(70)).toBe("standard");
+    expect(planningDepthFromLegacyTargetGrade(75)).toBe("thorough");
+    expect(planningDepthFromLegacyTargetGrade(80)).toBe("extended");
+    expect(legacyTargetGradeForPlanningDepth("extended")).toBe(80);
+  });
+
+  it("preserves the operational profiles of the four values exposed by v0.3.4", () => {
+    const expected = [
+      { legacy: 60, depth: "focused", totalGates: 0 },
+      { legacy: 70, depth: "standard", totalGates: 1 },
+      { legacy: 75, depth: "thorough", totalGates: 2 },
+      { legacy: 80, depth: "extended", totalGates: 3 },
+    ] as const;
+
+    for (const profile of expected) {
+      const depth = planningDepthFromLegacyTargetGrade(profile.legacy);
+      const plan = generateActionPlan({
+        ...DEFAULT_PLAN_INPUT,
+        planningDepth: depth,
+      });
+      expect(depth).toBe(profile.depth);
+      expect(legacyTargetGradeForPlanningDepth(depth)).toBe(profile.legacy);
+      expect(plan.tasks.filter((task) => task.id.startsWith("s"))).toHaveLength(
+        profile.totalGates,
+      );
+    }
   });
 
   it("uses weekdays, half Saturday, and zero Sunday capacity", () => {

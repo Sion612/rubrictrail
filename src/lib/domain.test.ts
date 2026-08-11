@@ -96,7 +96,7 @@ describe("planGenerationInputSchema", () => {
     expect(
       planGenerationInputSchema.safeParse({
         weeklyHours: 10,
-        targetGrade: 70,
+        planningDepth: "standard",
         startDate: "2026-02-30",
         dueDate: "2026-03-10",
       }).success,
@@ -105,7 +105,7 @@ describe("planGenerationInputSchema", () => {
     expect(
       planGenerationInputSchema.safeParse({
         weeklyHours: 10,
-        targetGrade: 70,
+        planningDepth: "standard",
         startDate: "2026-07-20",
         dueDate: "2026-07-19",
       }).success,

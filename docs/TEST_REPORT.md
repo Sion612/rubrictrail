@@ -3,7 +3,7 @@
 Date: 12 August 2026
 Runtime: Node.js 24 in CI, pnpm 11.9.0
 Browser method: GitHub Actions Playwright projects at desktop and narrow
-responsive Chromium sizes; see the [v0.3.4 feature verification run](https://github.com/Sion612/rubrictrail/actions/runs/31542879582)
+responsive Chromium sizes; see the [v0.3.4 exact-main verification run](https://github.com/Sion612/rubrictrail/actions/runs/31543389199)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates

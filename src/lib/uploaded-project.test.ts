@@ -218,7 +218,7 @@ describe("uploaded project workflow", () => {
     const plan = generateActionPlan(
       {
         weeklyHours: 10,
-        targetGrade: 70,
+        planningDepth: "standard",
         startDate: "2026-08-11",
         dueDate: project.dueDate,
         asOfDate: "2026-08-11",

@@ -41,6 +41,14 @@ async function expectWorkspaceAtTop(page: Page) {
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
 }
 
+async function expectHonestPlanningDepth(page: Page) {
+  await expect(page.getByTestId("planning-depth")).toHaveValue("standard");
+  await expect(
+    page.getByText(/Planning depth adjusts task scope and time allowance only/i),
+  ).toBeVisible();
+  await expect(page.getByText(/target band/i)).toHaveCount(0);
+}
+
 async function useNarrowMobileViewport(page: Page, testInfo: TestInfo) {
   if (!testInfo.project.name.startsWith("mobile")) return;
   await page.setViewportSize({ width: 320, height: 700 });
@@ -86,10 +94,29 @@ test("sample assignment keeps demo signals distinct from real completion", async
 
   await visibleWorkflowButton(page, "Plan").click();
   await expect(page.getByRole("heading", { name: "A plan with a definition of done." })).toBeVisible();
+  await expectHonestPlanningDepth(page);
   await page.getByTestId("weekly-hours").selectOption("5");
-  await page.getByTestId("target-grade").selectOption("80");
+  await page.getByTestId("planning-depth").selectOption("extended");
+  await expect(
+    page.getByText(/Planning depth adjusts task scope and time allowance only/i),
+  ).toBeVisible();
   await page.getByTestId("rebalance-plan").click();
-  await expect(page.getByTestId("toast")).toContainText("80% target band");
+  await expect(page.getByTestId("toast")).toContainText(/Extended planning depth/i);
+  await expect(page.getByTestId("toast")).not.toContainText(/%|target band|grade/i);
+  await expect(page.getByText(/80% target(?: band)?/i)).toHaveCount(0);
+  await expect(page.getByTestId("task-s3")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = window.localStorage.getItem("rubrictrail.project.v3");
+        if (!raw) return null;
+        return (JSON.parse(raw) as { targetGrade?: number }).targetGrade ?? null;
+      }),
+    )
+    .toBe(80);
+  await page.reload();
+  await expect(page.getByTestId("planning-depth")).toHaveValue("extended");
+  await expect(page.getByTestId("task-s3")).toBeVisible();
   await page.getByTestId("task-p1").getByRole("checkbox").check();
   await expect(page.getByTestId("task-p1")).toHaveClass(/is-complete/);
 
@@ -300,6 +327,7 @@ test("real upload can create and persist a source-linked local project", async (
   await page.keyboard.press("Escape");
 
   await visibleWorkflowButton(page, "Plan").click();
+  await expectHonestPlanningDepth(page);
   const firstTask = page.getByTestId("task-confirm-brief");
   await firstTask.getByRole("checkbox").check();
   await expect(firstTask).toHaveClass(/is-complete/);
@@ -508,6 +536,7 @@ test("partial published weights remain recorded without weighting the plan", asy
     page.getByText(/Known official percentages are retained and missing values remain blank/),
   ).toBeVisible();
   await visibleWorkflowButton(page, "Plan").click();
+  await expectHonestPlanningDepth(page);
   await expect(
     page.getByText(/Give every criterion the same planning baseline/),
   ).toBeVisible();
@@ -610,6 +639,7 @@ test("missing rubric can be repaired without fabricating weights", async ({ page
   await expectNoHorizontalOverflow(page);
 
   await visibleWorkflowButton(page, "Plan").click();
+  await expectHonestPlanningDepth(page);
   await expect(page.getByText(/Give every criterion the same planning baseline/)).toBeVisible();
   await visibleWorkflowButton(page, "Check").click();
   await expect(page.getByRole("option", { name: "Analysis" })).toBeAttached();

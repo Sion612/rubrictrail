@@ -98,7 +98,12 @@ validation to bound work on untrusted files.
 Current exports contain state v3. Valid state-v2 browser data and backup payloads
 are migrated through the same validator to state v3; because v2 allowed only a
 complete numeric 100% rubric, migrated custom projects receive
-`weightingStatus: "complete"`.
+`weightingStatus: "complete"`. State v3 retains its existing numeric
+`targetGrade` field solely as a backward-compatible encoding for the selected
+planning depth. The application converts that legacy value at the persistence
+boundary; it is not a target mark, grade estimate or prediction. The four
+values exposed by v0.3.4 preserve their task gates and effort multipliers, so
+the state-v3 operational contract remains stable while the UI label is fixed.
 The original `proofline.project.v1` sample-state migration is also retained.
 Unsupported newer state versions are rejected explicitly rather than coerced.
 
@@ -162,8 +167,11 @@ inside the generated schedule: it is never persisted as a synthetic rubric
 weight, displayed as a percentage or described as equal marks.
 
 The plan engine schedules that graph from the real current date, deadline,
-weekly capacity and target band. UI checkboxes and the state update handler both
-block completion when dependencies are unfinished.
+weekly capacity and selected planning depth. Planning depth can include
+additional review tasks and changes the time allowance applied to the schedule;
+it does not correspond to a grading band or predict an outcome. UI checkboxes
+and the state update handler both block completion when dependencies are
+unfinished.
 
 ## Honest workflow state
 

@@ -45,7 +45,7 @@ It waits for the local-save toast to leave before capturing.
 
 ## Interaction and layout checks
 
-- 22/22 Playwright executions passed in [GitHub Actions run 31542879582](https://github.com/Sion612/rubrictrail/actions/runs/31542879582): 11 scenarios at desktop and narrow responsive Chromium sizes,
+- 22/22 Playwright executions passed in the [v0.3.4 exact-main GitHub Actions run 31543389199](https://github.com/Sion612/rubrictrail/actions/runs/31543389199): 11 scenarios at desktop and narrow responsive Chromium sizes,
   including multi-tab and v2/v3 recovery plus targeted 320×700 mixed-batch,
   paste, rubric-weighting and error states. These are viewport checks, not
   mobile-UA, touch or physical-device emulation.

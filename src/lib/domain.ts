@@ -429,6 +429,13 @@ export const rubricLinkSchema = z
   })
   .strict();
 
+export const planningDepthSchema = z.enum([
+  "focused",
+  "standard",
+  "thorough",
+  "extended",
+]);
+
 export const planTaskTemplateSchema = z
   .object({
     id: z.string().min(1),
@@ -437,7 +444,7 @@ export const planTaskTemplateSchema = z
     description: z.string().min(1),
     priority: z.enum(["high", "medium", "low"]),
     baseMinutes: z.number().int().positive(),
-    minTargetGrade: z.number().min(0).max(100).optional(),
+    minPlanningDepth: planningDepthSchema.optional(),
     dependencies: z.array(z.string().min(1)),
     doneDefinition: z.array(z.string().min(1)).min(1),
     rubricLinks: z.array(rubricLinkSchema).min(1),
@@ -455,7 +462,7 @@ export const planTaskSchema = planTaskTemplateSchema.extend({
 export const planGenerationInputSchema = z
   .object({
     weeklyHours: z.number().min(1).max(40),
-    targetGrade: z.number().min(40).max(95),
+    planningDepth: planningDepthSchema,
     startDate: dateOnlySchema,
     dueDate: dateOnlySchema,
     asOfDate: dateOnlySchema.optional(),
@@ -486,7 +493,7 @@ export const actionPlanSchema = z
     profile: z
       .object({
         weeklyHours: z.number().min(1).max(40),
-        targetGrade: z.number().min(40).max(95),
+        planningDepth: planningDepthSchema,
         startDate: dateOnlySchema,
         dueDate: dateOnlySchema,
         asOfDate: dateOnlySchema,
@@ -592,6 +599,7 @@ export type CriterionCheck = z.infer<typeof criterionCheckSchema>;
 export type DraftCheckResult = z.infer<typeof draftCheckResultSchema>;
 export type RubricTrailFixture = z.infer<typeof rubricTrailFixtureSchema>;
 export type RubricLink = z.infer<typeof rubricLinkSchema>;
+export type PlanningDepth = z.infer<typeof planningDepthSchema>;
 export type PlanTaskTemplate = z.infer<typeof planTaskTemplateSchema>;
 export type PlanTask = z.infer<typeof planTaskSchema>;
 export type PlanGenerationInput = z.input<typeof planGenerationInputSchema>;

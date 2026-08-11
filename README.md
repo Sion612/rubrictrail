@@ -29,9 +29,15 @@ The production screenshot above and the mobile viewport are reviewed in
 2. If one file cannot be read, explicitly choose whether to continue with the
    readable files, replace the complete selection or paste all text instead.
 3. Review fields found in the included sources and fill anything missing.
-4. Confirm rubric names and weights; they must total 100%.
-5. Create a compact project saved only in the current browser.
-6. Work through **Brief → Rubric → Plan → Check → Progress**.
+4. Confirm the rubric names and whether the official rubric provides a complete
+   percentage breakdown. Complete weighting requires every criterion to have a
+   published percentage and the total to equal 100%.
+5. If the breakdown is incomplete, keep any official percentages and leave
+   unknown values blank. RubricTrail stores those criteria as `number | null`
+   and uses the same neutral planning baseline for every criterion; this is not
+   a claim that they earn equal marks.
+6. Create a compact project saved only in the current browser.
+7. Work through **Brief → Rubric → Plan → Check → Progress**.
 
 The custom workflow includes:
 
@@ -40,22 +46,27 @@ The custom workflow includes:
 - explicit mixed-batch recovery that never silently drops an unreadable file;
 - exact retained rubric excerpts with filename and PDF page when available;
 - a generic dependency-aware plan linked only to confirmed criteria;
+- explicit `complete`, `incomplete` and `none` weighting states that never
+  estimate missing percentages; only a complete 100% breakdown weights the
+  plan, while the other states use a neutral planning baseline;
 - capacity warnings based on deadline and weekly study time;
 - task completion that respects prerequisites;
 - criterion-by-criterion self-checks for visible, explained and traceable
   evidence;
 - a final human submission checklist;
-- v2 local persistence with migration from the earlier sample-state format;
+- v3 local persistence with validated migration from v2 and the earlier
+  sample-state format;
 - deep local-state validation, recovery messaging and visible storage failures;
-- multi-tab conflict protection that pauses autosave before stale state can
-  replace a newer browser-local project;
+- best-effort multi-tab conflict checks that pause autosave when v3 or retained
+  v2 state diverges from this tab's observed lineage;
 - versioned project backups that can be restored without retaining original files.
 
 Original files and full uploaded or pasted source text are not written to
 `localStorage`. Pasted intake is limited to 100,000 characters and 10,000 lines
-before it enters the same bounded TXT parser. Confirmed fields, short source
-excerpts, pasted self-check text and progress are stored until the user resets
-the project. Names and error details for files omitted from a partial batch stay
+before it enters the same bounded TXT parser. Confirmed fields, weighting status,
+rubric percentages or `null`, short source excerpts, pasted self-check text and
+progress are stored until the user resets the project. Names and error details
+for files omitted from a partial batch stay
 only in the current intake flow and are not added to the saved project or backup.
 
 ### Back up or restore a project
@@ -65,9 +76,20 @@ Use **Project backup → Download backup** in the workspace to save a
 or another device. RubricTrail previews the project name, export time and
 replacement scope before restoring it, validates both file and project versions,
 and writes the imported state before changing the open workspace.
-If another tab changes the same browser-local project, RubricTrail pauses
-autosave and asks which version to keep. A backup restore or reset cannot
-silently replace that newer saved value.
+State-v3 backups remain separate from the outer backup-format version. Valid v2
+uploaded custom projects and backups migrate to v3 with their complete numeric
+weights preserved; sample and empty state migrate without an uploaded rubric.
+Newer unsupported versions still fail with an upgrade message rather than being
+guessed at. The v2 browser value is retained as a recovery candidate. Each v3
+save records a non-cryptographic fingerprint of the v2 bytes it superseded, so
+a later divergent write by an older tab is surfaced as a cross-version conflict.
+
+RubricTrail compares the observed v3 and v2 values before a write and reads both
+back afterward. Detected divergence pauses autosave and asks which version to
+keep. These checks are best effort: `localStorage` does not provide transactions
+or atomic compare-and-swap, so a narrow write race can still occur between
+separate operations. Download a backup before resolving edits that matter in
+multiple tabs or versions.
 
 A backup contains the compact saved project: course details, source labels or
 original filenames, short source excerpts, pasted draft or self-check text, task
@@ -128,28 +150,30 @@ pnpm check
 ```
 
 It runs ESLint, TypeScript, Vitest and a production build. Then run the desktop
-and mobile browser suite:
+and narrow responsive browser suite:
 
 ```bash
 pnpm test:e2e --workers=1
 ```
 
-Current v0.3.3 verification on 12 August 2026:
+Current v0.3.4 verification on 12 August 2026 ([GitHub Actions run 31542879582](https://github.com/Sion612/rubrictrail/actions/runs/31542879582)):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 125/125 tests passed across 14 files |
+| Vitest | 157/157 tests passed across 14 files |
 | Next.js production build | Passed |
-| Playwright | GitHub Actions: 18/18 flows passed at 1440×900 and 390×844, including the two-tab overwrite regression and targeted 320×700 checks |
+| Playwright | GitHub Actions: 22/22 executions passed (11 scenarios × 1440×900 and 390×844 Chromium viewports), including multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,
 explicit omitted-file review, pasted brief and rubric intake, manual repair of a
-missing rubric, local persistence and privacy, evidence drawer focus,
-recoverable unsupported files, empty drafts, multi-tab overwrite protection,
-console errors and horizontal overflow.
+missing rubric without fabricated weights, partial published weights, local
+persistence and privacy, evidence drawer focus, recoverable unsupported files,
+empty drafts, multi-tab overwrite protection, explicit v2-to-v3 recovery,
+console errors and horizontal overflow. The narrow projects test responsive
+Chromium viewports; they are not mobile-device, touch or mobile-UA emulation.
 
 ## Architecture
 
@@ -181,7 +205,7 @@ Core modules:
 | Dependency-aware scheduling | `src/lib/plan.ts` |
 | Versioned browser state | `src/lib/local-state.ts` |
 | Strict sample and optional Live schemas | `src/lib/domain.ts`, `src/lib/ai/*` |
-| Desktop/mobile acceptance tests | `tests/e2e/core-flow.spec.ts` |
+| Desktop/responsive acceptance tests | `tests/e2e/core-flow.spec.ts` |
 
 See [the architecture notes](./docs/ARCHITECTURE.md) for data and trust
 boundaries.
@@ -216,8 +240,9 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
 - The self-check records the user's judgment; it does not validate argument
   quality or source correctness.
 - There is no account, automatic sync, collaboration or multi-project dashboard;
-  moving data requires an explicit local backup and restore. Simultaneous tabs
-  are detected and paused, but their edits are not automatically merged.
+  moving data requires an explicit local backup and restore. Detected external
+  changes pause autosave, but simultaneous edits are not automatically merged
+  and Web Storage cannot make the protection transactional.
 - The interface and parser are English-first.
 - RubricTrail is not a substitute for the actual rubric, university policy,
   tutor advice or final human review.

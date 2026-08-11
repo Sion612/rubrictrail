@@ -89,9 +89,9 @@ export function UploadSummaryView({
   const initialDraft = useMemo(() => draftFromUpload(result), [result]);
   const [draft, setDraft] = useState<UploadedProjectDraft>(() => initialDraft);
   const [showErrors, setShowErrors] = useState(false);
-  const criterionOriginsRef = useRef<
+  const [criterionOrigins, setCriterionOrigins] = useState<
     Array<UploadedProjectDraft["criteria"][number] | null>
-  >(
+  >(() =>
     initialDraft.criteria.map((criterion) => ({ ...criterion })),
   );
   const [criterionKeys, setCriterionKeys] = useState(
@@ -114,9 +114,15 @@ export function UploadSummaryView({
     (total, criterion) => total + (Number(criterion.weight) || 0),
     0,
   );
+  const recordedWeightCount = draft.criteria.filter(
+    (criterion) => criterion.weight.trim() !== "",
+  ).length;
   const isPasted = result.intakeMethod === "paste";
   const isPartial = result.skippedFiles.length > 0;
   const selectedFileCount = result.fileNames.length + result.skippedFiles.length;
+  const sourceContainsPercentageValues = result.summary.rubric.criteria.some(
+    (criterion) => criterion.weight !== null,
+  );
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -131,18 +137,17 @@ export function UploadSummaryView({
   }
 
   function updateCriterion(index: number, key: "name" | "weight", value: string) {
+    const origin = criterionOrigins[index];
     setDraft((current) => ({
       ...current,
       criteria: current.criteria.map((criterion, criterionIndex) => {
         if (criterionIndex !== index) return criterion;
         const nextCriterion = { ...criterion, [key]: value };
-        const origin = criterionOriginsRef.current[index];
         return {
           ...nextCriterion,
           evidence:
             origin &&
-            nextCriterion.name === origin.name &&
-            nextCriterion.weight === origin.weight
+            nextCriterion.name === origin.name
               ? origin.evidence
               : null,
         };
@@ -151,7 +156,7 @@ export function UploadSummaryView({
   }
 
   function addCriterion() {
-    criterionOriginsRef.current = [...criterionOriginsRef.current, null];
+    setCriterionOrigins((current) => [...current, null]);
     nextCriterionKeyRef.current += 1;
     const nextCriterionKey = `manual-${nextCriterionKeyRef.current}`;
     setCriterionKeys((current) => [
@@ -165,9 +170,9 @@ export function UploadSummaryView({
   }
 
   function removeCriterion(index: number) {
-    criterionOriginsRef.current = criterionOriginsRef.current.filter(
+    setCriterionOrigins((current) => current.filter(
       (_, criterionIndex) => criterionIndex !== index,
-    );
+    ));
     setCriterionKeys((current) => current.filter(
       (_, criterionIndex) => criterionIndex !== index,
     ));
@@ -367,14 +372,77 @@ export function UploadSummaryView({
               <h2 id="rubric-detection-title" tabIndex={-1}>Confirm what earns marks</h2>
               <p>{result.summary.rubric.message}</p>
             </div>
-            <span className={`text-status ${Math.abs(totalWeight - 100) < 0.01 ? "complete" : "incomplete"}`}>
-              {totalWeight}% total
-            </span>
+            {draft.weightingMode === "complete" ? (
+              <span className={`text-status ${Math.abs(totalWeight - 100) < 0.01 ? "complete" : "incomplete"}`}>
+                Published total: {totalWeight}%
+              </span>
+            ) : draft.weightingMode === "not_complete" ? (
+              <span className={`text-status ${recordedWeightCount > 0 ? "incomplete" : "complete"}`}>
+                {recordedWeightCount > 0
+                  ? `Incomplete weights: ${recordedWeightCount} of ${draft.criteria.length} recorded`
+                  : "No published weights recorded"}
+              </span>
+            ) : (
+              <span className="text-status incomplete">Weighting choice needed</span>
+            )}
           </div>
+
+          <fieldset
+            className="weighting-mode-fieldset"
+            aria-describedby={`weighting-mode-help${showErrors && issueByTarget.has("rubric-weighting-published") ? " rubric-weighting-published-error" : ""}`}
+          >
+            <legend>Does your official rubric provide a complete percentage breakdown?</legend>
+            <p id="weighting-mode-help">
+              Keep only percentages stated by the brief or rubric. RubricTrail will not estimate or complete missing values.
+            </p>
+            <div className="weighting-mode-options">
+              <label>
+                <input
+                  {...errorAttributes("rubric-weighting-published")}
+                  type="radio"
+                  name="rubric-weighting-mode"
+                  value="complete"
+                  checked={draft.weightingMode === "complete"}
+                  onChange={() => updateField("weightingMode", "complete")}
+                  required
+                />
+                <span>
+                  <strong>Yes — use the published percentages</strong>
+                  <small>I can verify a percentage for every criterion in the official brief or rubric.</small>
+                </span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="rubric-weighting-mode"
+                  value="not_complete"
+                  checked={draft.weightingMode === "not_complete"}
+                  onChange={() => updateField("weightingMode", "not_complete")}
+                  aria-describedby="weighting-mode-help"
+                  required
+                />
+                <span>
+                  <strong>No — no complete percentage breakdown is published</strong>
+                  <small>Keep any official percentages you do know and leave missing values blank. Planning stays neutral; this does not mean equal marks.</small>
+                </span>
+              </label>
+            </div>
+            <FieldError issue={showErrors ? issueByTarget.get("rubric-weighting-published") : undefined} />
+          </fieldset>
+
+          {draft.weightingMode === "not_complete" && sourceContainsPercentageValues ? (
+            <div className="inline-alert warning compact-alert" role="status">
+              <AlertTriangle aria-hidden="true" />
+              <p>Some percentages were found in your source. Keep the official values below and leave unknown ones blank; none will weight the plan while the breakdown is incomplete.</p>
+            </div>
+          ) : null}
 
           <div className="rubric-editor-list">
             {draft.criteria.map((criterion, index) => (
-              <div className="rubric-editor-row" key={criterionKeys[index]}>
+              <div
+                className="rubric-editor-row"
+                key={criterionKeys[index]}
+              >
                 <span className="criterion-index" aria-hidden="true">{index + 1}</span>
                 <label>
                   <span>Criterion</span>
@@ -386,10 +454,15 @@ export function UploadSummaryView({
                     maxLength={300}
                     data-testid={`criterion-name-${index}`}
                   />
+                  <small>{criterion.evidence ? "Source-linked criterion" : "Manually entered criterion"}</small>
                   <FieldError issue={showErrors ? issueByTarget.get(`criterion-name-${index}`) : undefined} />
                 </label>
                 <label className="weight-field">
-                  <span>Weight</span>
+                  <span>
+                    {draft.weightingMode === "complete"
+                      ? "Published weight"
+                      : "Published weight (if stated)"}
+                  </span>
                   <span className="input-with-suffix">
                     <input
                       {...errorAttributes(`criterion-weight-${index}`)}
@@ -399,11 +472,22 @@ export function UploadSummaryView({
                       step="0.01"
                       value={criterion.weight}
                       onChange={(event) => updateCriterion(index, "weight", event.target.value)}
-                      aria-label={`Weight for criterion ${index + 1}`}
+                      aria-label={`Published weight for criterion ${index + 1}`}
                       data-testid={`criterion-weight-${index}`}
+                      required={draft.weightingMode === "complete"}
                     />
                     <b>%</b>
                   </span>
+                  <small>
+                    {criterionOrigins[index]?.weight &&
+                    criterionOrigins[index]?.weight === criterion.weight
+                      ? "Found in source"
+                      : criterion.weight
+                        ? "Entered manually — verify"
+                        : draft.weightingMode === "complete"
+                          ? "Enter the published value from the official rubric"
+                          : "Leave blank when no official percentage is published"}
+                  </small>
                   <FieldError issue={showErrors ? issueByTarget.get(`criterion-weight-${index}`) : undefined} />
                 </label>
                 <button
@@ -464,7 +548,7 @@ export function UploadSummaryView({
         <div className="integrity-note">
           <ShieldCheck aria-hidden="true" />
           <p>
-            <strong>Compact local save:</strong> confirmed fields, rubric names, weights and short
+            <strong>Compact local save:</strong> confirmed fields, rubric names, your weighting choice and short
             source excerpts are saved in this browser. Original files and full source text are not.
           </p>
         </div>

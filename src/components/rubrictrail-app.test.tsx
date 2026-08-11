@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RubricTrailApp } from "@/components/rubrictrail-app";
 import {
   createDefaultProjectState,
+  PREVIOUS_STORAGE_KEY,
+  readProjectStateWithStatus,
   serializePersistedProjectStateValue,
   STORAGE_KEY,
 } from "@/lib/local-state";
@@ -28,6 +30,7 @@ function uploadedProject(): UploadedProject {
     citationStyle: "APA 7",
     fileNames: ["brief.txt"],
     extractedWordCount: 120,
+    weightingStatus: "complete",
     criteria: [
       {
         id: "analysis-1",
@@ -91,14 +94,36 @@ function storedDraftValue(storedValue: string, draftText: string) {
   return JSON.stringify({ ...state, draftText }, null, 2);
 }
 
+function realV2State(
+  state: PersistedProjectState,
+  patch: Partial<PersistedProjectState> = {},
+) {
+  const merged = { ...state, ...patch };
+  const v2State = { ...merged } as Record<string, unknown>;
+  delete v2State.supersededV2Fingerprint;
+  let v2UploadedProject: Record<string, unknown> | null = null;
+  if (merged.uploadedProject) {
+    v2UploadedProject = {
+      ...merged.uploadedProject,
+    } as unknown as Record<string, unknown>;
+    delete v2UploadedProject.weightingStatus;
+  }
+  return {
+    ...v2State,
+    version: 2,
+    uploadedProject: v2UploadedProject,
+  };
+}
+
 function dispatchExternalStorageUpdate(
   oldValue: string | null,
   newValue: string | null,
+  key = STORAGE_KEY,
 ) {
   fireEvent(
     window,
     new StorageEvent("storage", {
-      key: STORAGE_KEY,
+      key,
       oldValue,
       newValue,
       storageArea: window.localStorage,
@@ -134,7 +159,7 @@ afterEach(() => {
 });
 
 describe("RubricTrailApp reliability", () => {
-  it("writes a recovered legacy project to v2 once hydration succeeds", async () => {
+  it("writes a recovered legacy project to v3 once hydration succeeds", async () => {
     window.localStorage.setItem(
       LEGACY_STORAGE_KEY,
       JSON.stringify({ sampleLoaded: false }),
@@ -149,12 +174,39 @@ describe("RubricTrailApp reliability", () => {
 
     await advance(250);
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")).toMatchObject({
-      version: 2,
+      version: 3,
       projectKind: "none",
     });
   });
 
-  it("does not overwrite incompatible v2 data before the user changes anything", async () => {
+  it("promotes a v2 project to v3 only after both storage baselines still match", async () => {
+    const previous = realV2State(createDefaultProjectState());
+    const previousRaw = JSON.stringify(previous);
+    window.localStorage.setItem(
+      PREVIOUS_STORAGE_KEY,
+      previousRaw,
+    );
+
+    render(<RubricTrailApp />);
+    await advance(0);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "earlier RubricTrail project was recovered",
+    );
+
+    await advance(250);
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")).toMatchObject({
+      version: 3,
+      projectKind: "none",
+    });
+    expect(window.localStorage.getItem(PREVIOUS_STORAGE_KEY)).toBe(previousRaw);
+    expect(
+      JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")
+        .supersededV2Fingerprint,
+    ).toMatch(/^v1:/);
+    expect(readProjectStateWithStatus().crossVersionConflict).toBe(false);
+  });
+
+  it("does not overwrite incompatible v3 data before the user changes anything", async () => {
     const malformed = "{not valid JSON";
     window.localStorage.setItem(STORAGE_KEY, malformed);
     render(<RubricTrailApp />);
@@ -500,6 +552,174 @@ describe("RubricTrailApp reliability", () => {
     expect(screen.getByRole("heading", { name: "Pasted Strategy Report" })).toBeInTheDocument();
     expect(stored).not.toContain(privateTail);
     expect(stored).toContain("Pasted assignment brief.txt");
+  });
+
+  it("pauses v3 autosave when an older tab writes the previous v2 key", async () => {
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const previousValue = JSON.stringify(
+      realV2State(createDefaultProjectState(), {
+        projectKind: "sample",
+        draftText: "The draft saved by the older RubricTrail tab.",
+      }),
+    );
+    window.localStorage.setItem(PREVIOUS_STORAGE_KEY, previousValue);
+    dispatchExternalStorageUpdate(null, previousValue, PREVIOUS_STORAGE_KEY);
+
+    expect(
+      screen.getByRole("heading", { name: "Project changed in another tab" }),
+    ).toBeInTheDocument();
+    fireEvent.change(draft, {
+      target: { value: "A v3 edit that must wait for conflict resolution." },
+    });
+    await advance(250);
+
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(storedValue);
+    expect(window.localStorage.getItem(PREVIOUS_STORAGE_KEY)).toBe(previousValue);
+  });
+
+  it("loads and upgrades the exact v2 project that triggered a cross-version conflict", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { storedValue } = await openSavedSampleCheck();
+    const previousDraft = "The exact older-version draft the user chose to load.";
+    const currentState = JSON.parse(storedValue) as PersistedProjectState;
+    const previousValue = JSON.stringify(
+      realV2State(currentState, { draftText: previousDraft }),
+    );
+    window.localStorage.setItem(PREVIOUS_STORAGE_KEY, previousValue);
+    dispatchExternalStorageUpdate(null, previousValue, PREVIOUS_STORAGE_KEY);
+
+    fireEvent.click(screen.getByRole("button", { name: "Load saved version" }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("older RubricTrail tab"),
+    );
+    expect(screen.getByTestId("draft-text")).toHaveValue(previousDraft);
+    expect(
+      screen.queryByRole("heading", { name: "Project changed in another tab" }),
+    ).not.toBeInTheDocument();
+    const promoted = JSON.parse(
+      window.localStorage.getItem(STORAGE_KEY) ?? "{}",
+    ) as PersistedProjectState;
+    expect(promoted.version).toBe(3);
+    expect(promoted.draftText).toBe(previousDraft);
+    expect(promoted.supersededV2Fingerprint).toMatch(/^v1:/);
+    expect(window.localStorage.getItem(PREVIOUS_STORAGE_KEY)).toBe(previousValue);
+    expect(readProjectStateWithStatus().crossVersionConflict).toBe(false);
+  });
+
+  it("creates, saves, and renders an unweighted rubric without invented percentages", async () => {
+    render(<RubricTrailApp />);
+    await advance(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Paste text" }));
+    fireEvent.change(screen.getByTestId("pasted-assignment-brief"), {
+      target: {
+        value: [
+          "Assignment title: Pasted Unweighted Report",
+          "Deadline: 24 September 2026",
+          "Word count: 2500 words",
+          "Use APA 7 referencing.",
+        ].join("\n"),
+      },
+    });
+    fireEvent.change(screen.getByTestId("pasted-assignment-rubric"), {
+      target: { value: "Rubric\n- Analysis\n- Communication" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review assignment details" }));
+    await advance(0);
+
+    const noPublishedWeights = screen.getByRole("radio", {
+      name: /No — no complete percentage breakdown is published/,
+    });
+    expect(noPublishedWeights).not.toBeChecked();
+    fireEvent.click(noPublishedWeights);
+    expect(screen.getByTestId("criterion-weight-0")).toHaveValue(null);
+    expect(screen.getByTestId("criterion-weight-1")).toHaveValue(null);
+    fireEvent.click(screen.getByTestId("create-project"));
+    await advance(250);
+
+    const stored = JSON.parse(
+      window.localStorage.getItem(STORAGE_KEY) ?? "{}",
+    ) as PersistedProjectState;
+    expect(stored.version).toBe(3);
+    expect(stored.uploadedProject?.weightingStatus).toBe("none");
+    expect(
+      stored.uploadedProject?.criteria.map((criterion) => criterion.weight),
+    ).toEqual([null, null]);
+    expect(
+      screen.getByRole("heading", { name: "Pasted Unweighted Report" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /RubricConfirmed/i })[0],
+    );
+    expect(screen.getAllByText("Not recorded")).toHaveLength(2);
+    expect(screen.getByText(/No grading percentages were recorded/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Plan/i })[0]);
+    expect(screen.getByText(/Give every criterion the same planning baseline/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Check/i })[0]);
+    expect(screen.getByRole("option", { name: "Analysis" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Communication" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open progress" }));
+    expect(screen.getAllByText("No published weight recorded")).toHaveLength(2);
+    expect(screen.queryByText(/\d+% of rubric/)).not.toBeInTheDocument();
+  });
+
+  it("retains a known partial percentage while keeping the plan neutral", async () => {
+    render(<RubricTrailApp />);
+    await advance(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Paste text" }));
+    fireEvent.change(screen.getByTestId("pasted-assignment-brief"), {
+      target: {
+        value: [
+          "Assignment title: Pasted Partial Weight Report",
+          "Deadline: 24 September 2026",
+          "Word count: 2500 words",
+          "Use APA 7 referencing.",
+        ].join("\n"),
+      },
+    });
+    fireEvent.change(screen.getByTestId("pasted-assignment-rubric"), {
+      target: { value: "Rubric\n- Analysis\n- Communication — 40%" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review assignment details" }));
+    await advance(0);
+
+    fireEvent.click(
+      screen.getByRole("radio", {
+        name: /No — no complete percentage breakdown is published/,
+      }),
+    );
+    expect(screen.getByTestId("criterion-weight-0")).toHaveValue(null);
+    expect(screen.getByTestId("criterion-weight-1")).toHaveValue(40);
+    fireEvent.click(screen.getByTestId("create-project"));
+    await advance(250);
+
+    const stored = JSON.parse(
+      window.localStorage.getItem(STORAGE_KEY) ?? "{}",
+    ) as PersistedProjectState;
+    expect(stored.uploadedProject?.weightingStatus).toBe("incomplete");
+    expect(
+      stored.uploadedProject?.criteria.map((criterion) => criterion.weight),
+    ).toEqual([null, 40]);
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /RubricConfirmed/i })[0],
+    );
+    expect(screen.getByText("Not recorded")).toBeInTheDocument();
+    expect(screen.getByText("40%")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Known official percentages are retained/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Plan/i })[0]);
+    expect(
+      screen.getByText(/Give every criterion the same planning baseline/),
+    ).toBeInTheDocument();
   });
 
   it("keeps an empty pasted intake recoverable without changing local storage", async () => {

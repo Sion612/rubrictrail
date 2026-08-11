@@ -22,6 +22,7 @@ function uploadedProject(): UploadedProject {
     citationStyle: "APA 7",
     fileNames: ["brief.txt"],
     extractedWordCount: 120,
+    weightingStatus: "complete",
     criteria: [
       {
         id: "analysis-1",
@@ -50,6 +51,26 @@ function uploadedState(): PersistedProjectState {
   };
 }
 
+function unweightedUploadedState(): PersistedProjectState {
+  const state = uploadedState();
+  return {
+    ...state,
+    uploadedProject: state.uploadedProject
+      ? {
+          ...state.uploadedProject,
+          weightingStatus: "none",
+          criteria: state.uploadedProject.criteria.map((criterion) => ({
+            ...criterion,
+            weight: null,
+            evidence: criterion.evidence
+              ? { ...criterion.evidence, excerpt: "Analysis" }
+              : null,
+          })),
+        }
+      : null,
+  };
+}
+
 function sampleState(): PersistedProjectState {
   return {
     ...createDefaultProjectState(),
@@ -74,7 +95,7 @@ function expectBackupError(action: () => unknown, code: ProjectBackupError["code
 
 describe("RubricTrail project backups", () => {
   it("round-trips sample and uploaded projects through the versioned envelope", () => {
-    for (const state of [sampleState(), uploadedState()]) {
+    for (const state of [sampleState(), uploadedState(), unweightedUploadedState()]) {
       const serialized = serializeProjectBackup(
         state,
         "2026-08-12T08:00:00.000Z",
@@ -93,9 +114,21 @@ describe("RubricTrail project backups", () => {
       expect(JSON.parse(serialized)).toMatchObject({
         format: "rubrictrail-project",
         formatVersion: 1,
-        project: { version: 2, projectKind: state.projectKind },
+        project: { version: 3, projectKind: state.projectKind },
       });
     }
+  });
+
+  it("restores a real v2 backup as canonical v3 data", () => {
+    const envelope = JSON.parse(serializeProjectBackup(uploadedState()));
+    envelope.project.version = 2;
+    delete envelope.project.supersededV2Fingerprint;
+    delete envelope.project.uploadedProject.weightingStatus;
+
+    const restored = parseProjectBackupText(JSON.stringify(envelope));
+    expect(restored.recovered).toBe(true);
+    expect(restored.state.version).toBe(3);
+    expect(restored.state.uploadedProject?.criteria[0].weight).toBe(100);
   });
 
   it("uses a portable, recognizable filename without losing CJK titles", () => {
@@ -146,7 +179,7 @@ describe("RubricTrail project backups", () => {
     );
 
     const futureState = JSON.parse(serializeProjectBackup(sampleState()));
-    futureState.project.version = 3;
+    futureState.project.version = 4;
     expectBackupError(
       () => parseProjectBackupText(JSON.stringify(futureState)),
       "unsupported-state-version",

@@ -19,6 +19,7 @@ import type { ActionPlan } from "@/lib/domain";
 import { daysBetween } from "@/lib/plan";
 import { UPLOADED_READINESS } from "@/lib/readiness";
 import {
+  hasPublishedRubricWeights,
   isConfirmedUploadedReview,
   todayIso,
   UPLOADED_REVIEW_MAX_CHARACTERS,
@@ -35,6 +36,13 @@ interface UploadedBriefViewProps {
 }
 
 export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProps) {
+  const hasCompletePublishedWeights = hasPublishedRubricWeights(project);
+  const weightingSummary =
+    project.weightingStatus === "complete"
+      ? "complete published percentages"
+      : project.weightingStatus === "incomplete"
+        ? "incomplete published breakdown"
+        : "no published percentages recorded";
   return (
     <div className="view-stack uploaded-brief-view">
       <header className="view-header">
@@ -50,7 +58,12 @@ export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProp
         <div><span>Deadline</span><strong>{new Intl.DateTimeFormat("en-GB", { dateStyle: "long" }).format(new Date(`${project.dueDate}T12:00:00`))}</strong></div>
         <div><span>Word count</span><strong>{project.wordCount.toLocaleString()} words</strong></div>
         <div><span>Citation style</span><strong>{project.citationStyle}</strong></div>
-        <div><span>Rubric</span><strong>{project.criteria.length} confirmed criteria</strong></div>
+        <div>
+          <span>Rubric</span>
+          <strong>
+            {project.criteria.length} confirmed criteria · {weightingSummary}
+          </strong>
+        </div>
       </div>
 
       <section className="uploaded-source-register" aria-labelledby="source-register-title">
@@ -97,7 +110,16 @@ export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProp
       </div>
 
       <div className="view-next-action">
-        <div><span>Next</span><strong>Check that every criterion and weight matches the original rubric.</strong></div>
+        <div>
+          <span>Next</span>
+          <strong>
+            {hasCompletePublishedWeights
+              ? "Check every criterion and published percentage against the original rubric."
+              : project.weightingStatus === "incomplete"
+                ? "Check every recorded percentage and every missing value against the original rubric. Planning remains neutral until the breakdown is complete."
+                : "Check every criterion against the original rubric. No percentage weights were recorded."}
+          </strong>
+        </div>
         <button className="button button-primary" type="button" onClick={() => onNavigate("rubric")}>
           Review rubric <ArrowRight aria-hidden="true" />
         </button>
@@ -117,6 +139,10 @@ export function UploadedRubricView({
   onOpenEvidence,
   onNavigate,
 }: UploadedRubricViewProps) {
+  const hasCompletePublishedWeights = hasPublishedRubricWeights(project);
+  const recordedWeightCount = project.criteria.filter(
+    (criterion) => criterion.weight !== null,
+  ).length;
   return (
     <div className="view-stack uploaded-rubric-view">
       <header className="view-header split-header">
@@ -125,7 +151,22 @@ export function UploadedRubricView({
           <h1>Confirm what earns marks.</h1>
           <p>Each criterion remains attached to its retained source excerpt. Manually added rows are clearly marked.</p>
         </div>
-        <div className="header-progress"><strong>100%</strong><span>weight confirmed</span></div>
+        <div className="header-progress">
+          <strong>
+            {hasCompletePublishedWeights
+              ? "100%"
+              : project.weightingStatus === "incomplete"
+                ? `${recordedWeightCount}/${project.criteria.length}`
+                : project.criteria.length}
+          </strong>
+          <span>
+            {hasCompletePublishedWeights
+              ? "published total"
+              : project.weightingStatus === "incomplete"
+                ? "published weights recorded · incomplete"
+                : "criteria · no published weights recorded"}
+          </span>
+        </div>
       </header>
 
       <div className="rubric-summary-band">
@@ -136,15 +177,26 @@ export function UploadedRubricView({
 
       <section className="uploaded-rubric-table" aria-label="Confirmed rubric criteria">
         <div className="uploaded-rubric-head" aria-hidden="true">
-          <span>Criterion</span><span>Weight</span><span>Status</span><span>Evidence source</span>
+          <span>Criterion</span><span>{project.weightingStatus === "none" ? "Weighting" : "Published weight"}</span><span>Status</span><span>Evidence source</span>
         </div>
         {project.criteria.map((criterion, index) => (
           <article key={criterion.id} className="uploaded-rubric-row">
             <div className="criterion-title">
               <span>{index + 1}</span>
-              <div><strong>{criterion.name}</strong><small>Plan effort is weighted toward this criterion.</small></div>
+              <div>
+                <strong>{criterion.name}</strong>
+                <small>
+                  {hasCompletePublishedWeights
+                    ? "Plan effort starts from this published percentage."
+                    : project.weightingStatus === "incomplete" && criterion.weight !== null
+                      ? "Official percentage recorded; the plan still uses a neutral starting point."
+                      : "Neutral planning starting point — not an equal mark value."}
+                </small>
+              </div>
             </div>
-            <strong className="criterion-weight">{criterion.weight}%</strong>
+            <strong className={`criterion-weight ${criterion.weight === null ? "not-published" : ""}`}>
+              {criterion.weight === null ? "Not recorded" : `${criterion.weight}%`}
+            </strong>
             <span className={criterion.evidence ? "verified-state" : "manual-state"}>
               {criterion.evidence ? <CheckCircle2 aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
               {criterion.evidence ? "Source-linked" : "Manual check"}
@@ -169,7 +221,14 @@ export function UploadedRubricView({
 
       <div className="integrity-note">
         <ShieldCheck aria-hidden="true" />
-        <p><strong>No inferred scoring.</strong> Weights shown here are the values you confirmed; RubricTrail does not predict a grade.</p>
+        <p>
+          <strong>No inferred scoring.</strong>{" "}
+          {hasCompletePublishedWeights
+            ? "Published percentages shown here are values you confirmed; none were inferred. RubricTrail does not predict a grade."
+            : project.weightingStatus === "incomplete"
+              ? "Known official percentages are retained and missing values remain blank. Because the breakdown is incomplete, every criterion uses the same neutral planning baseline."
+              : "No grading percentages were recorded. Equal planning effort is a scheduling default only."}
+        </p>
       </div>
 
       <div className="view-next-action">
@@ -270,7 +329,9 @@ export function UploadedDraftReviewView({
             <span>Rubric criterion</span>
             <select value={criterionId} onChange={(event) => setCriterionId(event.target.value)}>
               {project.criteria.map((criterion) => (
-                <option key={criterion.id} value={criterion.id}>{criterion.name} · {criterion.weight}%</option>
+                <option key={criterion.id} value={criterion.id}>
+                  {criterion.name}{criterion.weight !== null ? ` · ${criterion.weight}%` : ""}
+                </option>
               ))}
             </select>
           </label>
@@ -429,10 +490,19 @@ export function UploadedProgressView({
             const reviewed = completeReviewIds.has(criterion.id);
             return (
               <article key={criterion.id}>
-                <div><strong>{criterion.name}</strong><span>{criterion.weight}% of rubric</span></div>
+                <div>
+                  <strong>{criterion.name}</strong>
+                  <span>
+                    {criterion.weight === null
+                      ? "No published weight recorded"
+                      : project.weightingStatus === "complete"
+                        ? `${criterion.weight}% of rubric`
+                        : `${criterion.weight}% published · neutral plan`}
+                  </span>
+                </div>
                 <div className="coverage-metric">
-                  <span>Plan work</span>
-                  <progress max="100" value={planned}>{Math.round(planned)}%</progress>
+                  <span>Plan work complete</span>
+                  <progress aria-label={`${criterion.name} plan work complete`} max="100" value={planned}>{Math.round(planned)}%</progress>
                   <strong>{Math.round(planned)}%</strong>
                 </div>
                 <div className={`review-state ${reviewed ? "complete" : "not-started"}`}>

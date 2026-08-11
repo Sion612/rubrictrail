@@ -38,6 +38,8 @@ import {
 import {
   clearProjectState,
   createDefaultProjectState,
+  parsePreviousProjectStateValue,
+  PREVIOUS_STORAGE_KEY,
   readProjectStateWithStatus,
   STORAGE_KEY,
   writeProjectState,
@@ -326,6 +328,7 @@ export function RubricTrailApp() {
   const intakeRunId = useRef(0);
   const focusWelcomeIntake = useRef<AssignmentIntakeMode | null>(null);
   const observedStoredValue = useRef<string | null>(null);
+  const observedPreviousStoredValue = useRef<string | null>(null);
   const storageConflictActive = useRef(false);
 
   const cancelPersistenceTimer = useCallback(() => {
@@ -369,9 +372,13 @@ export function RubricTrailApp() {
       const result = readProjectStateWithStatus();
       latestProject.current = result.state;
       observedStoredValue.current = result.storedValue;
-      storageConflictActive.current = false;
+      observedPreviousStoredValue.current = result.previousStoredValue;
+      storageConflictActive.current = result.crossVersionConflict;
       persistHydratedState.current =
-        result.recovered && result.source !== "default";
+        result.recovered &&
+        result.source !== "default" &&
+        !result.crossVersionConflict;
+      setStorageConflict(result.crossVersionConflict);
       setProjectState(result.state);
       if (result.recovered) {
         setPersistenceWarning({
@@ -380,8 +387,10 @@ export function RubricTrailApp() {
             result.source === "legacy"
               ? "An older local project was recovered and is ready to upgrade. Review its details before continuing."
               : result.source === "v2"
-                ? "Obsolete entries were removed from this saved project. Review its details before continuing."
-                : "Saved browser data was incomplete or incompatible, so RubricTrail recovered with safe defaults. Review the project before continuing.",
+                ? "An earlier RubricTrail project was recovered and is ready to upgrade. Review its details before continuing."
+                : result.source === "v3"
+                  ? "Obsolete entries were removed from this saved project. Review its details before continuing."
+                  : "Saved browser data was incomplete or incompatible, so RubricTrail recovered with safe defaults. Review the project before continuing.",
         });
       }
       setHydrated(true);
@@ -407,7 +416,11 @@ export function RubricTrailApp() {
     }
     cancelPersistenceTimer();
     persistenceTimer.current = window.setTimeout(() => {
-      const result = writeProjectState(project, observedStoredValue.current);
+      const result = writeProjectState(
+        project,
+        observedStoredValue.current,
+        observedPreviousStoredValue.current,
+      );
       if (result.ok) {
         observedStoredValue.current = result.serialized;
         if (latestProject.current === project) {
@@ -440,6 +453,7 @@ export function RubricTrailApp() {
       const result = writeProjectState(
         latestProject.current,
         observedStoredValue.current,
+        observedPreviousStoredValue.current,
       );
       if (result.ok) {
         observedStoredValue.current = result.serialized;
@@ -456,9 +470,21 @@ export function RubricTrailApp() {
     if (!hydrated) return;
     const detectExternalProjectChange = (event: StorageEvent) => {
       if (event.storageArea && event.storageArea !== window.localStorage) return;
-      if (event.key !== STORAGE_KEY && event.key !== null) return;
-      const nextStoredValue = event.key === null ? null : event.newValue;
-      if (nextStoredValue === observedStoredValue.current) return;
+      if (
+        event.key !== STORAGE_KEY &&
+        event.key !== PREVIOUS_STORAGE_KEY &&
+        event.key !== null
+      ) return;
+      if (event.key === STORAGE_KEY && event.newValue === observedStoredValue.current) return;
+      if (
+        event.key === PREVIOUS_STORAGE_KEY &&
+        event.newValue === observedPreviousStoredValue.current
+      ) return;
+      if (
+        event.key === null &&
+        observedStoredValue.current === null &&
+        observedPreviousStoredValue.current === null
+      ) return;
       markStorageConflict();
     };
     window.addEventListener("storage", detectExternalProjectChange);
@@ -663,10 +689,14 @@ export function RubricTrailApp() {
   }
 
   function clearSavedProjectForReplacement(): boolean {
-    const clearResult = clearProjectState(observedStoredValue.current);
+    const clearResult = clearProjectState(
+      observedStoredValue.current,
+      observedPreviousStoredValue.current,
+    );
     if (clearResult.ok) {
       cancelPersistenceTimer();
       observedStoredValue.current = null;
+      observedPreviousStoredValue.current = null;
       clearStorageConflict();
       return true;
     }
@@ -755,29 +785,99 @@ export function RubricTrailApp() {
   }
 
   function loadLatestSavedProject() {
-    if (
-      !window.confirm(
-        "Load the project version saved by another tab? Changes kept only in this tab will be replaced. Download this tab first if you may need them.",
-      )
-    ) {
-      return;
-    }
-
-    const result = readProjectStateWithStatus();
-    if (!result.storageAvailable) {
+    const storageSnapshot = readProjectStateWithStatus();
+    if (!storageSnapshot.storageAvailable) {
       const message =
         "Browser storage could not be read, so nothing was replaced. This tab and its conflict warning were left unchanged.";
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
       return;
     }
+
+    const currentV3Changed =
+      storageSnapshot.storedValue !== observedStoredValue.current;
+    const currentV2Changed =
+      storageSnapshot.previousStoredValue !== observedPreviousStoredValue.current;
+    const shouldLoadPrevious =
+      storageSnapshot.previousStoredValue !== null &&
+      ((!currentV3Changed && currentV2Changed) ||
+        (!currentV3Changed &&
+          !currentV2Changed &&
+          storageSnapshot.crossVersionConflict));
+
     if (
-      result.source === "default" &&
-      result.recovered &&
-      result.storedValue !== null
+      currentV3Changed &&
+      currentV2Changed &&
+      storageSnapshot.crossVersionConflict
+    ) {
+      const message =
+        "Both browser storage versions changed, so RubricTrail cannot safely decide which is newer. Download this tab, then explicitly keep it or reopen the other tab before replacing anything.";
+      setPersistenceWarning({ kind: "write", message });
+      showNotice({ tone: "warning", message });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        shouldLoadPrevious
+          ? "Load and upgrade the project saved by the older RubricTrail tab? Changes kept only in this tab will be replaced. Download this tab first if you may need them."
+          : "Load the project version saved by another tab? Changes kept only in this tab will be replaced. Download this tab first if you may need them.",
+      )
+    ) {
+      return;
+    }
+
+    let result = storageSnapshot;
+    let loadedFromPreviousVersion = false;
+    if (shouldLoadPrevious && storageSnapshot.previousStoredValue !== null) {
+      const parsedPrevious = parsePreviousProjectStateValue(
+        storageSnapshot.previousStoredValue,
+      );
+      if (!parsedPrevious.ok) {
+        const message =
+          "The older-version saved project is incomplete or incompatible, so it was not loaded. Both browser values were left unchanged.";
+        setPersistenceWarning({ kind: "write", message });
+        showNotice({ tone: "warning", message });
+        return;
+      }
+      const promoted = writeProjectState(
+        parsedPrevious.state,
+        storageSnapshot.storedValue,
+        storageSnapshot.previousStoredValue,
+      );
+      if (!promoted.ok) {
+        const message =
+          promoted.reason === "conflict"
+            ? "The saved project changed again while the older version was being upgraded. Nothing was selected; review the conflict and try again."
+            : promoted.reason === "invalid-state"
+              ? "The older-version project failed migration validation, so neither saved value was replaced."
+              : "Browser storage could not save the upgraded project, so neither saved value was replaced.";
+        setPersistenceWarning({ kind: "write", message });
+        showNotice({ tone: "warning", message });
+        return;
+      }
+      result = {
+        state: parsedPrevious.state,
+        source: "v2",
+        recovered: true,
+        storedValue: promoted.serialized,
+        previousStoredValue: storageSnapshot.previousStoredValue,
+        crossVersionConflict: false,
+        storageAvailable: true,
+      };
+      loadedFromPreviousVersion = true;
+    } else if (
+      storageSnapshot.source === "default" &&
+      storageSnapshot.recovered
     ) {
       const message =
         "The latest browser data is incomplete or incompatible, so it was not loaded. Download this tab before resetting or replacing anything.";
+      setPersistenceWarning({ kind: "write", message });
+      showNotice({ tone: "warning", message });
+      return;
+    } else if (storageSnapshot.crossVersionConflict) {
+      const message =
+        "Two different browser storage versions are present, so RubricTrail did not guess which one to load. Download this tab or explicitly keep it before replacing either version.";
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
       return;
@@ -790,6 +890,7 @@ export function RubricTrailApp() {
     draftCheckActive.current = false;
     latestProject.current = result.state;
     observedStoredValue.current = result.storedValue;
+    observedPreviousStoredValue.current = result.previousStoredValue;
     hasPendingProjectChange.current = false;
     skipNextPersistenceWrite.current = true;
     clearStorageConflict();
@@ -817,32 +918,49 @@ export function RubricTrailApp() {
     );
     showNotice({
       tone: "success",
-      message: "Latest saved project loaded. Autosave is active again in this tab.",
+      message: loadedFromPreviousVersion
+        ? "Older-version saved project loaded and upgraded. Autosave is active again in this tab."
+        : "Latest saved project loaded. Autosave is active again in this tab.",
     });
   }
 
   function keepThisTabProject() {
     if (
       !window.confirm(
-        "Replace the newer saved project with this tab? Changes made in the other tab will be lost. Download this tab or the other tab first if either version may be needed.",
+        "Make this tab the active saved project? The other browser version will be superseded. Download this tab or the other tab first if either version may be needed.",
       )
     ) {
       return;
     }
 
     cancelPersistenceTimer();
-    const result = writeProjectState(latestProject.current);
+    const currentStorage = readProjectStateWithStatus();
+    if (!currentStorage.storageAvailable) {
+      const message =
+        "Browser storage could not be read, so this tab did not replace the saved project.";
+      setPersistenceWarning({ kind: "write", message });
+      showNotice({ tone: "warning", message });
+      return;
+    }
+    const result = writeProjectState(
+      latestProject.current,
+      currentStorage.storedValue,
+      currentStorage.previousStoredValue,
+    );
     if (!result.ok) {
       const message =
         result.reason === "invalid-state"
           ? "This tab failed local validation, so it did not replace the saved project."
-          : "Browser storage is unavailable or full, so this tab did not replace the saved project.";
+          : result.reason === "conflict"
+            ? "The saved project changed again, so this tab did not replace it. Review the conflict and try again."
+            : "Browser storage is unavailable or full, so this tab did not replace the saved project.";
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
       return;
     }
 
     observedStoredValue.current = result.serialized;
+    observedPreviousStoredValue.current = currentStorage.previousStoredValue;
     hasPendingProjectChange.current = false;
     clearStorageConflict();
     setPersistenceWarning((current) =>
@@ -850,7 +968,7 @@ export function RubricTrailApp() {
     );
     showNotice({
       tone: "success",
-      message: "This tab is now the saved version. Autosave is active again.",
+      message: "This tab is now the active saved version. Autosave is active again.",
     });
   }
 
@@ -882,6 +1000,7 @@ export function RubricTrailApp() {
       const writeResult = writeProjectState(
         backup.state,
         observedStoredValue.current,
+        observedPreviousStoredValue.current,
       );
       if (!writeResult.ok) {
         if (writeResult.reason === "conflict") {

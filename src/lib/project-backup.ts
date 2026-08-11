@@ -71,6 +71,8 @@ function portableProjectState(state: PersistedProjectState): {
 } {
   const nextState: PersistedProjectState = {
     ...state,
+    // Browser-key lineage is local concurrency metadata, not portable project data.
+    supersededV2Fingerprint: null,
     draftText: state.projectKind === "uploaded" ? "" : state.draftText,
     draftResult: null,
     checkedDraftText: null,

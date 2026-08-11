@@ -31,6 +31,44 @@ function completeUpload(): UploadFlowResult {
   };
 }
 
+function incompleteWeightUpload(): UploadFlowResult {
+  const text = [
+    "Assignment title: Retail Operations Analysis",
+    "Deadline: 24 September 2026",
+    "Word count: 2500 words",
+    "Use APA 7 referencing.",
+    "Rubric",
+    "- Problem diagnosis",
+    "- Recommendations — 40%",
+  ].join("\n");
+  return {
+    intakeMethod: "files",
+    fileNames: ["brief.txt"],
+    skippedFiles: [],
+    totalWords: 20,
+    summary: buildUploadedAssignmentSummary(text),
+  };
+}
+
+function noWeightUpload(): UploadFlowResult {
+  const text = [
+    "Assignment title: Retail Operations Analysis",
+    "Deadline: 24 September 2026",
+    "Word count: 2500 words",
+    "Use APA 7 referencing.",
+    "Rubric",
+    "- Problem diagnosis",
+    "- Recommendations",
+  ].join("\n");
+  return {
+    intakeMethod: "files",
+    fileNames: ["brief.txt"],
+    skippedFiles: [],
+    totalWords: 18,
+    summary: buildUploadedAssignmentSummary(text),
+  };
+}
+
 describe("uploaded project workflow", () => {
   it("normalizes safe date formats and leaves ambiguous numeric dates blank", () => {
     expect(normalizeDateForInput("24 September 2026")).toBe("2026-09-24");
@@ -45,8 +83,75 @@ describe("uploaded project workflow", () => {
     expect(validateUploadedProjectDraft(draft)).toEqual([]);
     draft.criteria[0].weight = "39";
     expect(validateUploadedProjectDraft(draft)).toContain(
-      "Rubric weights must total 100%; they currently total 99%.",
+      "Published rubric weights must total 100%; they currently total 99%. Check for a missing criterion or a mistyped percentage.",
     );
+  });
+
+  it("requires an explicit choice when published weights are incomplete", () => {
+    const draft = draftFromUpload(incompleteWeightUpload());
+
+    expect(draft.weightingMode).toBeNull();
+    expect(validateUploadedProjectDraft(draft)).toContain(
+      "Choose whether the official rubric provides a complete percentage breakdown.",
+    );
+  });
+
+  it("retains partial official weights while keeping planning neutral", () => {
+    const upload = incompleteWeightUpload();
+    const draft = draftFromUpload(upload);
+    draft.weightingMode = "not_complete";
+
+    expect(validateUploadedProjectDraft(draft)).toEqual([]);
+    const project = createUploadedProject(upload, draft);
+    expect(project.weightingStatus).toBe("incomplete");
+    expect(project.criteria.map((criterion) => criterion.weight)).toEqual([
+      null,
+      40,
+    ]);
+
+    const criterionTasks = buildUploadedPlanTemplates(project).filter((task) =>
+      task.id.startsWith("criterion-"),
+    );
+    expect(new Set(criterionTasks.map((task) => task.baseMinutes))).toHaveLength(1);
+    expect(new Set(criterionTasks.map((task) => task.priority))).toEqual(
+      new Set(["high"]),
+    );
+    expect(
+      criterionTasks.every(
+        (task) => Number.isFinite(task.baseMinutes) && task.baseMinutes > 0,
+      ),
+    ).toBe(true);
+    expect(
+      buildUploadedPlanTemplates(project).find(
+        (task) => task.id === "rubric-outline",
+      )?.description,
+    ).not.toContain("higher-weight");
+  });
+
+  it("stores no weights when none are published without synthesising equal percentages", () => {
+    const upload = noWeightUpload();
+    const draft = draftFromUpload(upload);
+    draft.weightingMode = "not_complete";
+
+    expect(validateUploadedProjectDraft(draft)).toEqual([]);
+    const project = createUploadedProject(upload, draft);
+    expect(project.weightingStatus).toBe("none");
+    expect(project.criteria.map((criterion) => criterion.weight)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  it("validates an optional partial percentage without requiring missing values", () => {
+    const draft = draftFromUpload(incompleteWeightUpload());
+    draft.weightingMode = "not_complete";
+    draft.criteria[0].weight = "not-a-number";
+
+    expect(validateUploadedProjectDraft(draft)).toContain(
+      "Criterion 1: use an official percentage greater than 0 and no more than 100, or leave it blank if none is published.",
+    );
+    draft.criteria[0].weight = "";
+    expect(validateUploadedProjectDraft(draft)).toEqual([]);
   });
 
   it("rejects calendar-invalid and resource-exhausting project inputs", () => {
@@ -100,6 +205,7 @@ describe("uploaded project workflow", () => {
     const project = createUploadedProject(upload, draftFromUpload(upload));
 
     expect(project.title).toBe("Strategy Report");
+    expect(project.weightingStatus).toBe("complete");
     expect(project.criteria.map((criterion) => criterion.weight)).toEqual([40, 35, 25]);
     expect(project.fileNames).toEqual(["brief.txt", "rubric.txt"]);
     expect(JSON.stringify(project)).not.toContain("Use APA 7 referencing");

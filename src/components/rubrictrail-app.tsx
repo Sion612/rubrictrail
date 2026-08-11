@@ -20,8 +20,14 @@ import {
   UploadedRubricView,
 } from "@/components/views/uploaded-project-views";
 import { BRAND } from "@/lib/brand";
+import type { PlanningDepth } from "@/lib/domain";
 import { SAMPLE_ASSIGNMENT, SAMPLE_DRAFT_TEXT } from "@/lib/sample-data";
-import { generateActionPlan } from "@/lib/plan";
+import {
+  generateActionPlan,
+  legacyTargetGradeForPlanningDepth,
+  planningDepthFromLegacyTargetGrade,
+  PLANNING_DEPTH_OPTIONS,
+} from "@/lib/plan";
 import { runMockDraftCheck } from "@/lib/mock-service";
 import { UPLOADED_READINESS } from "@/lib/readiness";
 import {
@@ -553,7 +559,7 @@ export function RubricTrailApp() {
       generateActionPlan(
         {
           weeklyHours: project.weeklyHours,
-          targetGrade: project.targetGrade,
+          planningDepth: planningDepthFromLegacyTargetGrade(project.targetGrade),
           startDate: planStartFor(dueDate, today),
           dueDate,
           asOfDate: today,
@@ -1060,11 +1066,18 @@ export function RubricTrailApp() {
     }
   }
 
-  function rebalancePlan(weeklyHours: number, targetGrade: number) {
-    updateProject((current) => ({ ...current, weeklyHours, targetGrade }));
+  function rebalancePlan(weeklyHours: number, planningDepth: PlanningDepth) {
+    updateProject((current) => ({
+      ...current,
+      weeklyHours,
+      targetGrade: legacyTargetGradeForPlanningDepth(planningDepth),
+    }));
+    const planningDepthLabel = PLANNING_DEPTH_OPTIONS.find(
+      (option) => option.value === planningDepth,
+    )?.label ?? "Standard";
     showNotice({
       tone: weeklyHours <= 5 ? "warning" : "success",
-      message: `Plan updated for ${weeklyHours} hours per week and a ${targetGrade}% target band.`,
+      message: `Plan updated for ${weeklyHours} hours per week with ${planningDepthLabel} planning depth.`,
     });
   }
 
@@ -1380,7 +1393,14 @@ export function RubricTrailApp() {
   } else if (project.view === "rubric") {
     activeView = <RubricView analysis={SAMPLE_ASSIGNMENT} draftResult={currentDraftResult} plan={plan} onOpenEvidence={setSelectedEvidenceId} />;
   } else if (project.view === "plan") {
-    activeView = <ActionPlanView plan={plan} onRebalance={rebalancePlan} onToggleTask={toggleTask} onNavigateDraft={() => navigate("draft")} />;
+    activeView = (
+      <ActionPlanView
+        plan={plan}
+        onRebalance={rebalancePlan}
+        onToggleTask={toggleTask}
+        onNavigateDraft={() => navigate("draft")}
+      />
+    );
   } else if (project.view === "draft") {
     activeView = (
       <DraftCheckView

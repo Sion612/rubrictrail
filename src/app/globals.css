@@ -645,6 +645,7 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 .plan-control-title strong, .plan-control-title span { display: block; }
 .plan-control-title span { color: var(--muted); font-size: 0.7rem; }
 .plan-controls label > span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 0.68rem; font-weight: 700; }
+.planning-depth-description { display: block; max-width: 24rem; margin-top: 6px; color: var(--muted); font-size: 0.7rem; line-height: 1.35; }
 .plan-summary-line { display: flex; flex-wrap: wrap; gap: 22px; color: var(--muted); font-size: 0.75rem; }
 .plan-summary-line span { display: inline-flex; align-items: center; gap: 6px; }
 .plan-summary-line svg { color: var(--teal); }

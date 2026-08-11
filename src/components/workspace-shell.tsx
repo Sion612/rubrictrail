@@ -131,7 +131,12 @@ export function WorkspaceShell({
     <div className="app-shell">
       <a className="skip-link" href="#workspace-main">Skip to main content</a>
       <header className="app-header">
-        <button className="brand-lockup brand-button" type="button" onClick={() => onNavigate("overview")}>
+        <button
+          className="brand-lockup brand-button"
+          type="button"
+          aria-label={`${BRAND.name}: open project brief`}
+          onClick={() => onNavigate("overview")}
+        >
           <span className="brand-mark" aria-hidden="true"><Route /></span>
           <span>{BRAND.name}</span>
         </button>

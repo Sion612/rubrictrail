@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, GitBranch, SlidersHorizontal } from "lucide-react";
-import type { ActionPlan } from "@/lib/domain";
+import type { ActionPlan, PlanningDepth } from "@/lib/domain";
+import { PLANNING_DEPTH_OPTIONS } from "@/lib/plan";
 
 interface ActionPlanViewProps {
   plan: ActionPlan;
-  onRebalance: (weeklyHours: number, targetGrade: number) => void;
+  onRebalance: (weeklyHours: number, planningDepth: PlanningDepth) => void;
   onToggleTask: (taskId: string) => void;
   onNavigateDraft: () => void;
 }
@@ -23,8 +24,37 @@ function dateLabel(value: string) {
 }
 
 export function ActionPlanView({ plan, onRebalance, onToggleTask, onNavigateDraft }: ActionPlanViewProps) {
-  const [weeklyHours, setWeeklyHours] = useState(plan.profile.weeklyHours);
-  const [targetGrade, setTargetGrade] = useState(plan.profile.targetGrade);
+  const profileKey = [
+    plan.profile.weeklyHours,
+    plan.profile.planningDepth,
+    plan.profile.startDate,
+    plan.profile.dueDate,
+    plan.profile.asOfDate,
+  ].join(":");
+  const [controlDraft, setControlDraft] = useState(() => ({
+    profileKey,
+    weeklyHours: plan.profile.weeklyHours,
+    planningDepth: plan.profile.planningDepth,
+  }));
+  const controls =
+    controlDraft.profileKey === profileKey
+      ? controlDraft
+      : {
+          profileKey,
+          weeklyHours: plan.profile.weeklyHours,
+          planningDepth: plan.profile.planningDepth,
+        };
+  const updateControls = (
+    update: Partial<Pick<typeof controls, "weeklyHours" | "planningDepth">>,
+  ) => {
+    setControlDraft({ ...controls, ...update, profileKey });
+  };
+  const selectedPlanningDepth =
+    PLANNING_DEPTH_OPTIONS.find(
+      (option) => option.value === controls.planningDepth,
+    ) ??
+    PLANNING_DEPTH_OPTIONS[1];
+
   const taskNameById = useMemo(() => new Map(plan.tasks.map((task) => [task.id, task.title])), [plan.tasks]);
   const phases = useMemo(() => {
     const grouped = new Map<string, typeof plan.tasks>();
@@ -46,23 +76,31 @@ export function ActionPlanView({ plan, onRebalance, onToggleTask, onNavigateDraf
       </header>
 
       <section className="plan-controls" aria-labelledby="plan-controls-title">
-        <div className="plan-control-title"><SlidersHorizontal aria-hidden="true" /><div><strong id="plan-controls-title">Rebalance your plan</strong><span>Change one constraint and see the schedule respond.</span></div></div>
+        <div className="plan-control-title"><SlidersHorizontal aria-hidden="true" /><div><strong id="plan-controls-title">Rebalance your plan</strong><span id="planning-depth-guidance">Planning depth adjusts task scope and time allowance only. It does not correspond to or predict a grade.</span></div></div>
         <label>
           <span>Study time</span>
-          <select value={weeklyHours} onChange={(event) => setWeeklyHours(Number(event.target.value))} data-testid="weekly-hours">
+          <select value={controls.weeklyHours} onChange={(event) => updateControls({ weeklyHours: Number(event.target.value) })} data-testid="weekly-hours">
             {[5, 8, 10, 12, 15].map((hours) => <option key={hours} value={hours}>{hours} hours / week</option>)}
           </select>
         </label>
-        <label>
-          <span>Target band</span>
-          <select value={targetGrade} onChange={(event) => setTargetGrade(Number(event.target.value))} data-testid="target-grade">
-            <option value={60}>60% target</option>
-            <option value={70}>70% target</option>
-            <option value={75}>75% target</option>
-            <option value={80}>80% target</option>
+        <div className="plan-control-field">
+          <label htmlFor="planning-depth"><span>Planning depth</span></label>
+          <select
+            id="planning-depth"
+            value={controls.planningDepth}
+            onChange={(event) => updateControls({ planningDepth: event.target.value as PlanningDepth })}
+            aria-describedby="planning-depth-guidance planning-depth-description"
+            data-testid="planning-depth"
+          >
+            {PLANNING_DEPTH_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
           </select>
-        </label>
-        <button className="button button-secondary" type="button" onClick={() => onRebalance(weeklyHours, targetGrade)} data-testid="rebalance-plan">Rebalance plan</button>
+          <small id="planning-depth-description" className="planning-depth-description">
+            {selectedPlanningDepth.description}
+          </small>
+        </div>
+        <button className="button button-secondary" type="button" onClick={() => onRebalance(controls.weeklyHours, controls.planningDepth)} data-testid="rebalance-plan">Rebalance plan</button>
       </section>
 
       {plan.capacityRisk ? (

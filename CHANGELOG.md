@@ -4,6 +4,26 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-08-12
+
+### Changed
+
+- Replaced the percentage-labelled target band with `focused`, `standard`,
+  `thorough` and `extended` planning depth. Planning depth changes task scope
+  and scheduling time allowance only; it does not correspond to or predict a
+  grade.
+- Retained the existing state-v3 `targetGrade` numbers only as a
+  backward-compatible internal encoding for planning depth, with the four
+  previously exposed values preserving their task gates and effort multipliers.
+- Updated the sample browser flow to select extended planning depth and reject
+  percentage-labelled grade or target-band copy.
+
+### Fixed
+
+- Pointed the v0.3.4 verification documentation to the exact main-commit CI run.
+- Kept the compact brand navigation accessible when its visible label is hidden
+  at narrow responsive widths.
+
 ## [0.3.4] - 2026-08-12
 
 ### Added

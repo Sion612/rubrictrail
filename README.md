@@ -46,6 +46,9 @@ The custom workflow includes:
 - explicit mixed-batch recovery that never silently drops an unreadable file;
 - exact retained rubric excerpts with filename and PDF page when available;
 - a generic dependency-aware plan linked only to confirmed criteria;
+- `focused`, `standard`, `thorough` and `extended` planning-depth choices that
+  adjust task scope and time allowance only; they do not correspond to or
+  predict a grade;
 - explicit `complete`, `incomplete` and `none` weighting states that never
   estimate missing percentages; only a complete 100% breakdown weights the
   plan, while the other states use a neutral planning baseline;
@@ -79,6 +82,12 @@ and writes the imported state before changing the open workspace.
 State-v3 backups remain separate from the outer backup-format version. Valid v2
 uploaded custom projects and backups migrate to v3 with their complete numeric
 weights preserved; sample and empty state migrate without an uploaded rubric.
+For backward compatibility, state v3 still stores the planning-depth choice in
+its existing numeric `targetGrade` field. Those legacy numbers are an internal
+plan-profile encoding only; they are not a requested, estimated or predicted
+mark. The four values previously exposed by the interface keep the same task
+gates and time multipliers, so this wording correction does not silently
+reschedule an existing supported profile.
 Newer unsupported versions still fail with an upgrade message rather than being
 guessed at. The v2 browser value is retained as a recovery candidate. Each v3
 save records a non-cryptographic fingerprint of the v2 bytes it superseded, so
@@ -156,15 +165,16 @@ and narrow responsive browser suite:
 pnpm test:e2e --workers=1
 ```
 
-Current v0.3.4 verification on 12 August 2026 ([GitHub Actions run 31542879582](https://github.com/Sion612/rubrictrail/actions/runs/31542879582)):
+Current v0.3.5 runtime and test-code verification on 12 August 2026
+([commit `e381b6c`, GitHub Actions run 31545829172](https://github.com/Sion612/rubrictrail/actions/runs/31545829172)):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 157/157 tests passed across 14 files |
+| Vitest | 160/160 tests passed across 14 files |
 | Next.js production build | Passed |
-| Playwright | GitHub Actions: 22/22 executions passed (11 scenarios × 1440×900 and 390×844 Chromium viewports), including multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
+| Playwright | GitHub Actions: 22/22 executions passed (11 scenarios × 1440×900 and 390×844 Chromium viewports), including planning-depth persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,
@@ -237,6 +247,8 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
   do not provide a complete CPU or peak-memory sandbox for malicious compressed
   DOCX/PDF files.
 - Custom projects rely on user confirmation rather than semantic AI extraction.
+- Planning depth changes the generated task scope and time allowance, not the
+  meaning of the rubric or the likelihood of a grade.
 - The self-check records the user's judgment; it does not validate argument
   quality or source correctness.
 - There is no account, automatic sync, collaboration or multi-project dashboard;

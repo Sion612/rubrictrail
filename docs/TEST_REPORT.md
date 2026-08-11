@@ -3,7 +3,8 @@
 Date: 12 August 2026
 Runtime: Node.js 24 in CI, pnpm 11.9.0
 Browser method: GitHub Actions Playwright projects at desktop and narrow
-responsive Chromium sizes; see the [v0.3.4 feature verification run](https://github.com/Sion612/rubrictrail/actions/runs/31542879582)
+responsive Chromium sizes; see the [v0.3.5 runtime and test-code verification
+run for commit `e381b6c`](https://github.com/Sion612/rubrictrail/actions/runs/31545829172)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
@@ -12,7 +13,7 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 14 files, 157/157 tests passed |
+| `pnpm test` | 14 files, 160/160 tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed |
 | `pnpm test:e2e --workers=1` | GitHub Actions: 22/22 executions passed (11 scenarios × 2 Chromium viewports) |
 | `pnpm audit --audit-level high` | No known vulnerabilities found |
@@ -22,6 +23,8 @@ The browser suite runs each scenario at 1440×900 and a narrow responsive
 The narrow projects do not emulate a mobile user agent or touch device:
 
 - sample evidence-to-progress flow and honest demo-signal language;
+- planning-depth task scope, accessible explanation and refresh persistence
+  without percentage-labelled grade targets;
 - direct sample-to-own-assignment handoff with focus restoration;
 - complete TXT upload, editable confirmation and local project creation;
 - mixed valid/unsupported file intake, explicit omission review, Back

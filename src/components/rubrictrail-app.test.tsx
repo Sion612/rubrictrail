@@ -476,6 +476,48 @@ describe("RubricTrailApp reliability", () => {
     );
   });
 
+  it("rebalances by planning depth without presenting a grade target", async () => {
+    render(<RubricTrailApp />);
+    await advance(0);
+    fireEvent.click(screen.getByTestId("try-sample"));
+    await advance(450);
+    expect(
+      screen.getByRole("button", { name: "RubricTrail: open project brief" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /Plan/i })[0]);
+
+    const planningDepth = screen.getByTestId("planning-depth");
+    expect(planningDepth).toHaveValue("standard");
+    expect(planningDepth).toHaveAccessibleName("Planning depth");
+    expect(screen.getByRole("option", { name: "Focused" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Standard" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Thorough" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Extended" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Planning depth adjusts task scope and time allowance only. It does not correspond to or predict a grade.",
+      ),
+    ).toBeInTheDocument();
+    expect(planningDepth).toHaveAccessibleDescription(
+      /A balanced plan with a source-and-language review pass\./,
+    );
+    expect(screen.queryByText("Target band")).not.toBeInTheDocument();
+
+    fireEvent.change(planningDepth, { target: { value: "thorough" } });
+    expect(planningDepth).toHaveAccessibleDescription(
+      /More time for limitations, alternatives and deeper review\./,
+    );
+    const rebalance = screen.getByTestId("rebalance-plan");
+    rebalance.focus();
+    fireEvent.click(rebalance);
+
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "Plan updated for 10 hours per week with Thorough planning depth.",
+    );
+    expect(screen.getByTestId("toast")).not.toHaveTextContent("%");
+    expect(rebalance).toHaveFocus();
+  });
+
   it("gives sample users a direct, explicit path to their own files", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<RubricTrailApp />);

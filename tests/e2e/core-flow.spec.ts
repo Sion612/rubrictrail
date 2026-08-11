@@ -11,8 +11,10 @@ async function resetProject(page: Page) {
 
 function visibleWorkflowButton(page: Page, label: string) {
   return page
-    .locator("nav.mobile-workflow button:visible, aside.workflow-rail button:visible")
-    .filter({ hasText: new RegExp(`\\b${label}\\b`) })
+    .locator("nav.mobile-workflow:visible, aside.workflow-rail:visible")
+    .getByRole("button", {
+      name: new RegExp(`(?:^|\\s)${label}(?:\\s|$)`),
+    })
     .first();
 }
 

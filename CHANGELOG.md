@@ -4,6 +4,33 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-12
+
+### Added
+
+- Added explicit partial recovery for mixed file batches: readable sources are
+  retained while supported per-file problems are listed for review.
+- Added a two-stage confirmation that shows ready and omitted files before the
+  assignment summary, then repeats the omission warning before project creation.
+
+### Changed
+
+- Keeps file-count, combined-byte, retained-text and parser-availability limits
+  atomic even when individual file errors can be skipped.
+- Preserves original selection identity in source IDs so a skipped middle file
+  cannot renumber later evidence.
+- Keeps a partial preview available while switching between file and paste
+  intake, and explains that a new file choice replaces the whole selection.
+
+### Security
+
+- Keeps omitted file names and issue metadata transient; only readable source
+  names, confirmed fields and short excerpts can enter local state or backups.
+- Rejects unsafe or overlong file names before they can enter the persisted
+  project, and separates local parser failures from damaged-document errors.
+- Adds explicit 320 px overflow and privacy coverage for long, unsupported file
+  names in a mixed batch.
+
 ## [0.3.1] - 2026-08-12
 
 ### Added

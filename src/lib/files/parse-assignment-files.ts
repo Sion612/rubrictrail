@@ -3,6 +3,7 @@ const MAX_FILE_COUNT = 10;
 const MAX_TOTAL_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const MAX_EXTRACTED_TEXT_CHARACTERS = 2_000_000;
 const MAX_EVIDENCE_EXCERPT_CHARACTERS = 500;
+const UNSAFE_FILE_NAME_CHARACTER = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
 
 export const ASSIGNMENT_FILE_MAX_BYTES = MAX_FILE_SIZE_BYTES;
 export const ASSIGNMENT_FILE_MAX_COUNT = MAX_FILE_COUNT;
@@ -14,6 +15,7 @@ export const ASSIGNMENT_EVIDENCE_EXCERPT_MAX_CHARACTERS =
 
 export type AssignmentFileErrorCode =
   | "UNSUPPORTED_FILE_TYPE"
+  | "INVALID_FILE_NAME"
   | "FILE_TOO_LARGE"
   | "TOO_MANY_FILES"
   | "TOTAL_FILE_SIZE_TOO_LARGE"
@@ -21,6 +23,7 @@ export type AssignmentFileErrorCode =
   | "EMPTY_FILE"
   | "SCANNED_NO_TEXT"
   | "ENCRYPTED_PDF"
+  | "PARSER_UNAVAILABLE"
   | "CORRUPT_DOCUMENT";
 
 export type AssignmentFileKind = "txt" | "docx" | "pdf";
@@ -39,6 +42,16 @@ export class AssignmentFileParseError extends Error {
     this.name = "AssignmentFileParseError";
     this.code = code;
     this.fileName = fileName;
+  }
+}
+
+export class AssignmentFileBatchParseError extends Error {
+  readonly failures: readonly SkippedAssignmentFile[];
+
+  constructor(failures: readonly SkippedAssignmentFile[]) {
+    super("None of the selected files could be read safely.");
+    this.name = "AssignmentFileBatchParseError";
+    this.failures = failures;
   }
 }
 
@@ -66,11 +79,24 @@ export interface ParsedAssignmentSource {
   pages: ParsedAssignmentPage[];
 }
 
+export interface SkippedAssignmentFile {
+  inputIndex: number;
+  fileName: string;
+  code: AssignmentFileErrorCode;
+  message: string;
+}
+
 export interface ParsedAssignmentFiles {
   text: string;
   sources: ParsedAssignmentSource[];
   totalBytes: number;
   wordCount: number;
+}
+
+export interface RecoveredAssignmentFiles {
+  parsed: ParsedAssignmentFiles;
+  skippedFiles: SkippedAssignmentFile[];
+  selectedFileCount: number;
 }
 
 export interface UploadedSourceEvidence {
@@ -199,6 +225,16 @@ const RUBRIC_HEADING_PATTERN =
 const RUBRIC_END_HEADING_PATTERN =
   /^(?:submission requirements?|deadline|due date|academic integrity|referenc(?:e|es|ing)|bibliography|appendix|learning outcomes?|assignment task|deliverables?)\s*:?$/i;
 
+const RECOVERABLE_PER_FILE_ERROR_CODES = new Set<AssignmentFileErrorCode>([
+  "UNSUPPORTED_FILE_TYPE",
+  "INVALID_FILE_NAME",
+  "FILE_TOO_LARGE",
+  "EMPTY_FILE",
+  "SCANNED_NO_TEXT",
+  "ENCRYPTED_PDF",
+  "CORRUPT_DOCUMENT",
+]);
+
 /**
  * Parses assignment files entirely in the browser. DOCX and PDF parsers are
  * loaded only when their file type is encountered so TXT-only use stays light.
@@ -220,8 +256,9 @@ export async function parseAssignmentFiles(
     );
   }
 
-  const validatedFiles = files.map((file) => ({
+  const validatedFiles = files.map((file, inputIndex) => ({
     file,
+    inputIndex,
     kind: validateFile(file),
   }));
   const totalBytes = files.reduce((total, file) => total + file.size, 0);
@@ -234,13 +271,14 @@ export async function parseAssignmentFiles(
 
   const parsedFiles: Array<{
     file: File;
+    inputIndex: number;
     kind: AssignmentFileKind;
     parsed: LocallyParsedFile;
   }> = [];
   let extractedCharacterCount = 0;
 
   // Keep input order stable and avoid loading several large documents at once.
-  for (const { file, kind } of validatedFiles) {
+  for (const { file, inputIndex, kind } of validatedFiles) {
     const separatorLength = parsedFiles.length > 0 ? 2 : 0;
     const remainingCharacters =
       MAX_EXTRACTED_TEXT_CHARACTERS -
@@ -250,18 +288,106 @@ export async function parseAssignmentFiles(
       throw extractedTextTooLargeError(file);
     }
     const parsed = await parseSingleFile(file, kind, remainingCharacters);
-    parsedFiles.push({
-      file,
-      kind,
-      parsed,
-    });
+    parsedFiles.push({ file, inputIndex, kind, parsed });
     extractedCharacterCount += separatorLength + parsed.text.length;
   }
+
+  return mergeParsedAssignmentFiles(parsedFiles, totalBytes);
+}
+
+/**
+ * Parses a user-selected file batch while retaining files that can be read.
+ * Selection-wide count and byte limits remain strict; only per-file failures
+ * are recoverable. The strict parser above remains the default for callers
+ * such as pasted-text intake that require all supplied sources to succeed.
+ */
+export async function parseAssignmentFilesWithRecovery(
+  files: readonly File[],
+): Promise<RecoveredAssignmentFiles> {
+  if (files.length === 0) {
+    throw new AssignmentFileParseError(
+      "EMPTY_FILE",
+      "Choose at least one assignment file.",
+    );
+  }
+  if (files.length > MAX_FILE_COUNT) {
+    throw new AssignmentFileParseError(
+      "TOO_MANY_FILES",
+      `Choose no more than ${MAX_FILE_COUNT} assignment files at once.`,
+    );
+  }
+
+  const totalBytes = files.reduce((total, file) => total + file.size, 0);
+  if (totalBytes > MAX_TOTAL_FILE_SIZE_BYTES) {
+    throw new AssignmentFileParseError(
+      "TOTAL_FILE_SIZE_TOO_LARGE",
+      "The selected files exceed the 25 MiB combined limit.",
+    );
+  }
+
+  const parsedFiles: Array<{
+    file: File;
+    inputIndex: number;
+    kind: AssignmentFileKind;
+    parsed: LocallyParsedFile;
+  }> = [];
+  const skippedFiles: SkippedAssignmentFile[] = [];
+  let extractedCharacterCount = 0;
+
+  // Parse sequentially so one large or damaged source cannot fan out memory use.
+  for (const [inputIndex, file] of files.entries()) {
+    try {
+      const kind = validateFile(file);
+      const separatorLength = parsedFiles.length > 0 ? 2 : 0;
+      const remainingCharacters =
+        MAX_EXTRACTED_TEXT_CHARACTERS -
+        extractedCharacterCount -
+        separatorLength;
+      if (remainingCharacters <= 0) {
+        throw extractedTextTooLargeError(file);
+      }
+      const parsed = await parseSingleFile(file, kind, remainingCharacters);
+      parsedFiles.push({ file, inputIndex, kind, parsed });
+      extractedCharacterCount += separatorLength + parsed.text.length;
+    } catch (error) {
+      if (!(error instanceof AssignmentFileParseError)) {
+        throw error;
+      }
+      if (!RECOVERABLE_PER_FILE_ERROR_CODES.has(error.code)) {
+        throw error;
+      }
+      skippedFiles.push(skippedAssignmentFile(inputIndex, file, error));
+    }
+  }
+
+  if (parsedFiles.length === 0) {
+    throw new AssignmentFileBatchParseError(skippedFiles);
+  }
+
+  return {
+    parsed: mergeParsedAssignmentFiles(
+      parsedFiles,
+      parsedFiles.reduce((total, item) => total + item.file.size, 0),
+    ),
+    skippedFiles,
+    selectedFileCount: files.length,
+  };
+}
+
+function mergeParsedAssignmentFiles(
+  parsedFiles: Array<{
+    file: File;
+    inputIndex: number;
+    kind: AssignmentFileKind;
+    parsed: LocallyParsedFile;
+  }>,
+  totalBytes: number,
+): ParsedAssignmentFiles {
 
   let mergedText = "";
   const sources: ParsedAssignmentSource[] = [];
 
-  parsedFiles.forEach(({ file, kind, parsed }, index) => {
+  parsedFiles.forEach(({ file, inputIndex, kind, parsed }, index) => {
     if (index > 0) {
       mergedText += "\n\n";
     }
@@ -271,7 +397,7 @@ export async function parseAssignmentFiles(
     const endOffset = mergedText.length;
 
     sources.push({
-      id: `source-${index + 1}`,
+      id: `source-${inputIndex + 1}`,
       fileName: file.name,
       kind,
       mediaType: file.type || mediaTypeForKind(kind),
@@ -297,6 +423,32 @@ export async function parseAssignmentFiles(
     totalBytes,
     wordCount: countWords(mergedText),
   };
+}
+
+function skippedAssignmentFile(
+  inputIndex: number,
+  file: File,
+  error: AssignmentFileParseError,
+): SkippedAssignmentFile {
+  return {
+    inputIndex,
+    fileName: safeDisplayFileName(error.fileName ?? file.name, inputIndex),
+    code: error.code,
+    message: error.message,
+  };
+}
+
+function safeDisplayFileName(value: string, inputIndex: number): string {
+  const normalized = value
+    .replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (!normalized) {
+    return `File ${inputIndex + 1}`;
+  }
+  return normalized.length > 255
+    ? `${normalized.slice(0, 254)}…`
+    : normalized;
 }
 
 /**
@@ -354,6 +506,19 @@ export function buildUploadedAssignmentSummary(
 }
 
 function validateFile(file: File): AssignmentFileKind {
+  if (
+    !file.name.trim() ||
+    file.name.length > 255 ||
+    UNSAFE_FILE_NAME_CHARACTER.test(file.name)
+  ) {
+    throw new AssignmentFileParseError(
+      "INVALID_FILE_NAME",
+      file.name.trim()
+        ? "A selected file name is unsafe or longer than 255 characters. Rename it before trying again."
+        : "A selected file has no usable name. Rename it before trying again.",
+      null,
+    );
+  }
   const kind = detectFileKind(file);
   if (!kind) {
     throw new AssignmentFileParseError(
@@ -420,14 +585,23 @@ async function parseDocxFile(
   file: File,
   maxExtractedCharacters: number,
 ): Promise<LocallyParsedFile> {
+  let mammoth: MammothModuleLike;
   try {
-    const mammoth = (await import("mammoth")) as unknown as MammothModuleLike;
-    const extractRawText =
-      mammoth.extractRawText ?? mammoth.default?.extractRawText;
-    if (!extractRawText) {
-      throw new Error("The DOCX parser did not expose extractRawText.");
-    }
+    mammoth = (await import("mammoth")) as unknown as MammothModuleLike;
+  } catch (error) {
+    throw parserUnavailableError(file, "DOCX", error);
+  }
+  const extractRawText =
+    mammoth.extractRawText ?? mammoth.default?.extractRawText;
+  if (!extractRawText) {
+    throw parserUnavailableError(
+      file,
+      "DOCX",
+      new Error("The DOCX parser did not expose extractRawText."),
+    );
+  }
 
+  try {
     const result = await extractRawText({ arrayBuffer: await file.arrayBuffer() });
     const text = normalizeExtractedText(result.value);
     ensureTextWasExtracted(text, file, "EMPTY_FILE");
@@ -442,10 +616,12 @@ async function parsePdfFile(
   file: File,
   maxExtractedCharacters: number,
 ): Promise<LocallyParsedFile> {
-  let document: PdfDocumentLike | null = null;
-
+  let pdfjs: PdfModuleLike;
   try {
-    const pdfjs = (await import("pdfjs-dist")) as unknown as PdfModuleLike;
+    pdfjs = (await import("pdfjs-dist")) as unknown as PdfModuleLike;
+    if (typeof pdfjs.getDocument !== "function") {
+      throw new Error("The PDF parser did not expose getDocument.");
+    }
     if (
       typeof window !== "undefined" &&
       pdfjs.GlobalWorkerOptions &&
@@ -456,7 +632,13 @@ async function parsePdfFile(
         import.meta.url,
       ).toString();
     }
+  } catch (error) {
+    throw parserUnavailableError(file, "PDF", error);
+  }
 
+  let document: PdfDocumentLike | null = null;
+
+  try {
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(await file.arrayBuffer()),
       enableScripting: false,
@@ -528,6 +710,19 @@ async function parsePdfFile(
   } finally {
     await document?.destroy?.();
   }
+}
+
+function parserUnavailableError(
+  file: File,
+  format: "DOCX" | "PDF",
+  cause: unknown,
+): AssignmentFileParseError {
+  return new AssignmentFileParseError(
+    "PARSER_UNAVAILABLE",
+    `The local ${format} reader is unavailable. Try again or paste the assignment text.`,
+    file.name,
+    { cause },
+  );
 }
 
 function textFromPdfItem(item: unknown): string {

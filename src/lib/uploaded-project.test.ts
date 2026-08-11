@@ -25,6 +25,7 @@ function completeUpload(): UploadFlowResult {
   return {
     intakeMethod: "files",
     fileNames: ["brief.txt", "rubric.txt"],
+    skippedFiles: [],
     totalWords: 24,
     summary: buildUploadedAssignmentSummary(text),
   };

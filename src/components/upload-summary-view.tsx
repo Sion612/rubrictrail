@@ -17,6 +17,7 @@ import {
   validateUploadedProjectDraftIssues,
   type UploadedProjectDraftIssue,
 } from "@/lib/uploaded-project";
+import { assignmentFileIssueReason } from "@/lib/file-intake-messages";
 import type { UploadedSummaryFieldStatus } from "@/lib/files/parse-assignment-files";
 import type {
   UploadFlowResult,
@@ -114,8 +115,11 @@ export function UploadSummaryView({
     0,
   );
   const isPasted = result.intakeMethod === "paste";
+  const isPartial = result.skippedFiles.length > 0;
+  const selectedFileCount = result.fileNames.length + result.skippedFiles.length;
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     headingRef.current?.focus({ preventScroll: true });
   }, []);
 
@@ -204,7 +208,10 @@ export function UploadSummaryView({
         <button className="button button-ghost" type="button" onClick={onBack}>
           <ArrowLeft aria-hidden="true" />Back
         </button>
-        <div className="mode-indicator"><span aria-hidden="true" />{isPasted ? "Pasted text ready" : "Local parse complete"}</div>
+        <div className="mode-indicator">
+          <span aria-hidden="true" />
+          {isPasted ? "Pasted text ready" : isPartial ? "Partial parse ready" : "Local parse complete"}
+        </div>
       </header>
 
       <form className="summary-content summary-content-wide" onSubmit={submit} noValidate>
@@ -220,13 +227,44 @@ export function UploadSummaryView({
           </div>
         </div>
 
+        {isPartial ? (
+          <section
+            className="inline-alert warning partial-summary-warning"
+            aria-labelledby="partial-summary-title"
+          >
+            <AlertTriangle aria-hidden="true" />
+            <div>
+              <h2 id="partial-summary-title">
+                This preview uses {result.fileNames.length} of the {selectedFileCount} selected files.
+              </h2>
+              <p>
+                Files listed below were not included in any detected field or source excerpt. Check anything marked missing before creating the project.
+              </p>
+              <ul className="intake-file-list issue-list">
+                {result.skippedFiles.map((issue) => (
+                  <li key={`${issue.inputIndex}-${issue.code}`}>
+                    <strong>{issue.fileName}</strong>
+                    <span>{assignmentFileIssueReason(issue.code)}</span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                className="button button-ghost"
+                type="button"
+                onClick={onBack}
+              >
+                Review file selection
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         <div className="source-strip">
           <FileText aria-hidden="true" />
           <div>
             <strong>{result.fileNames.map(sourceDisplayName).join(", ")}</strong>
             <span>
-              {result.totalWords.toLocaleString()} source words · processed locally for this
-              preview; full source text is not stored
+              {result.fileNames.length} readable {result.fileNames.length === 1 ? "source" : "sources"} · {result.totalWords.toLocaleString()} source words · processed locally for this preview; full source text is not stored
             </span>
           </div>
         </div>
@@ -433,7 +471,7 @@ export function UploadSummaryView({
 
         <div className="summary-actions">
           <button className="button button-secondary" type="button" onClick={onBack}>
-            {isPasted ? "Edit pasted text" : "Choose different files"}
+            {isPasted ? "Edit pasted text" : isPartial ? "Review file selection" : "Choose different files"}
           </button>
           <button className="button button-primary" type="submit" data-testid="create-project">
             Create local project <ArrowRight aria-hidden="true" />

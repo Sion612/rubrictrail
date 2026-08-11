@@ -5,10 +5,13 @@ paths: a conservative user-source path and a rich fictional sample path.
 
 ```mermaid
 flowchart LR
-  U["User files"] --> P["Local parser"]
+  U["User files"] --> BL["Batch count + byte limits"]
+  BL --> RP["Recoverable per-file parser"]
+  RP --> DR["Explicit ready / omitted decision"]
   PT["Pasted brief + rubric"] --> PF["Bounded synthetic TXT sources"]
-  PF --> P
-  P --> C["Editable confirmation"]
+  PF --> SP["Strict all-or-nothing parser"]
+  SP --> C["Editable confirmation"]
+  DR --> C
   C --> LP["Compact UploadedProject"]
   LP --> LS["Validated local state"]
   LS --> BF["Versioned backup file"]
@@ -49,6 +52,16 @@ The parser reports only conservative fields and explicit rubric lines. The user
 must confirm or edit every planning input. Rubric weights must total 100% before
 a project can be created.
 
+Real file selections and pasted text intentionally use different failure
+contracts. A real selection is rejected before reading when it exceeds 10 files
+or 25 MiB in total; those limits include files that might later be omitted.
+Unsupported types, unsafe names, per-file oversize, empty/scanned/encrypted or
+damaged documents can be listed as per-file omissions only when at least one
+source succeeds. Retained-text exhaustion, parser unavailability and unknown
+failures stop the whole batch. Pasted synthetic TXT sources remain strict and
+must all succeed. A partial batch stays outside confirmation until the user
+explicitly chooses to review only the readable sources.
+
 The persisted uploaded project includes:
 
 - confirmed title, course label, deadline, word count and citation style;
@@ -61,6 +74,11 @@ intake is bounded before parsing at 100,000 UTF-16 characters and 10,000 lines,
 then converted to one or two in-memory plain-text sources so the existing file,
 extracted-text and evidence-offset boundaries still apply. A future need for
 larger local documents should use IndexedDB rather than expanding localStorage.
+Omitted file names and issue metadata are transient intake state: they are shown
+before and during confirmation, but they are not copied into `UploadedProject`,
+localStorage or the backup protocol. Successful source IDs retain their original
+selection positions, so skipping a middle file cannot silently renumber later
+evidence.
 
 ## Backup and restore boundary
 
@@ -122,6 +140,9 @@ See [LIVE_AI_ARCHITECTURE.md](./LIVE_AI_ARCHITECTURE.md).
 ## Performance and accessibility choices
 
 - PDF.js and Mammoth are dynamically imported only for their file types.
+- File-count, byte and retained-text limits bound saved parser output, but DOCX
+  decompression and PDF page extraction still happen before every peak-memory or
+  CPU cost can be known. They are not a complete malicious-document sandbox.
 - Plan generation and template creation are memoized by their real inputs.
 - No login, analytics, database or remote bootstrap runs in local mode.
 - Evidence drawers trap focus, close with Escape and restore focus.

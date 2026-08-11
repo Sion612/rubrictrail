@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 
 async function resetProject(page: Page) {
   await page.goto("/");
@@ -37,6 +37,12 @@ async function expectNoHorizontalOverflow(page: Page) {
 
 async function expectWorkspaceAtTop(page: Page) {
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+}
+
+async function useNarrowMobileViewport(page: Page, testInfo: TestInfo) {
+  if (!testInfo.project.name.startsWith("mobile")) return;
+  await page.setViewportSize({ width: 320, height: 700 });
+  expect(await page.evaluate(() => window.innerWidth)).toBe(320);
 }
 
 const COMPLETE_BRIEF = [
@@ -164,12 +170,81 @@ test("real upload can create and persist a source-linked local project", async (
   await expectNoHorizontalOverflow(page);
 });
 
+test("a mixed file batch keeps readable sources only after explicit review", async ({ page }, testInfo) => {
+  await useNarrowMobileViewport(page, testInfo);
+  const omittedTail = "OMITTED-MIXED-BATCH-CONTENT-7C31";
+  const longUnsupportedName = `${"long-unsupported-source-".repeat(10)}.exe`;
+
+  await page.getByTestId("file-input").setInputFiles([
+    {
+      name: "brief.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(COMPLETE_BRIEF),
+    },
+    {
+      name: longUnsupportedName,
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from(omittedTail),
+    },
+  ]);
+
+  const partial = page.getByRole("region", { name: "We read 1 of 2 files." });
+  await expect(partial).toBeFocused();
+  await expect(partial).toContainText(longUnsupportedName);
+  const partialButtons = partial.getByRole("button");
+  await expect(partialButtons).toHaveText([
+    "Review 1 ready file",
+    "Choose all files again",
+    "Paste all text instead",
+  ]);
+  for (const button of await partialButtons.all()) {
+    const box = await button.boundingBox();
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  }
+  await expectNoHorizontalOverflow(page);
+
+  await page.keyboard.press("Tab");
+  await expect(
+    partial.getByRole("button", { name: "Review 1 ready file" }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  await expect(
+    page.getByRole("heading", { name: "Confirm what the assignment says." }),
+  ).toBeFocused();
+  await expectWorkspaceAtTop(page);
+  await expect(
+    page.getByRole("heading", {
+      name: "This preview uses 1 of the 2 selected files.",
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".source-strip")).toContainText("brief.txt");
+  await expect(page.locator(".source-strip")).not.toContainText(longUnsupportedName);
+  await expectNoHorizontalOverflow(page);
+
+  await page.getByRole("button", { name: "Review file selection" }).first().click();
+  await expect(partial).toBeFocused();
+  await partial.getByRole("button", { name: "Review 1 ready file" }).click();
+  await page.getByTestId("create-project").click();
+  await expect(
+    page.getByRole("heading", { name: "Strategy Report", exact: true }),
+  ).toBeVisible();
+  await expect.poll(() =>
+    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2") ?? ""),
+  ).toContain("brief.txt");
+  const storedProject = await page.evaluate(
+    () => window.localStorage.getItem("rubrictrail.project.v2") ?? "",
+  );
+  expect(storedProject).toContain("brief.txt");
+  expect(storedProject).not.toContain(longUnsupportedName);
+  expect(storedProject).not.toContain(omittedTail);
+  await expectNoHorizontalOverflow(page);
+});
+
 test("pasted brief and rubric can create a private source-linked project", async ({ page }, testInfo) => {
   const privateTail = "PRIVATE-PASTE-TAIL-MUST-NOT-PERSIST-8F21";
   await page.getByRole("button", { name: "Paste text" }).click();
-  if (testInfo.project.name === "mobile") {
-    await page.setViewportSize({ width: 320, height: 700 });
-  }
+  await useNarrowMobileViewport(page, testInfo);
   await expectNoHorizontalOverflow(page);
   expect(
     await page.getByTestId("pasted-assignment-brief").evaluate((element) =>
@@ -275,9 +350,7 @@ test("missing rubric can be repaired manually without fabricating weights", asyn
 });
 
 test("unsupported files and empty sample drafts have actionable recovery states", async ({ page }, testInfo) => {
-  if (testInfo.project.name === "mobile") {
-    await page.setViewportSize({ width: 320, height: 700 });
-  }
+  await useNarrowMobileViewport(page, testInfo);
   await page.getByTestId("file-input").setInputFiles({
     name: "unsafe.exe",
     mimeType: "application/octet-stream",

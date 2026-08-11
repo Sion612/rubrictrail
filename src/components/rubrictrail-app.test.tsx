@@ -273,6 +273,88 @@ describe("RubricTrailApp reliability", () => {
     expect(screen.queryByTestId("pasted-text-error")).not.toBeInTheDocument();
   });
 
+  it("requires an explicit decision for partial files and never persists omitted metadata", async () => {
+    const readableText = [
+      "Assignment title: Partial Strategy Report",
+      "Deadline: 24 September 2026",
+      "Word count: 2500 words",
+      "Use APA 7 referencing.",
+      "Rubric",
+      "Analysis | 60%",
+      "Communication | 40%",
+    ].join("\n");
+    const omittedTail = "OMITTED-FILE-CONTENT-MUST-NOT-PERSIST-41A9";
+    render(<RubricTrailApp />);
+    await advance(0);
+
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("file-input"), {
+        target: {
+          files: [
+            new File([readableText], "brief.txt", { type: "text/plain" }),
+            new File([omittedTail], "legacy-rubric.doc", {
+              type: "application/msword",
+            }),
+          ],
+        },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await advance(16);
+
+    const partial = screen.getByTestId("partial-upload");
+    expect(partial).toHaveFocus();
+    expect(partial).toHaveTextContent("We read 1 of 2 files");
+    expect(partial).toHaveTextContent("legacy-rubric.doc");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Paste all text instead" }),
+    );
+    await advance(16);
+    expect(screen.getByRole("heading", { name: "Paste your assignment text" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Upload files" }));
+    await advance(16);
+    expect(screen.getByTestId("partial-upload")).toHaveFocus();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review 1 ready file" }),
+    );
+    await advance(16);
+    expect(
+      screen.getByRole("heading", { name: "Confirm what the assignment says." }),
+    ).toHaveFocus();
+    expect(
+      screen.getByRole("heading", {
+        name: "This preview uses 1 of the 2 selected files.",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Review file selection" })[0],
+    );
+    await advance(16);
+    expect(screen.getByTestId("partial-upload")).toHaveFocus();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review 1 ready file" }),
+    );
+    fireEvent.click(screen.getByTestId("create-project"));
+    await advance(250);
+
+    const stored = window.localStorage.getItem(STORAGE_KEY) ?? "";
+    expect(screen.getByRole("heading", { name: "Partial Strategy Report" })).toBeInTheDocument();
+    expect(stored).toContain("brief.txt");
+    expect(stored).not.toContain("legacy-rubric.doc");
+    expect(stored).not.toContain(omittedTail);
+    const backup = serializeProjectBackup(
+      JSON.parse(stored) as PersistedProjectState,
+      "2026-08-12T08:00:00.000Z",
+    );
+    expect(backup).toContain("brief.txt");
+    expect(backup).not.toContain("legacy-rubric.doc");
+    expect(backup).not.toContain(omittedTail);
+  });
+
   it("restores a validated backup from the welcome screen and persists it first", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<RubricTrailApp />);

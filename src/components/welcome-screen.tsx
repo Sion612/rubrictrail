@@ -19,6 +19,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
+import { assignmentFileIssueReason } from "@/lib/file-intake-messages";
 import {
   PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS,
   validatePastedAssignmentText,
@@ -27,6 +28,7 @@ import type {
   AssignmentFileIntakeError,
   AssignmentIntakeMode,
   PastedTextIntakeError,
+  UploadFlowResult,
 } from "@/lib/ui-types";
 
 interface WelcomeScreenProps {
@@ -43,6 +45,8 @@ interface WelcomeScreenProps {
   isLoadingSample: boolean;
   uploadStatus: "idle" | "parsing" | "error";
   uploadError: AssignmentFileIntakeError | null;
+  partialUploadResult: UploadFlowResult | null;
+  onReviewPartialUpload: () => void;
   onImportBackup: (file: File) => void;
   isImportingBackup: boolean;
   backupError: string | null;
@@ -57,6 +61,7 @@ const FLOW = [
 ] as const;
 
 function chooseFilesLabel(error: AssignmentFileIntakeError): string {
+  if (error.code === "NO_READABLE_FILES") return "Choose all files again";
   if (error.code === "FILE_TOO_LARGE") return "Choose a smaller file";
   return [
     "TOO_MANY_FILES",
@@ -81,6 +86,8 @@ export function WelcomeScreen({
   isLoadingSample,
   uploadStatus,
   uploadError,
+  partialUploadResult,
+  onReviewPartialUpload,
   onImportBackup,
   isImportingBackup,
   backupError,
@@ -89,6 +96,7 @@ export function WelcomeScreen({
   const backupInputRef = useRef<HTMLInputElement>(null);
   const pasteHeadingRef = useRef<HTMLHeadingElement>(null);
   const uploadErrorRef = useRef<HTMLElement>(null);
+  const partialUploadRef = useRef<HTMLElement>(null);
   const pasteErrorRef = useRef<HTMLElement>(null);
   const uploadSubmissionLockRef = useRef(false);
   const isWelcomeBusy =
@@ -100,6 +108,10 @@ export function WelcomeScreen({
       : undefined;
   const rubricErrorId =
     pastedTextError?.target === "combined" ? "pasted-text-error" : undefined;
+  const readyFileCount = partialUploadResult?.fileNames.length ?? 0;
+  const selectedFileCount = partialUploadResult
+    ? partialUploadResult.fileNames.length + partialUploadResult.skippedFiles.length
+    : 0;
 
   useEffect(() => {
     if (uploadStatus !== "parsing") uploadSubmissionLockRef.current = false;
@@ -112,6 +124,15 @@ export function WelcomeScreen({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [intakeMode, uploadError]);
+
+  useEffect(() => {
+    if (!partialUploadResult || intakeMode !== "files") return;
+    const frame = window.requestAnimationFrame(() => {
+      partialUploadRef.current?.focus();
+      partialUploadRef.current?.scrollIntoView?.({ block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [intakeMode, partialUploadResult]);
 
   useEffect(() => {
     if (!pastedTextError || intakeMode !== "paste") return;
@@ -347,8 +368,91 @@ export function WelcomeScreen({
                     <strong>{uploadError.title}</strong>
                     {uploadError.fileName ? <span className="intake-error-file">{uploadError.fileName}</span> : null}
                     <p>{uploadError.message}</p>
+                    {uploadError.fileIssues.length > 0 ? (
+                      <ul className="intake-file-list issue-list">
+                        {uploadError.fileIssues.map((issue) => (
+                          <li key={`${issue.inputIndex}-${issue.code}`}>
+                            <strong>File {issue.inputIndex + 1}: {issue.fileName}</strong>
+                            <span>{assignmentFileIssueReason(issue.code)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                     <small>Nothing was saved or changed.</small>
                     {fileRecoveryButtons}
+                  </div>
+                </section>
+              ) : null}
+
+              {partialUploadResult ? (
+                <section
+                  className="inline-alert warning partial-upload-card"
+                  role="region"
+                  aria-labelledby="partial-upload-title"
+                  tabIndex={-1}
+                  ref={partialUploadRef}
+                  data-testid="partial-upload"
+                >
+                  <AlertTriangle aria-hidden="true" />
+                  <div>
+                    <h3 id="partial-upload-title">
+                      We read {readyFileCount} of {selectedFileCount} files.
+                    </h3>
+                    <p>
+                      {readyFileCount === 1 ? "One file is" : `${readyFileCount} files are`} ready to review. {partialUploadResult.skippedFiles.length === 1 ? "One file was" : `${partialUploadResult.skippedFiles.length} files were`} not included. Nothing has been saved yet.
+                    </p>
+                    <div className="partial-file-groups">
+                      <section aria-labelledby="ready-files-title">
+                        <h4 id="ready-files-title">Ready to review ({readyFileCount})</h4>
+                        <ul className="intake-file-list ready-list">
+                          {partialUploadResult.fileNames.map((fileName, index) => (
+                            <li key={`${index}-${fileName}`}>{fileName}</li>
+                          ))}
+                        </ul>
+                      </section>
+                      <section aria-labelledby="attention-files-title">
+                        <h4 id="attention-files-title">
+                          Needs attention ({partialUploadResult.skippedFiles.length})
+                        </h4>
+                        <ul className="intake-file-list issue-list">
+                          {partialUploadResult.skippedFiles.map((issue) => (
+                            <li key={`${issue.inputIndex}-${issue.code}`}>
+                              <strong>Not included — {issue.fileName}</strong>
+                              <span>{assignmentFileIssueReason(issue.code)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    </div>
+                    <p className="partial-reselect-note">
+                      Choosing files again replaces this whole selection; select the complete brief-and-rubric set.
+                    </p>
+                    <div className="intake-error-actions partial-upload-actions">
+                      <button
+                        className="button button-primary"
+                        type="button"
+                        onClick={onReviewPartialUpload}
+                        disabled={isWelcomeBusy}
+                      >
+                        Review {readyFileCount} ready {readyFileCount === 1 ? "file" : "files"}
+                      </button>
+                      <button
+                        className="button button-secondary"
+                        type="button"
+                        onClick={openFilePicker}
+                        disabled={isWelcomeBusy}
+                      >
+                        Choose all files again
+                      </button>
+                      <button
+                        className="button button-ghost"
+                        type="button"
+                        onClick={() => changeIntakeMode("paste", true)}
+                        disabled={isWelcomeBusy}
+                      >
+                        Paste all text instead
+                      </button>
+                    </div>
                   </div>
                 </section>
               ) : null}

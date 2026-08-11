@@ -45,17 +45,18 @@ It waits for the local-save toast to leave before capturing.
 
 ## Interaction and layout checks
 
-- 16/16 Playwright flows passed in GitHub Actions across desktop and mobile,
-  including targeted 320×700 mixed-batch, paste and error states.
+- 18/18 Playwright flows passed in GitHub Actions across desktop and mobile,
+  including the two-tab overwrite regression and targeted 320×700 mixed-batch,
+  paste and error states.
 - Navigation and local-project creation reset the workspace to the top.
 - The active mobile workflow step scrolls into view.
 - Evidence drawer keyboard trapping, Escape close and focus restoration pass.
 - Document width remains within the viewport in tested desktop/mobile states.
 - The production screenshots contain no Next.js development badge.
 
-The screenshots predate the v0.3.1 paste form and v0.3.2 mixed-batch review.
-Those flows have browser assertions for focus, text size, explicit recovery,
-privacy and overflow, but no new local screenshot comparison because Playwright
-permission was not granted in this task. The saved screenshots are product
-evidence, not claims of external usability or accessibility validation. External
-student testing remains a roadmap item.
+The screenshots predate the v0.3.1 paste form, v0.3.2 mixed-batch review and
+v0.3.3 multi-tab conflict banner. Those flows have browser assertions for focus,
+text size, explicit recovery, privacy and overflow, but no new local screenshot
+comparison because Playwright permission was not granted in this task. The saved
+screenshots are product evidence, not claims of external usability or
+accessibility validation. External student testing remains a roadmap item.

@@ -106,6 +106,83 @@ test("sample assignment keeps demo signals distinct from real completion", async
   expect(browserErrors).toEqual([]);
 });
 
+test("a stale tab cannot overwrite a newer saved draft", async ({ page, context }) => {
+  await page.getByTestId("try-sample").click();
+  await expect(
+    page.getByRole("heading", { name: "Reducing Collection Delays at LumaLane Market" }),
+  ).toBeVisible();
+  await visibleWorkflowButton(page, "Check").click();
+  await expect(page.getByTestId("draft-text")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = window.localStorage.getItem("rubrictrail.project.v2");
+        if (!raw) return "";
+        try {
+          const state = JSON.parse(raw) as { projectKind?: string; view?: string };
+          return `${state.projectKind}:${state.view}`;
+        } catch {
+          return "";
+        }
+      }),
+    )
+    .toBe("sample:draft");
+
+  await page.close();
+  const [pageA, pageB] = await Promise.all([context.newPage(), context.newPage()]);
+  await Promise.all([pageA.goto("/"), pageB.goto("/")]);
+  await Promise.all([
+    expect(pageA.getByTestId("draft-text")).toBeVisible(),
+    expect(pageB.getByTestId("draft-text")).toBeVisible(),
+  ]);
+
+  const savedDraft = "TAB-A-EXACT-SAVED-DRAFT-4D91: only this version may persist.";
+  await pageA.getByTestId("draft-text").fill(savedDraft);
+  await expect
+    .poll(() =>
+      pageA.evaluate(() => {
+        const raw = window.localStorage.getItem("rubrictrail.project.v2");
+        if (!raw) return "";
+        try {
+          return (JSON.parse(raw) as { draftText?: string }).draftText ?? "";
+        } catch {
+          return "";
+        }
+      }),
+    )
+    .toBe(savedDraft);
+  const exactSavedValue = await pageA.evaluate(() =>
+    window.localStorage.getItem("rubrictrail.project.v2"),
+  );
+  expect(exactSavedValue).not.toBeNull();
+
+  const conflictHeading = pageB.getByRole("heading", {
+    name: "Project changed in another tab",
+  });
+  await expect(conflictHeading).toBeVisible();
+
+  const staleDraft = "TAB-B-STALE-DRAFT: this must remain confined to page B.";
+  await pageB.getByTestId("draft-text").fill(staleDraft);
+  await expect(pageB.getByTestId("draft-text")).toHaveValue(staleDraft);
+  await visibleWorkflowButton(pageB, "Plan").click();
+  await expect(pageB.getByRole("heading", { name: "A plan with a definition of done." })).toBeVisible();
+  await expect(conflictHeading).toBeVisible();
+
+  await pageB.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  await pageB.waitForTimeout(350);
+  expect(
+    await pageA.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2")),
+  ).toBe(exactSavedValue);
+
+  pageB.once("dialog", (dialog) => dialog.accept());
+  await pageB.getByRole("button", { name: "Load saved version" }).click();
+  await expect(pageB.getByTestId("draft-text")).toHaveValue(savedDraft);
+  await expect(conflictHeading).toHaveCount(0);
+  expect(
+    await pageB.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2")),
+  ).toBe(exactSavedValue);
+});
+
 test("sample users can hand off directly to their own files", async ({ page }) => {
   await page.getByTestId("try-sample").click();
   await expect(

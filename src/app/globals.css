@@ -384,6 +384,52 @@ svg { width: 1.15em; height: 1.15em; stroke-width: 1.8; }
 .inline-alert.success { border-color: var(--teal); background: var(--teal-pale); }
 .inline-alert.success > svg { color: var(--teal); }
 
+.storage-conflict-banner {
+  width: min(1120px, calc(100% - 40px));
+  margin: 18px auto 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px 14px;
+  align-items: start;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--amber);
+  border-radius: 7px;
+  background: var(--amber-pale);
+}
+
+.storage-conflict-banner > svg {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  color: var(--amber);
+}
+
+.storage-conflict-banner__copy { min-width: 0; }
+.storage-conflict-banner__copy h2 { margin: 0; font-size: 0.96rem; }
+.storage-conflict-banner__copy p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.storage-conflict-banner__copy .storage-conflict-banner__warning {
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.storage-conflict-banner__actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.storage-conflict-banner__actions .button { min-height: 44px; }
+.workspace-main .storage-conflict-banner { margin: 0 auto 24px; }
+
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   width: 100%;
   border: 1px solid #b9c5bf;
@@ -1093,6 +1139,16 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 }
 
 @media (max-width: 600px) {
+  .storage-conflict-banner {
+    width: calc(100% - 24px);
+    margin-top: 12px;
+    padding: 14px;
+  }
+  .storage-conflict-banner__actions {
+    grid-column: 1 / -1;
+    flex-direction: column;
+  }
+  .storage-conflict-banner__actions .button { width: 100%; }
   .intake-mode-picker { grid-template-columns: 1fr; }
   .paste-intake { padding: 16px; }
   .paste-intake textarea { min-height: 180px; }

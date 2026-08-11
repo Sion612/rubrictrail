@@ -4,6 +4,25 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-12
+
+### Added
+
+- Added persistent multi-tab conflict detection with explicit actions to
+  download this tab, load the latest saved version or deliberately keep this
+  tab.
+- Added cross-tab component and browser regression coverage for autosave,
+  page-close flushing, backup restore and conflict resolution.
+
+### Changed
+
+- Autosave, page-close flushing, backup restore and reset now compare the exact
+  localStorage value observed by this tab before changing it.
+- Pauses all automatic writes after another tab changes the project, preventing
+  stale in-memory state from silently replacing newer saved work.
+- Makes replacement an explicit, warned choice; RubricTrail never attempts an
+  automatic merge between browser tabs.
+
 ## [0.3.2] - 2026-08-12
 
 ### Added

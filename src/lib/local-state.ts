@@ -176,13 +176,22 @@ export interface ProjectStateReadResult {
   state: PersistedProjectState;
   source: ProjectStateReadSource;
   recovered: boolean;
+  storedValue: string | null;
+  storageAvailable: boolean;
 }
 
 export type ProjectStateWriteResult =
+  | { ok: true; serialized: string }
+  | {
+      ok: false;
+      reason: "unavailable" | "invalid-state" | "storage-error" | "conflict";
+    };
+
+export type ProjectStateClearResult =
   | { ok: true }
   | {
       ok: false;
-      reason: "unavailable" | "invalid-state" | "storage-error";
+      reason: "unavailable" | "storage-error" | "conflict";
     };
 
 export type ProjectStateParseResult =
@@ -486,20 +495,38 @@ function migrateLegacy(raw: string): PersistedProjectState | null {
 export function readProjectStateWithStatus(): ProjectStateReadResult {
   const fallback = createDefaultProjectState();
   if (typeof window === "undefined") {
-    return { state: fallback, source: "default", recovered: false };
+    return {
+      state: fallback,
+      source: "default",
+      recovered: false,
+      storedValue: null,
+      storageAvailable: false,
+    };
   }
 
   let v2Raw: string | null;
   try {
     v2Raw = window.localStorage.getItem(STORAGE_KEY);
   } catch {
-    return { state: fallback, source: "default", recovered: true };
+    return {
+      state: fallback,
+      source: "default",
+      recovered: true,
+      storedValue: null,
+      storageAvailable: false,
+    };
   }
 
   if (v2Raw !== null) {
     const parsed = parseV2(v2Raw);
     if (parsed) {
-      return { state: parsed.state, source: "v2", recovered: parsed.recovered };
+      return {
+        state: parsed.state,
+        source: "v2",
+        recovered: parsed.recovered,
+        storedValue: v2Raw,
+        storageAvailable: true,
+      };
     }
   }
 
@@ -507,13 +534,25 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
   try {
     legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
   } catch {
-    return { state: fallback, source: "default", recovered: true };
+    return {
+      state: fallback,
+      source: "default",
+      recovered: true,
+      storedValue: v2Raw,
+      storageAvailable: false,
+    };
   }
 
   if (legacyRaw !== null) {
     const migrated = migrateLegacy(legacyRaw);
     if (migrated) {
-      return { state: migrated, source: "legacy", recovered: true };
+      return {
+        state: migrated,
+        source: "legacy",
+        recovered: true,
+        storedValue: v2Raw,
+        storageAvailable: true,
+      };
     }
   }
 
@@ -521,6 +560,8 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
     state: fallback,
     source: "default",
     recovered: v2Raw !== null || legacyRaw !== null,
+    storedValue: v2Raw,
+    storageAvailable: true,
   };
 }
 
@@ -528,26 +569,46 @@ export function readProjectState(): PersistedProjectState {
   return readProjectStateWithStatus().state;
 }
 
-export function writeProjectState(state: PersistedProjectState): ProjectStateWriteResult {
+export function writeProjectState(
+  state: PersistedProjectState,
+  expectedStoredValue?: string | null,
+): ProjectStateWriteResult {
   if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
 
   const parsed = serializePersistedProjectStateValue(state);
   if (!parsed.ok) return { ok: false, reason: "invalid-state" };
 
   try {
+    if (
+      expectedStoredValue !== undefined &&
+      window.localStorage.getItem(STORAGE_KEY) !== expectedStoredValue
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+
     window.localStorage.setItem(STORAGE_KEY, parsed.serialized);
-    return { ok: true };
+    return { ok: true, serialized: parsed.serialized };
   } catch {
     return { ok: false, reason: "storage-error" };
   }
 }
 
-export function clearProjectState(): void {
-  if (typeof window === "undefined") return;
+export function clearProjectState(
+  expectedStoredValue?: string | null,
+): ProjectStateClearResult {
+  if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
   try {
+    if (
+      expectedStoredValue !== undefined &&
+      window.localStorage.getItem(STORAGE_KEY) !== expectedStoredValue
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+
     window.localStorage.removeItem(STORAGE_KEY);
     window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return { ok: true };
   } catch {
-    // Reset still succeeds in memory when browser storage is unavailable.
+    return { ok: false, reason: "storage-error" };
   }
 }

@@ -41,7 +41,7 @@ flowchart LR
 | Planning | Deterministic dependency and capacity scheduling | `src/lib/plan.ts` |
 | Uploaded checks | Human evidence-trail checklist, no automatic score | `uploaded-project-views.tsx` |
 | Sample contract | Strict source, evidence, rubric and feedback schemas | `src/lib/domain.ts`, `src/lib/sample-data.ts` |
-| Persistence | v2 localStorage, v1 migration and shared strict validation | `src/lib/local-state.ts` |
+| Persistence | v2 localStorage, v1 migration, strict validation and conditional multi-tab writes | `src/lib/local-state.ts` |
 | Data portability | Versioned UTF-8 JSON export/import with atomic restore | `src/lib/project-backup.ts` |
 | Optional Live boundary | Authenticated, bounded, disabled-by-default routes | `src/lib/ai/*`, `src/app/api/live/*` |
 
@@ -89,8 +89,9 @@ used by localStorage. Collection counts are shallow-checked before deep Zod
 validation to bound work on untrusted files.
 
 Restore is atomic from the user's point of view: RubricTrail validates and
-previews the backup, obtains replacement confirmation, writes it to localStorage,
-then changes React state. A failed read, validation or storage write leaves the
+previews the backup, obtains replacement confirmation, conditionally writes it
+against the exact localStorage value observed by this tab, then changes React
+state. A failed read, validation, storage write or other-tab conflict leaves the
 current project unchanged. Backups are portable local files, not encrypted
 archives or automatic synchronization.
 
@@ -98,6 +99,19 @@ Deterministic sample Draft Check output is derived rather than authoritative, so
 it is omitted on export and stripped from imported files. The user's draft text
 is retained and the check can be rerun locally after restore. Uploaded-project
 self-check text is user-authored state and remains portable.
+
+## Multi-tab data integrity
+
+Each tab retains the exact raw localStorage value it observed at hydration and
+after every successful save. Autosave, page-close flushing, backup restore and
+reset compare the current value with that baseline before changing storage. A
+mismatch fails closed and a `storage` event pauses pending writes immediately.
+
+The persistent conflict banner offers three explicit paths: download this tab,
+load the latest saved version, or deliberately replace it with this tab after a
+warning. RubricTrail does not claim automatic synchronization or merge concurrent
+edits. The guard prevents ordinary stale-tab overwrites; the JSON backup remains
+the recovery path when both versions matter.
 
 ## Plan generation
 

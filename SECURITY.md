@@ -29,6 +29,9 @@ seen and will coordinate disclosure after a fix is available.
 - Full source text is temporary and is not written to `localStorage`; confirmed
   fields, source labels, short excerpts, draft snippets and progress can remain
   until reset and can appear in an unencrypted project backup.
+- Browser tabs compare the exact saved project value before autosave, page-close
+  flushing, restore or reset. An external change pauses writes and requires an
+  explicit choice, rather than silently overwriting newer browser-local work.
 - File byte limits and the 2,000,000-character retained-text ceiling reduce
   accidental resource exhaustion. They do not fully sandbox peak CPU or memory
   use while a compressed DOCX or PDF is being decoded; do not treat local parsing

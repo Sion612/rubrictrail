@@ -47,6 +47,8 @@ The custom workflow includes:
 - a final human submission checklist;
 - v2 local persistence with migration from the earlier sample-state format;
 - deep local-state validation, recovery messaging and visible storage failures;
+- multi-tab conflict protection that pauses autosave before stale state can
+  replace a newer browser-local project;
 - versioned project backups that can be restored without retaining original files.
 
 Original files and full uploaded or pasted source text are not written to
@@ -63,6 +65,9 @@ Use **Project backup → Download backup** in the workspace to save a
 or another device. RubricTrail previews the project name, export time and
 replacement scope before restoring it, validates both file and project versions,
 and writes the imported state before changing the open workspace.
+If another tab changes the same browser-local project, RubricTrail pauses
+autosave and asks which version to keep. A backup restore or reset cannot
+silently replace that newer saved value.
 
 A backup contains the compact saved project: course details, source labels or
 original filenames, short source excerpts, pasted draft or self-check text, task
@@ -129,22 +134,22 @@ and mobile browser suite:
 pnpm test:e2e --workers=1
 ```
 
-Current verification on 12 August 2026:
+Current v0.3.3 verification on 12 August 2026:
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 110/110 tests passed across 14 files |
+| Vitest | 125/125 tests passed across 14 files |
 | Next.js production build | Passed |
-| Playwright | GitHub Actions: 16/16 flows passed at 1440×900 and 390×844, including targeted 320×700 mixed-batch, paste and error checks |
+| Playwright | GitHub Actions: 18/18 flows passed at 1440×900 and 390×844, including the two-tab overwrite regression and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,
 explicit omitted-file review, pasted brief and rubric intake, manual repair of a
 missing rubric, local persistence and privacy, evidence drawer focus,
-recoverable unsupported files, empty drafts, console errors and horizontal
-overflow.
+recoverable unsupported files, empty drafts, multi-tab overwrite protection,
+console errors and horizontal overflow.
 
 ## Architecture
 
@@ -211,7 +216,8 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
 - The self-check records the user's judgment; it does not validate argument
   quality or source correctness.
 - There is no account, automatic sync, collaboration or multi-project dashboard;
-  moving data requires an explicit local backup and restore.
+  moving data requires an explicit local backup and restore. Simultaneous tabs
+  are detected and paused, but their edits are not automatically merged.
 - The interface and parser are English-first.
 - RubricTrail is not a substitute for the actual rubric, university policy,
   tutor advice or final human review.

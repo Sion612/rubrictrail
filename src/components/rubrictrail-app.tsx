@@ -7,6 +7,7 @@ import { WorkspaceShell, type WorkspaceProjectMeta } from "@/components/workspac
 import { UploadSummaryView } from "@/components/upload-summary-view";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { UploadedEvidencePanel } from "@/components/uploaded-evidence-panel";
+import { StorageConflictBanner } from "@/components/storage-conflict-banner";
 import { OverviewView } from "@/components/views/overview-view";
 import { RubricView } from "@/components/views/rubric-view";
 import { ActionPlanView } from "@/components/views/action-plan-view";
@@ -38,6 +39,7 @@ import {
   clearProjectState,
   createDefaultProjectState,
   readProjectStateWithStatus,
+  STORAGE_KEY,
   writeProjectState,
 } from "@/lib/local-state";
 import {
@@ -310,6 +312,7 @@ export function RubricTrailApp() {
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [persistenceWarning, setPersistenceWarning] =
     useState<PersistenceWarningState | null>(null);
+  const [storageConflict, setStorageConflict] = useState(false);
   const noticeTimer = useRef<number | null>(null);
   const persistenceTimer = useRef<number | null>(null);
   const draftCheckRunId = useRef(0);
@@ -322,6 +325,29 @@ export function RubricTrailApp() {
   const backupImportActive = useRef(false);
   const intakeRunId = useRef(0);
   const focusWelcomeIntake = useRef<AssignmentIntakeMode | null>(null);
+  const observedStoredValue = useRef<string | null>(null);
+  const storageConflictActive = useRef(false);
+
+  const cancelPersistenceTimer = useCallback(() => {
+    if (persistenceTimer.current) {
+      window.clearTimeout(persistenceTimer.current);
+      persistenceTimer.current = null;
+    }
+  }, []);
+
+  const markStorageConflict = useCallback(() => {
+    storageConflictActive.current = true;
+    cancelPersistenceTimer();
+    setStorageConflict(true);
+    setPersistenceWarning((current) =>
+      current?.kind === "write" ? null : current,
+    );
+  }, [cancelPersistenceTimer]);
+
+  const clearStorageConflict = useCallback(() => {
+    storageConflictActive.current = false;
+    setStorageConflict(false);
+  }, []);
 
   const updateProject = useCallback(
     (
@@ -342,6 +368,8 @@ export function RubricTrailApp() {
     const hydrationTimer = window.setTimeout(() => {
       const result = readProjectStateWithStatus();
       latestProject.current = result.state;
+      observedStoredValue.current = result.storedValue;
+      storageConflictActive.current = false;
       persistHydratedState.current =
         result.recovered && result.source !== "default";
       setProjectState(result.state);
@@ -373,16 +401,25 @@ export function RubricTrailApp() {
       skipNextPersistenceWrite.current = false;
       return;
     }
-    if (persistenceTimer.current) window.clearTimeout(persistenceTimer.current);
+    if (storageConflictActive.current) {
+      cancelPersistenceTimer();
+      return;
+    }
+    cancelPersistenceTimer();
     persistenceTimer.current = window.setTimeout(() => {
-      const result = writeProjectState(project);
+      const result = writeProjectState(project, observedStoredValue.current);
       if (result.ok) {
+        observedStoredValue.current = result.serialized;
         if (latestProject.current === project) {
           hasPendingProjectChange.current = false;
         }
         setPersistenceWarning((current) =>
           current?.kind === "write" ? null : current,
         );
+        return;
+      }
+      if (result.reason === "conflict") {
+        markStorageConflict();
         return;
       }
       const message =
@@ -392,20 +429,41 @@ export function RubricTrailApp() {
       setPersistenceWarning({ kind: "write", message });
     }, 250);
     return () => {
-      if (persistenceTimer.current) window.clearTimeout(persistenceTimer.current);
+      cancelPersistenceTimer();
     };
-  }, [hydrated, project]);
+  }, [cancelPersistenceTimer, hydrated, markStorageConflict, project]);
 
   useEffect(() => {
     if (!hydrated) return;
     const flushLatestProject = () => {
-      if (hasPendingProjectChange.current) {
-        writeProjectState(latestProject.current);
+      if (!hasPendingProjectChange.current || storageConflictActive.current) return;
+      const result = writeProjectState(
+        latestProject.current,
+        observedStoredValue.current,
+      );
+      if (result.ok) {
+        observedStoredValue.current = result.serialized;
+        hasPendingProjectChange.current = false;
+      } else if (result.reason === "conflict") {
+        markStorageConflict();
       }
     };
     window.addEventListener("pagehide", flushLatestProject);
     return () => window.removeEventListener("pagehide", flushLatestProject);
-  }, [hydrated]);
+  }, [hydrated, markStorageConflict]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const detectExternalProjectChange = (event: StorageEvent) => {
+      if (event.storageArea && event.storageArea !== window.localStorage) return;
+      if (event.key !== STORAGE_KEY && event.key !== null) return;
+      const nextStoredValue = event.key === null ? null : event.newValue;
+      if (nextStoredValue === observedStoredValue.current) return;
+      markStorageConflict();
+    };
+    window.addEventListener("storage", detectExternalProjectChange);
+    return () => window.removeEventListener("storage", detectExternalProjectChange);
+  }, [hydrated, markStorageConflict]);
 
   useEffect(() => {
     if (!hydrated || project.projectKind === "none" || uploadResult) return;
@@ -450,9 +508,9 @@ export function RubricTrailApp() {
   useEffect(
     () => () => {
       if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
-      if (persistenceTimer.current) window.clearTimeout(persistenceTimer.current);
+      cancelPersistenceTimer();
     },
-    [],
+    [cancelPersistenceTimer],
   );
 
   const today = todayIso();
@@ -604,14 +662,33 @@ export function RubricTrailApp() {
     });
   }
 
+  function clearSavedProjectForReplacement(): boolean {
+    const clearResult = clearProjectState(observedStoredValue.current);
+    if (clearResult.ok) {
+      cancelPersistenceTimer();
+      observedStoredValue.current = null;
+      clearStorageConflict();
+      return true;
+    }
+    if (clearResult.reason === "conflict") {
+      markStorageConflict();
+      return false;
+    }
+    const message =
+      "Browser storage is unavailable, so the saved project could not be cleared and this tab was left unchanged.";
+    setPersistenceWarning({ kind: "write", message });
+    showNotice({ tone: "warning", message });
+    return false;
+  }
+
   function resetProject() {
     if (!window.confirm("Reset this local project? This clears saved draft excerpts, checks, results and task progress from this browser.")) return;
+    if (!clearSavedProjectForReplacement()) return;
     intakeRunId.current += 1;
     backupImportActive.current = false;
     setIsImportingBackup(false);
     focusWelcomeIntake.current = "files";
     setIntakeMode("files");
-    clearProjectState();
     draftCheckRunId.current += 1;
     draftCheckActive.current = false;
     setIsChecking(false);
@@ -630,12 +707,12 @@ export function RubricTrailApp() {
 
   function startOwnProject() {
     if (!window.confirm("Leave the sample demo and use your own assignment? Demo changes and progress will be cleared from this browser.")) return;
+    if (!clearSavedProjectForReplacement()) return;
     intakeRunId.current += 1;
     backupImportActive.current = false;
     setIsImportingBackup(false);
     focusWelcomeIntake.current = "files";
     setIntakeMode("files");
-    clearProjectState();
     draftCheckRunId.current += 1;
     draftCheckActive.current = false;
     setIsChecking(false);
@@ -677,6 +754,106 @@ export function RubricTrailApp() {
     }
   }
 
+  function loadLatestSavedProject() {
+    if (
+      !window.confirm(
+        "Load the project version saved by another tab? Changes kept only in this tab will be replaced. Download this tab first if you may need them.",
+      )
+    ) {
+      return;
+    }
+
+    const result = readProjectStateWithStatus();
+    if (!result.storageAvailable) {
+      const message =
+        "Browser storage could not be read, so nothing was replaced. This tab and its conflict warning were left unchanged.";
+      setPersistenceWarning({ kind: "write", message });
+      showNotice({ tone: "warning", message });
+      return;
+    }
+    if (
+      result.source === "default" &&
+      result.recovered &&
+      result.storedValue !== null
+    ) {
+      const message =
+        "The latest browser data is incomplete or incompatible, so it was not loaded. Download this tab before resetting or replacing anything.";
+      setPersistenceWarning({ kind: "write", message });
+      showNotice({ tone: "warning", message });
+      return;
+    }
+
+    intakeRunId.current += 1;
+    backupImportActive.current = false;
+    cancelPersistenceTimer();
+    draftCheckRunId.current += 1;
+    draftCheckActive.current = false;
+    latestProject.current = result.state;
+    observedStoredValue.current = result.storedValue;
+    hasPendingProjectChange.current = false;
+    skipNextPersistenceWrite.current = true;
+    clearStorageConflict();
+    setProjectState(result.state);
+    setSelectedEvidenceId(null);
+    setUploadResult(null);
+    setPartialUploadResult(null);
+    setUploadStatus("idle");
+    setUploadError(null);
+    setPastedTextError(null);
+    setPastedBrief("");
+    setPastedRubric("");
+    setBackupError(null);
+    setIsImportingBackup(false);
+    setIsLoadingSample(false);
+    setIsChecking(false);
+    setPersistenceWarning(
+      result.recovered
+        ? {
+            kind: "recovered",
+            message:
+              "The latest saved project was loaded with obsolete entries removed. Review its details before continuing.",
+          }
+        : null,
+    );
+    showNotice({
+      tone: "success",
+      message: "Latest saved project loaded. Autosave is active again in this tab.",
+    });
+  }
+
+  function keepThisTabProject() {
+    if (
+      !window.confirm(
+        "Replace the newer saved project with this tab? Changes made in the other tab will be lost. Download this tab or the other tab first if either version may be needed.",
+      )
+    ) {
+      return;
+    }
+
+    cancelPersistenceTimer();
+    const result = writeProjectState(latestProject.current);
+    if (!result.ok) {
+      const message =
+        result.reason === "invalid-state"
+          ? "This tab failed local validation, so it did not replace the saved project."
+          : "Browser storage is unavailable or full, so this tab did not replace the saved project.";
+      setPersistenceWarning({ kind: "write", message });
+      showNotice({ tone: "warning", message });
+      return;
+    }
+
+    observedStoredValue.current = result.serialized;
+    hasPendingProjectChange.current = false;
+    clearStorageConflict();
+    setPersistenceWarning((current) =>
+      current?.kind === "write" ? null : current,
+    );
+    showNotice({
+      tone: "success",
+      message: "This tab is now the saved version. Autosave is active again.",
+    });
+  }
+
   async function importProjectBackup(file: File) {
     if (backupImportActive.current) return;
     const operationId = ++intakeRunId.current;
@@ -702,8 +879,19 @@ export function RubricTrailApp() {
       );
       if (!confirmed) return;
 
-      const writeResult = writeProjectState(backup.state);
+      const writeResult = writeProjectState(
+        backup.state,
+        observedStoredValue.current,
+      );
       if (!writeResult.ok) {
+        if (writeResult.reason === "conflict") {
+          const message =
+            "The project changed in another tab, so the backup was not restored. Resolve the tab conflict first; neither saved version was overwritten.";
+          markStorageConflict();
+          setBackupError(message);
+          showNotice({ tone: "warning", message });
+          return;
+        }
         const message = writeResult.reason === "invalid-state"
           ? "The restored project failed final validation. Your current project was not changed."
           : "Browser storage is unavailable or full, so the backup was not restored and your current project was not changed.";
@@ -712,17 +900,16 @@ export function RubricTrailApp() {
         showNotice({ tone: "warning", message });
         return;
       }
-      if (persistenceTimer.current) {
-        window.clearTimeout(persistenceTimer.current);
-        persistenceTimer.current = null;
-      }
+      cancelPersistenceTimer();
 
       draftCheckRunId.current += 1;
       draftCheckActive.current = false;
       setIsChecking(false);
       latestProject.current = backup.state;
+      observedStoredValue.current = writeResult.serialized;
       hasPendingProjectChange.current = false;
       skipNextPersistenceWrite.current = true;
+      clearStorageConflict();
       setProjectState(backup.state);
       setSelectedEvidenceId(null);
       setUploadResult(null);
@@ -909,6 +1096,36 @@ export function RubricTrailApp() {
     }));
   }
 
+  const storageConflictNotice = storageConflict ? (
+    <StorageConflictBanner
+      onDownloadThisTab={exportProjectBackup}
+      onLoadSavedVersion={loadLatestSavedProject}
+      onKeepThisTab={keepThisTabProject}
+    />
+  ) : null;
+  const intakeStorageConflictNotice = storageConflict ? (
+    <StorageConflictBanner
+      context="intake"
+      onDownloadThisTab={exportProjectBackup}
+      onLoadSavedVersion={loadLatestSavedProject}
+      onKeepThisTab={keepThisTabProject}
+    />
+  ) : null;
+  const persistenceWarningToast = persistenceWarning ? (
+    <div className="toast warning persistence-warning" role="alert">
+      <AlertTriangle aria-hidden="true" />
+      <span>{persistenceWarning.message}</span>
+      <button
+        className="icon-button"
+        type="button"
+        onClick={() => setPersistenceWarning(null)}
+        aria-label="Dismiss storage warning"
+      >
+        <X aria-hidden="true" />
+      </button>
+    </div>
+  ) : null;
+
   if (!hydrated) {
     return (
       <main className="app-loading" aria-label="Loading RubricTrail">
@@ -922,6 +1139,7 @@ export function RubricTrailApp() {
   if (uploadResult) {
     return (
       <>
+        {intakeStorageConflictNotice}
         <UploadSummaryView
           result={uploadResult}
           onBack={() => {
@@ -934,13 +1152,7 @@ export function RubricTrailApp() {
           }}
           onCreateProject={createLocalProject}
         />
-        {persistenceWarning ? (
-          <div className="toast warning persistence-warning" role="alert">
-            <AlertTriangle aria-hidden="true" />
-            <span>{persistenceWarning.message}</span>
-            <button className="icon-button" type="button" onClick={() => setPersistenceWarning(null)} aria-label="Dismiss storage warning"><X aria-hidden="true" /></button>
-          </div>
-        ) : null}
+        {persistenceWarningToast}
       </>
     );
   }
@@ -948,6 +1160,7 @@ export function RubricTrailApp() {
   if (project.projectKind === "none") {
     return (
       <>
+        {intakeStorageConflictNotice}
         <WelcomeScreen
           onTrySample={loadSample}
           onFiles={handleFiles}
@@ -978,13 +1191,7 @@ export function RubricTrailApp() {
           isImportingBackup={isImportingBackup}
           backupError={backupError}
         />
-        {persistenceWarning ? (
-          <div className="toast warning persistence-warning" role="alert">
-            <AlertTriangle aria-hidden="true" />
-            <span>{persistenceWarning.message}</span>
-            <button className="icon-button" type="button" onClick={() => setPersistenceWarning(null)} aria-label="Dismiss storage warning"><X aria-hidden="true" /></button>
-          </div>
-        ) : null}
+        {persistenceWarningToast}
       </>
     );
   }
@@ -1107,15 +1314,10 @@ export function RubricTrailApp() {
         project={projectMeta}
         evidencePanel={evidencePanel}
       >
+        {storageConflictNotice}
         {activeView}
       </WorkspaceShell>
-      {persistenceWarning ? (
-        <div className="toast warning persistence-warning" role="alert">
-          <AlertTriangle aria-hidden="true" />
-          <span>{persistenceWarning.message}</span>
-          <button className="icon-button" type="button" onClick={() => setPersistenceWarning(null)} aria-label="Dismiss storage warning"><X aria-hidden="true" /></button>
-        </div>
-      ) : null}
+      {persistenceWarningToast}
       {notice ? (
         <div className={`toast ${notice.tone}`} role="status" data-testid="toast">
           {notice.tone === "warning" ? <AlertTriangle aria-hidden="true" /> : notice.tone === "info" ? <Info aria-hidden="true" /> : <Check aria-hidden="true" />}

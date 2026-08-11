@@ -8,6 +8,9 @@ flowchart LR
   U["User files"] --> P["Local parser"]
   P --> C["Editable confirmation"]
   C --> LP["Compact UploadedProject"]
+  LP --> LS["Validated local state"]
+  LS --> BF["Versioned backup file"]
+  BF --> LS
   LP --> RT["Rubric trail"]
   LP --> TP["Generic task templates"]
   TP --> PE["Plan engine"]
@@ -33,7 +36,8 @@ flowchart LR
 | Planning | Deterministic dependency and capacity scheduling | `src/lib/plan.ts` |
 | Uploaded checks | Human evidence-trail checklist, no automatic score | `uploaded-project-views.tsx` |
 | Sample contract | Strict source, evidence, rubric and feedback schemas | `src/lib/domain.ts`, `src/lib/sample-data.ts` |
-| Persistence | v2 localStorage plus v1 migration | `src/lib/local-state.ts` |
+| Persistence | v2 localStorage, v1 migration and shared strict validation | `src/lib/local-state.ts` |
+| Data portability | Versioned UTF-8 JSON export/import with atomic restore | `src/lib/project-backup.ts` |
 | Optional Live boundary | Authenticated, bounded, disabled-by-default routes | `src/lib/ai/*`, `src/app/api/live/*` |
 
 ## Trust boundary for user files
@@ -52,6 +56,25 @@ The persisted uploaded project includes:
 
 It excludes original files and full extracted text. A future need for larger
 local documents should use IndexedDB rather than expanding localStorage.
+
+## Backup and restore boundary
+
+Project backup files use an outer `rubrictrail-project` protocol version and keep
+the inner persisted-state version separate. Import checks byte and character
+limits, strict UTF-8, JSON shape, both versions and the same deep project schema
+used by localStorage. Collection counts are shallow-checked before deep Zod
+validation to bound work on untrusted files.
+
+Restore is atomic from the user's point of view: RubricTrail validates and
+previews the backup, obtains replacement confirmation, writes it to localStorage,
+then changes React state. A failed read, validation or storage write leaves the
+current project unchanged. Backups are portable local files, not encrypted
+archives or automatic synchronization.
+
+Deterministic sample Draft Check output is derived rather than authoritative, so
+it is omitted on export and stripped from imported files. The user's draft text
+is retained and the check can be rerun locally after restore. Uploaded-project
+self-check text is user-authored state and remains portable.
 
 ## Plan generation
 

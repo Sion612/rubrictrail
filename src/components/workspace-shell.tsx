@@ -1,14 +1,18 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ChangeEvent, type ReactNode } from "react";
 import {
+  ArchiveRestore,
   BookOpenCheck,
   Check,
   ClipboardCheck,
+  Download,
   FileSearch,
   ListChecks,
   RotateCcw,
   Route,
+  Upload,
+  UploadCloud,
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
 import type { WorkflowState, WorkspaceView } from "@/lib/ui-types";
@@ -25,6 +29,10 @@ interface WorkspaceShellProps {
   view: WorkspaceView;
   onNavigate: (view: WorkspaceView) => void;
   onReset: () => void;
+  onStartOwnProject: () => void;
+  onExportBackup: () => void;
+  onImportBackup: (file: File) => void;
+  isImportingBackup: boolean;
   progress: number;
   stepStates: Record<WorkspaceView, WorkflowState>;
   project: WorkspaceProjectMeta;
@@ -60,16 +68,65 @@ function dateLabel(value: string): string {
   }).format(new Date(`${value}T12:00:00`));
 }
 
+function closeBackupMenu(
+  menu: HTMLDetailsElement | null,
+  restoreFocus = false,
+) {
+  menu?.removeAttribute("open");
+  if (restoreFocus) {
+    menu
+      ?.querySelector<HTMLElement>("summary")
+      ?.focus({ preventScroll: true });
+  }
+}
+
 export function WorkspaceShell({
   view,
   onNavigate,
   onReset,
+  onStartOwnProject,
+  onExportBackup,
+  onImportBackup,
+  isImportingBackup,
   progress,
   stepStates,
   project,
   children,
   evidencePanel,
 }: WorkspaceShellProps) {
+  const backupInputRef = useRef<HTMLInputElement>(null);
+  const backupMenuRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    function handleBackupMenuDismiss(event: PointerEvent | KeyboardEvent) {
+      const menu = backupMenuRef.current;
+      if (!menu?.open) return;
+      if (event.type === "keydown") {
+        if ((event as KeyboardEvent).key !== "Escape") return;
+        closeBackupMenu(menu, true);
+        return;
+      }
+      if (!menu.contains(event.target as Node)) {
+        closeBackupMenu(menu);
+      }
+    }
+
+    document.addEventListener("pointerdown", handleBackupMenuDismiss);
+    document.addEventListener("keydown", handleBackupMenuDismiss);
+    return () => {
+      document.removeEventListener("pointerdown", handleBackupMenuDismiss);
+      document.removeEventListener("keydown", handleBackupMenuDismiss);
+    };
+  }, []);
+
+  function handleBackupInput(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    closeBackupMenu(backupMenuRef.current, true);
+    onImportBackup(file);
+  }
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#workspace-main">Skip to main content</a>
@@ -84,9 +141,60 @@ export function WorkspaceShell({
         </div>
         <div className="header-actions">
           <span className="due-label"><span>Due</span> {dateLabel(project.dueDate)}</span>
-          <div className="mode-indicator" title={project.mode === "sample" ? BRAND.demoDescription : "Confirmed fields are saved only in this browser."}>
-            <span aria-hidden="true" />{project.mode === "sample" ? "Sample demo" : "Local-only"}
-          </div>
+          {project.mode === "sample" ? (
+            <button
+              className="start-own-project-button"
+              type="button"
+              onClick={onStartOwnProject}
+              title="Leave the sample demo and use your own files"
+            >
+              <UploadCloud aria-hidden="true" />
+              <span>Use my files</span>
+            </button>
+          ) : (
+            <div className="mode-indicator" title="Confirmed fields are saved only in this browser.">
+              <span aria-hidden="true" />Local-only
+            </div>
+          )}
+          <details className="project-backup-menu" ref={backupMenuRef}>
+            <summary className="icon-button" aria-label="Project backup options" title="Project backup options">
+              <ArchiveRestore aria-hidden="true" />
+            </summary>
+            <div className="project-backup-popover">
+              <strong>Project backup</strong>
+              <p>Contains saved project details, excerpts, draft text, self-checks and progress — never the original files.</p>
+              <button
+                className="backup-menu-action"
+                type="button"
+                onClick={() => {
+                  closeBackupMenu(backupMenuRef.current, true);
+                  onExportBackup();
+                }}
+              >
+                <Download aria-hidden="true" />
+                <span><strong>Download backup</strong><small>Keep the JSON file private.</small></span>
+              </button>
+              <button
+                className="backup-menu-action"
+                type="button"
+                disabled={isImportingBackup}
+                onClick={() => backupInputRef.current?.click()}
+              >
+                <Upload aria-hidden="true" />
+                <span><strong>{isImportingBackup ? "Reading backup…" : "Restore backup"}</strong><small>Confirm before replacing this project.</small></span>
+              </button>
+              <input
+                ref={backupInputRef}
+                className="visually-hidden"
+                type="file"
+                accept=".rubrictrail.json,.json,application/json"
+                aria-label="Choose a RubricTrail project backup"
+                disabled={isImportingBackup}
+                onChange={handleBackupInput}
+                data-testid="workspace-backup-file-input"
+              />
+            </div>
+          </details>
           <button className="icon-button" type="button" onClick={onReset} aria-label="Reset local project" title="Reset local project">
             <RotateCcw aria-hidden="true" />
           </button>

@@ -8,6 +8,9 @@ const defaultProps = {
   isLoadingSample: false,
   uploadStatus: "idle" as const,
   uploadError: null,
+  onImportBackup: vi.fn(),
+  isImportingBackup: false,
+  backupError: null,
 };
 
 afterEach(cleanup);
@@ -53,5 +56,36 @@ describe("WelcomeScreen upload controls", () => {
       screen.getByLabelText("Upload assignment brief and rubric files"),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Parsing locally…" })).toBeDisabled();
+    expect(screen.getByLabelText("Choose a RubricTrail project backup")).toBeDisabled();
+  });
+
+  it("keeps project backup errors separate from assignment upload errors", () => {
+    render(
+      <WelcomeScreen
+        {...defaultProps}
+        backupError="This is not a RubricTrail backup."
+      />,
+    );
+
+    expect(screen.getByTestId("backup-error")).toHaveTextContent(
+      "This is not a RubricTrail backup.",
+    );
+    expect(screen.queryByTestId("upload-error")).not.toBeInTheDocument();
+  });
+
+  it("makes sample, assignment upload, and backup restore mutually exclusive", () => {
+    render(
+      <WelcomeScreen {...defaultProps} isImportingBackup />,
+    );
+
+    expect(screen.getByTestId("try-sample")).toBeDisabled();
+    expect(
+      screen.getByLabelText("Upload assignment brief and rubric files"),
+    ).toBeDisabled();
+    expect(screen.getByTestId("backup-file-input")).toBeDisabled();
+    expect(screen.getByTestId("upload-zone")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 });

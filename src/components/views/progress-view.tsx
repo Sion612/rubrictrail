@@ -4,6 +4,7 @@ import { useRef } from "react";
 import { AlertTriangle, ArrowRight, CalendarClock, Check, CheckCircle2, CircleDashed, FileWarning, ShieldCheck } from "lucide-react";
 import type { ActionPlan, AssignmentAnalysis, DraftCheckResult } from "@/lib/domain";
 import { daysBetween } from "@/lib/plan";
+import { SAMPLE_READINESS } from "@/lib/readiness";
 import { todayIso } from "@/lib/uploaded-project";
 
 interface ProgressViewProps {
@@ -14,16 +15,6 @@ interface ProgressViewProps {
   onToggleReadiness: (id: string) => void;
   onContinue: (target: "plan" | "draft") => void;
 }
-
-const READINESS = [
-  ["deliverables", "Every required deliverable is present"],
-  ["rubric", "I manually compared every criterion with the final draft"],
-  ["logic", "Recommendations follow from the diagnosis"],
-  ["sources", "Every material claim has a traceable source"],
-  ["format", "Word count, structure, and citation format are checked"],
-  ["integrity", "No data, citations, or personal experience are invented"],
-  ["proofread", "Final human proofread is complete"],
-] as const;
 
 function deadlineStatus(date: string) {
   const days = daysBetween(todayIso(), date.slice(0, 10));
@@ -44,8 +35,8 @@ export function ProgressView({ analysis, plan, draftResult, readinessChecks, onT
   const completedTasks = plan.tasks.filter((task) => task.completed).length;
   const highPriorityPrompts = draftResult?.feedback.filter((item) => item.severity === "high" && item.kind !== "strength").length ?? 0;
   const nextTask = plan.tasks.find((task) => !task.completed);
-  const checksComplete = READINESS.filter(([id]) => readinessChecks.includes(id)).length;
-  const checksRemaining = READINESS.length - checksComplete;
+  const checksComplete = SAMPLE_READINESS.filter(([id]) => readinessChecks.includes(id)).length;
+  const checksRemaining = SAMPLE_READINESS.length - checksComplete;
   const isReady = !nextTask && checksRemaining === 0 && draftResult !== null;
   const needsDraftReview = draftResult === null;
   const deadline = deadlineStatus(analysis.dueAt);
@@ -87,7 +78,7 @@ export function ProgressView({ analysis, plan, draftResult, readinessChecks, onT
       <div className="progress-facts">
         <div className={deadline.overdue ? "fact-warning" : ""}><CalendarClock aria-hidden="true" /><span><strong>{deadline.value}</strong>{deadline.label}</span></div>
         <div><CheckCircle2 aria-hidden="true" /><span><strong>{completedTasks} of {plan.tasks.length}</strong>tasks complete</span></div>
-        <div><ShieldCheck aria-hidden="true" /><span><strong>{checksComplete} of {READINESS.length}</strong>readiness checks</span></div>
+        <div><ShieldCheck aria-hidden="true" /><span><strong>{checksComplete} of {SAMPLE_READINESS.length}</strong>readiness checks</span></div>
       </div>
 
       <section className="coverage-section" aria-labelledby="coverage-title">
@@ -115,9 +106,9 @@ export function ProgressView({ analysis, plan, draftResult, readinessChecks, onT
         </section>
 
         <section className="readiness-checklist" aria-labelledby="readiness-title">
-          <div className="section-heading compact-heading"><div><p className="eyebrow">Final gate</p><h2 id="readiness-title" ref={readinessTitleRef} tabIndex={-1}>Ready for submission checklist</h2></div><span>{checksComplete}/{READINESS.length}</span></div>
+          <div className="section-heading compact-heading"><div><p className="eyebrow">Final gate</p><h2 id="readiness-title" ref={readinessTitleRef} tabIndex={-1}>Ready for submission checklist</h2></div><span>{checksComplete}/{SAMPLE_READINESS.length}</span></div>
           <div className="checklist-items">
-            {READINESS.map(([id, label]) => <label key={id}><input type="checkbox" checked={readinessChecks.includes(id)} onChange={() => onToggleReadiness(id)} /><span aria-hidden="true"><Check /></span>{label}</label>)}
+            {SAMPLE_READINESS.map(([id, label]) => <label key={id}><input type="checkbox" checked={readinessChecks.includes(id)} onChange={() => onToggleReadiness(id)} /><span aria-hidden="true"><Check /></span>{label}</label>)}
           </div>
         </section>
       </div>

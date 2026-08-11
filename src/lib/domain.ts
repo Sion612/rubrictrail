@@ -201,19 +201,19 @@ export const assignmentAnalysisSchema = z
 
 export const draftInputSchema = z
   .object({
-    id: z.string().min(1),
-    assignmentId: z.string().min(1),
-    sectionId: z.string().min(1),
-    sectionLabel: z.string().min(1),
-    text: z.string().min(1),
+    id: z.string().min(1).max(160),
+    assignmentId: z.string().min(1).max(160),
+    sectionId: z.string().min(1).max(160),
+    sectionLabel: z.string().min(1).max(300),
+    text: z.string().min(1).max(100_000),
   })
   .strict();
 
 export const draftSpanSchema = z
   .object({
-    start: z.number().int().nonnegative(),
-    end: z.number().int().positive(),
-    excerpt: z.string().min(1),
+    start: z.number().int().nonnegative().max(100_000),
+    end: z.number().int().positive().max(100_000),
+    excerpt: z.string().min(1).max(4_096),
   })
   .strict()
   .refine((span) => span.end > span.start, {
@@ -222,16 +222,16 @@ export const draftSpanSchema = z
 
 export const feedbackItemSchema = z
   .object({
-    id: z.string().min(1),
+    id: z.string().min(1).max(160),
     kind: z.enum(["strength", "issue", "evidence_gap", "next_action"]),
     severity: z.enum(["high", "medium", "low"]),
-    rubricIds: z.array(z.string().min(1)).min(1),
-    title: z.string().min(1),
-    explanation: z.string().min(1),
-    draftEvidence: z.array(draftSpanSchema),
-    sourceEvidenceRefs: z.array(z.string().min(1)).min(1),
-    action: z.string().min(1).optional(),
-    successCheck: z.string().min(1).optional(),
+    rubricIds: z.array(z.string().min(1).max(160)).min(1).max(50),
+    title: z.string().min(1).max(300),
+    explanation: z.string().min(1).max(4_096),
+    draftEvidence: z.array(draftSpanSchema).max(50),
+    sourceEvidenceRefs: z.array(z.string().min(1).max(160)).min(1).max(100),
+    action: z.string().min(1).max(4_096).optional(),
+    successCheck: z.string().min(1).max(2_000).optional(),
     guidance: z
       .object({
         kind: z.enum(["question", "sentence_stem"]),
@@ -244,39 +244,40 @@ export const feedbackItemSchema = z
 
 export const criterionCheckSchema = z
   .object({
-    criterionId: z.string().min(1),
+    criterionId: z.string().min(1).max(160),
     coverage: z.number().min(0).max(100),
     status: z.enum(["not_started", "emerging", "partial", "strong"]),
-    summary: z.string().min(1),
-    strengths: z.array(z.string().min(1)),
-    gaps: z.array(z.string().min(1)),
-    evidenceRefs: z.array(z.string().min(1)).min(1),
+    summary: z.string().min(1).max(4_096),
+    strengths: z.array(z.string().min(1).max(1_000)).max(100),
+    gaps: z.array(z.string().min(1).max(1_000)).max(100),
+    evidenceRefs: z.array(z.string().min(1).max(160)).min(1).max(100),
   })
   .strict();
 
 export const draftCheckResultSchema = z
   .object({
-    id: z.string().min(1),
-    assignmentId: z.string().min(1),
-    draftId: z.string().min(1),
-    sectionId: z.string().min(1),
+    id: z.string().min(1).max(160),
+    assignmentId: z.string().min(1).max(160),
+    draftId: z.string().min(1).max(160),
+    sectionId: z.string().min(1).max(160),
     coverageEstimate: z.number().min(0).max(100),
-    coverageDisclaimer: z.string().min(1),
-    criteria: z.array(criterionCheckSchema).min(1),
-    feedback: z.array(feedbackItemSchema).min(1),
+    coverageDisclaimer: z.string().min(1).max(2_000),
+    criteria: z.array(criterionCheckSchema).min(1).max(50),
+    feedback: z.array(feedbackItemSchema).min(1).max(200),
     nextActions: z
       .array(
         z
           .object({
-            id: z.string().min(1),
-            text: z.string().min(1),
+            id: z.string().min(1).max(160),
+            text: z.string().min(1).max(2_000),
             priority: z.enum(["high", "medium", "low"]),
-            estimatedMinutes: z.number().int().positive(),
-            rubricIds: z.array(z.string().min(1)).min(1),
+            estimatedMinutes: z.number().int().positive().max(100_000),
+            rubricIds: z.array(z.string().min(1).max(160)).min(1).max(50),
           })
           .strict(),
       )
-      .min(1),
+      .min(1)
+      .max(100),
   })
   .strict()
   .superRefine((result, context) => {

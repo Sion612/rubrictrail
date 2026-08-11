@@ -8,7 +8,7 @@ Thank you for helping make assignment planning more traceable and honest.
 - add accessibility or mobile tests;
 - make rubric-to-plan templates clearer without inventing requirements;
 - improve documentation, translations, or recovery messages;
-- add privacy-preserving export/import support.
+- add migration tests for future project-backup formats.
 
 Please do not add essay generation, fabricated citations, hidden telemetry, or a
 grade-prediction claim.

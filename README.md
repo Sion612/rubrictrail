@@ -41,18 +41,36 @@ The custom workflow includes:
 - criterion-by-criterion self-checks for visible, explained and traceable
   evidence;
 - a final human submission checklist;
-- v2 local persistence with migration from the earlier sample-state format.
-- deep local-state validation, recovery messaging and visible storage failures.
+- v2 local persistence with migration from the earlier sample-state format;
+- deep local-state validation, recovery messaging and visible storage failures;
+- versioned project backups that can be restored without retaining original files.
 
 Original files and full extracted text are not written to `localStorage`.
 Confirmed fields, short source excerpts, pasted self-check text and progress are
 stored until the user resets the project.
+
+### Back up or restore a project
+
+Use **Project backup → Download backup** in the workspace to save a
+`*.rubrictrail.json` file. The welcome screen can restore that file on the same
+or another device. RubricTrail previews the project name, export time and
+replacement scope before restoring it, validates both file and project versions,
+and writes the imported state before changing the open workspace.
+
+A backup contains the compact saved project: course details, original filenames,
+short source excerpts, pasted draft or self-check text, task progress and final
+checks. It does **not** contain the original uploaded documents or full extracted
+text, and it is not encrypted. Keep the downloaded file private.
+Derived sample Draft Check results are intentionally omitted and must be rerun
+after restore; user-authored draft text remains in the backup.
 
 ### Explore the fictional sample
 
 The included LumaLane operations assignment demonstrates deeper source mapping
 and deterministic coaching. Its Draft Check uses simple surface signals and is
 explicitly labelled as neither semantic evaluation nor a predicted grade.
+The sample workspace includes a direct **Use my files** handoff back to real file
+intake.
 
 All files in [`samples/`](./samples/) are original fictional material:
 
@@ -109,7 +127,7 @@ Current local verification on 12 August 2026:
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 68/68 tests passed across 12 files |
+| Vitest | 89/89 tests passed across 13 files |
 | Next.js production build | Passed |
 | Playwright | Last v0.2.0 baseline: 8/8 flows at 1440×900 and 390×844 |
 | Full dependency audit | No known vulnerabilities found |
@@ -175,8 +193,8 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
 - Custom projects rely on user confirmation rather than semantic AI extraction.
 - The self-check records the user's judgment; it does not validate argument
   quality or source correctness.
-- Data belongs to one browser. There is no account, sync, collaboration or
-  multi-project dashboard.
+- There is no account, automatic sync, collaboration or multi-project dashboard;
+  moving data requires an explicit local backup and restore.
 - The interface and parser are English-first.
 - RubricTrail is not a substitute for the actual rubric, university policy,
   tutor advice or final human review.
@@ -185,7 +203,7 @@ More detail is in [docs/KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md).
 
 ## Roadmap
 
-- privacy-preserving export/import;
+- paste/manual intake and partial recovery when one file in a batch fails;
 - stronger table extraction for real-world rubrics;
 - more date and grading-system formats;
 - accessibility review with external users;

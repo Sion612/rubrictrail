@@ -150,28 +150,30 @@ pnpm check
 ```
 
 It runs ESLint, TypeScript, Vitest and a production build. Then run the desktop
-and mobile browser suite:
+and narrow responsive browser suite:
 
 ```bash
 pnpm test:e2e --workers=1
 ```
 
-Current v0.3.3 verification on 12 August 2026:
+Current v0.3.4 verification on 12 August 2026 ([GitHub Actions run 31542879582](https://github.com/Sion612/rubrictrail/actions/runs/31542879582)):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 125/125 tests passed across 14 files |
+| Vitest | 157/157 tests passed across 14 files |
 | Next.js production build | Passed |
-| Playwright | GitHub Actions: 18/18 flows passed at 1440×900 and 390×844, including the two-tab overwrite regression and targeted 320×700 checks |
+| Playwright | GitHub Actions: 22/22 executions passed (11 scenarios × 1440×900 and 390×844 Chromium viewports), including multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,
 explicit omitted-file review, pasted brief and rubric intake, manual repair of a
-missing rubric, local persistence and privacy, evidence drawer focus,
-recoverable unsupported files, empty drafts, multi-tab overwrite protection,
-console errors and horizontal overflow.
+missing rubric without fabricated weights, partial published weights, local
+persistence and privacy, evidence drawer focus, recoverable unsupported files,
+empty drafts, multi-tab overwrite protection, explicit v2-to-v3 recovery,
+console errors and horizontal overflow. The narrow projects test responsive
+Chromium viewports; they are not mobile-device, touch or mobile-UA emulation.
 
 ## Architecture
 
@@ -203,7 +205,7 @@ Core modules:
 | Dependency-aware scheduling | `src/lib/plan.ts` |
 | Versioned browser state | `src/lib/local-state.ts` |
 | Strict sample and optional Live schemas | `src/lib/domain.ts`, `src/lib/ai/*` |
-| Desktop/mobile acceptance tests | `tests/e2e/core-flow.spec.ts` |
+| Desktop/responsive acceptance tests | `tests/e2e/core-flow.spec.ts` |
 
 See [the architecture notes](./docs/ARCHITECTURE.md) for data and trust
 boundaries.

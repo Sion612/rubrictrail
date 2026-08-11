@@ -229,6 +229,9 @@ test("a mixed file batch keeps readable sources only after explicit review", asy
   await expect(
     page.getByRole("heading", { name: "Strategy Report", exact: true }),
   ).toBeVisible();
+  await expect.poll(() =>
+    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2") ?? ""),
+  ).toContain("brief.txt");
   const storedProject = await page.evaluate(
     () => window.localStorage.getItem("rubrictrail.project.v2") ?? "",
   );

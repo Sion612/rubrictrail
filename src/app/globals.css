@@ -1104,6 +1104,10 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .header-actions .icon-button { width: 44px; height: 44px; }
 }
 
+@media (max-width: 360px) {
+  .welcome-header .brand-lockup > span:last-child { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

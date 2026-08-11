@@ -131,14 +131,15 @@ Current verification on 12 August 2026:
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 89/89 tests passed across 13 files |
+| Vitest | 99/99 tests passed across 14 files |
 | Next.js production build | Passed |
-| Playwright | GitHub Actions: 12/12 flows passed at 1440×900 and 390×844, including a 320px backup-menu check |
+| Playwright | GitHub Actions: 14/14 flows passed at 1440×900 and 390×844, including 320px paste/error and backup-menu checks |
 | Full dependency audit | No known vulnerabilities found |
 
-Playwright covers the sample loop, a complete real-file project, manual repair
-of a missing rubric, local persistence, evidence drawer focus, unsupported
-files, empty drafts, console errors and horizontal overflow.
+Playwright covers the sample loop, a complete real-file project, pasted brief
+and rubric intake, manual repair of a missing rubric, local persistence, evidence
+drawer focus, recoverable unsupported files, empty drafts, console errors and
+horizontal overflow.
 
 ## Architecture
 

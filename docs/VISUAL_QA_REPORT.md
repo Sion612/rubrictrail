@@ -3,7 +3,8 @@
 Date: 12 August 2026  
 Targets: desktop 1440×900 and mobile 390×844  
 Method: production build served on `127.0.0.1`; Browser plugin unavailable, so
-the documented Playwright/installed-Chrome fallback was used.
+the documented Playwright/installed-Chrome fallback was used for the saved
+screenshots. Current functional browser coverage runs in GitHub Actions.
 
 ## Evidence
 
@@ -44,12 +45,16 @@ It waits for the local-save toast to leave before capturing.
 
 ## Interaction and layout checks
 
-- 8/8 Playwright flows passed across desktop and mobile.
+- 14/14 Playwright flows passed in GitHub Actions across desktop and mobile,
+  including 320px paste/error and backup-menu states.
 - Navigation and local-project creation reset the workspace to the top.
 - The active mobile workflow step scrolls into view.
 - Evidence drawer keyboard trapping, Escape close and focus restoration pass.
 - Document width remains within the viewport in tested desktop/mobile states.
 - The production screenshots contain no Next.js development badge.
 
-The screenshots are product evidence, not claims of external usability or
-accessibility validation. External student testing remains a roadmap item.
+The screenshots predate the v0.3.1 paste form. That flow has browser assertions
+for focus, text size and overflow, but no new local screenshot comparison because
+Playwright permission was not granted in this task. The saved screenshots are
+product evidence, not claims of external usability or accessibility validation.
+External student testing remains a roadmap item.

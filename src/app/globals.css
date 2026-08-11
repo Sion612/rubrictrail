@@ -43,7 +43,7 @@ button, input, select, textarea { font: inherit; }
 button { color: inherit; }
 button, a, input, select, textarea { outline: none; }
 
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus);
 }
 
@@ -272,6 +272,11 @@ svg { width: 1.15em; height: 1.15em; stroke-width: 1.8; }
 .upload-zone > svg { width: 34px; height: 34px; margin-bottom: 14px; color: var(--teal); }
 .upload-zone h3 { margin-bottom: 5px; font-size: 1.03rem; }
 .upload-zone p { margin-bottom: 20px; color: var(--muted); font-size: 0.82rem; }
+.welcome-backup-restore { display: grid; grid-template-columns: 28px minmax(0,1fr); gap: 12px; align-items: start; margin-top: 17px; padding-top: 16px; border-top: 1px solid var(--line); }
+.welcome-backup-restore > svg { width: 22px; height: 22px; margin-top: 2px; color: var(--teal); }
+.welcome-backup-restore strong { font-size: 0.78rem; }
+.welcome-backup-restore p { margin: 3px 0 7px; color: var(--muted); font-size: 0.7rem; line-height: 1.5; }
+.welcome-backup-restore .button { min-height: 42px; padding: 7px 0; color: var(--teal-dark); font-size: 0.74rem; }
 
 .privacy-row, .integrity-note {
   display: flex;
@@ -348,8 +353,24 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 .header-actions { display: flex; align-items: center; gap: 12px; }
 .due-label { color: var(--ink); font-size: 0.78rem; font-weight: 650; }
 .due-label span { color: var(--muted); font-weight: 500; }
+.start-own-project-button { min-height: 38px; display: inline-flex; gap: 7px; align-items: center; padding: 7px 11px; border: 1px solid #9aafa5; border-radius: 7px; background: var(--teal-pale); color: var(--teal-dark); font-size: 0.74rem; font-weight: 760; cursor: pointer; }
+.start-own-project-button:hover { border-color: var(--teal); background: #dceee7; }
+.start-own-project-button svg { width: 16px; height: 16px; }
 .icon-button { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: white; cursor: pointer; }
 .icon-button:hover { background: var(--surface-alt); }
+.project-backup-menu { position: relative; }
+.project-backup-menu > summary { list-style: none; }
+.project-backup-menu > summary::-webkit-details-marker { display: none; }
+.project-backup-menu[open] > summary { border-color: var(--teal); background: var(--teal-pale); color: var(--teal-dark); }
+.project-backup-popover { position: absolute; z-index: 60; top: calc(100% + 9px); right: 0; width: min(350px,calc(100vw - 24px)); padding: 17px; border: 1px solid #aab8b1; border-radius: 9px; background: white; box-shadow: 0 16px 44px rgba(22,42,35,0.16); }
+.project-backup-popover > strong { display: block; font-size: 0.92rem; }
+.project-backup-popover > p { margin: 5px 0 13px; color: var(--muted); font-size: 0.72rem; line-height: 1.55; }
+.backup-menu-action { width: 100%; display: flex; gap: 11px; align-items: center; padding: 11px 9px; border: 0; border-top: 1px solid var(--line); background: white; text-align: left; cursor: pointer; }
+.backup-menu-action:hover:not(:disabled) { background: var(--surface-alt); }
+.backup-menu-action > svg { width: 18px; height: 18px; flex: 0 0 auto; color: var(--teal); }
+.backup-menu-action span, .backup-menu-action strong, .backup-menu-action small { display: block; }
+.backup-menu-action strong { font-size: 0.78rem; }
+.backup-menu-action small { margin-top: 2px; color: var(--muted); font-size: 0.68rem; }
 
 .workflow-rail {
   position: sticky;
@@ -992,6 +1013,12 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .evidence-panel { width: 100%; height: min(82vh,720px); border-radius: 14px 14px 0 0; animation-name: sheet-in; }
   @keyframes sheet-in { from { transform: translateY(24px); opacity: 0; } }
   .toast { right: 12px; bottom: 12px; max-width: calc(100vw - 24px); }
+}
+
+@media (max-width: 600px) {
+  .project-backup-popover { position: fixed; top: 64px; right: 12px; }
+  .start-own-project-button { min-height: 44px; justify-content: center; padding: 0 9px; font-size: 0.68rem; }
+  .header-actions .icon-button { width: 44px; height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

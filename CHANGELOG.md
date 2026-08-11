@@ -4,6 +4,32 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-12
+
+### Added
+
+- Added versioned local project backups with portable filenames, strict UTF-8
+  decoding and separate backup/state protocol versions.
+- Added restore entry points on both the welcome screen and workspace, including
+  a privacy summary and replacement preview.
+- Added a direct **Use my files** handoff from the fictional sample workspace.
+
+### Changed
+
+- Restores now validate and write the imported project before changing the open
+  workspace; cancellation or storage failure preserves the current project.
+- Centralized sample and uploaded readiness definitions and removed obsolete
+  readiness IDs during state recovery.
+
+### Security
+
+- Bounded nested draft-check strings and collections before accepting persisted
+  or imported state, avoiding unbounded deep validation work on untrusted JSON.
+- Rejects oversized, malformed, wrong-format, future-version and structurally
+  invalid backup files without accepting raw localStorage or legacy JSON.
+- Omits editable derived demo-check output from backups so restored files cannot
+  inject a fabricated deterministic result; retained draft text can be rechecked.
+
 ## [0.2.1] - 2026-08-12
 
 ### Changed

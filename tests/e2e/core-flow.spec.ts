@@ -100,6 +100,21 @@ test("sample assignment keeps demo signals distinct from real completion", async
   expect(browserErrors).toEqual([]);
 });
 
+test("sample users can hand off directly to their own files", async ({ page }) => {
+  await page.getByTestId("try-sample").click();
+  await expect(
+    page.getByRole("heading", { name: "Reducing Collection Delays at LumaLane Market" }),
+  ).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Use my files" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Turn the brief into a plan you can prove." }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose files" })).toBeFocused();
+});
+
 test("real upload can create and persist a source-linked local project", async ({ page }) => {
   await page.getByTestId("file-input").setInputFiles({
     name: "strategy-brief.txt",
@@ -146,6 +161,41 @@ test("real upload can create and persist a source-linked local project", async (
   await page.reload();
   await expect(page.getByText("Strategy Report", { exact: true }).first()).toBeVisible();
   await expect(page.getByTestId("uploaded-review-text")).toHaveValue(/strategic constraint/);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("a versioned project backup can leave and safely restore the browser", async ({ page }) => {
+  await page.getByTestId("file-input").setInputFiles({
+    name: "strategy-brief.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from(COMPLETE_BRIEF),
+  });
+  await page.getByTestId("create-project").click();
+  await expect(page.getByRole("heading", { name: "Strategy Report", exact: true })).toBeVisible();
+
+  await page.getByLabel("Project backup options").click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Download backup/ }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(
+    /^rubrictrail-strategy-report-\d{4}-\d{2}-\d{2}\.rubrictrail\.json$/,
+  );
+  const backupPath = await download.path();
+  expect(backupPath).not.toBeNull();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByLabel("Reset local project").click();
+  await expect(
+    page.getByRole("heading", { name: "Turn the brief into a plan you can prove." }),
+  ).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("backup-file-input").setInputFiles(backupPath!);
+  await expect(page.getByRole("heading", { name: "Strategy Report", exact: true })).toBeVisible();
+  await expect(page.getByTestId("toast")).toContainText("Project restored from backup");
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.getByLabel("Project backup options").click();
+  await expect(page.getByText("Contains saved project details")).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
 

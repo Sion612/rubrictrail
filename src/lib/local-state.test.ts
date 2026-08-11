@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultProjectState,
+  parsePersistedProjectStateValue,
   readProjectState,
   readProjectStateWithStatus,
   STORAGE_KEY,
@@ -71,6 +72,17 @@ afterEach(() => {
 });
 
 describe("local project persistence", () => {
+  it("reports unsupported versions separately from malformed state", () => {
+    expect(parsePersistedProjectStateValue({ version: 3 })).toEqual({
+      ok: false,
+      reason: "unsupported-version",
+    });
+    expect(parsePersistedProjectStateValue({ version: "2" })).toEqual({
+      ok: false,
+      reason: "invalid-state",
+    });
+  });
+
   it("round-trips a deeply validated uploaded v2 project", () => {
     const state = uploadedState();
 
@@ -147,11 +159,16 @@ describe("local project persistence", () => {
       ...createDefaultProjectState(),
       projectKind: "sample" as const,
       completedTaskIds: ["p1", "removed-task"],
+      readinessChecks: ["sources", "removed-check"],
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 
     expect(readProjectStateWithStatus()).toEqual({
-      state: { ...state, completedTaskIds: ["p1"] },
+      state: {
+        ...state,
+        completedTaskIds: ["p1"],
+        readinessChecks: ["sources"],
+      },
       source: "v2",
       recovered: true,
     });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { dateOnlySchema, draftCheckResultSchema } from "@/lib/domain";
 import type { UploadedSourceEvidence } from "@/lib/files/parse-assignment-files";
 import { DEFAULT_PLAN_TASK_TEMPLATES } from "@/lib/plan";
+import { SAMPLE_READINESS, UPLOADED_READINESS } from "@/lib/readiness";
 import { SAMPLE_DRAFT_TEXT } from "@/lib/sample-data";
 import {
   maximumSupportedDueDate,
@@ -17,7 +18,7 @@ import type {
 export const STORAGE_KEY = "rubrictrail.project.v2";
 const LEGACY_STORAGE_KEY = "proofline.project.v1";
 
-const MAX_STORED_CHARACTERS = 2_500_000;
+export const MAX_STORED_CHARACTERS = 2_500_000;
 const MAX_ID_LENGTH = 160;
 export const PROJECT_DRAFT_MAX_CHARACTERS = 100_000;
 const MAX_CRITERIA = 50;
@@ -184,6 +185,29 @@ export type ProjectStateWriteResult =
       reason: "unavailable" | "invalid-state" | "storage-error";
     };
 
+export type ProjectStateParseResult =
+  | {
+      ok: true;
+      state: PersistedProjectState;
+      recovered: boolean;
+    }
+  | {
+      ok: false;
+      reason: "unsupported-version" | "invalid-state";
+    };
+
+export type ProjectStateSerializationResult =
+  | {
+      ok: true;
+      state: PersistedProjectState;
+      recovered: boolean;
+      serialized: string;
+    }
+  | {
+      ok: false;
+      reason: "unsupported-version" | "invalid-state";
+    };
+
 export function createDefaultProjectState(): PersistedProjectState {
   return {
     version: 2,
@@ -248,6 +272,14 @@ function normalizeValidatedState(state: PersistedProjectState): {
     state.uploadedProject?.criteria.map((criterion) => criterion.id) ?? [],
   );
   const reviewByCriterion = new Map<string, UploadedCriterionReview>();
+  const knownReadinessIds = new Set<string>(
+    (state.projectKind === "sample"
+      ? SAMPLE_READINESS
+      : state.projectKind === "uploaded"
+        ? UPLOADED_READINESS
+        : []
+    ).map(([id]) => id),
+  );
   if (state.projectKind === "uploaded") {
     state.uploadedCriterionReviews.forEach((review) => {
       if (criterionIds.has(review.criterionId)) {
@@ -265,7 +297,9 @@ function normalizeValidatedState(state: PersistedProjectState): {
         ? "analysis-recommendations"
         : state.selectedSectionId,
     uploadedCriterionReviews: [...reviewByCriterion.values()],
-    readinessChecks: unique(state.readinessChecks),
+    readinessChecks: unique(state.readinessChecks).filter((id) =>
+      knownReadinessIds.has(id),
+    ),
   };
 
   return {
@@ -274,11 +308,113 @@ function normalizeValidatedState(state: PersistedProjectState): {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasArrayAtMost(
+  value: Record<string, unknown>,
+  key: string,
+  maximum: number,
+): boolean {
+  const candidate = value[key];
+  return Array.isArray(candidate) && candidate.length <= maximum;
+}
+
+function hasBoundedDraftResultCollections(value: unknown): boolean {
+  if (value === null) return true;
+  if (!isRecord(value)) return false;
+  if (
+    !hasArrayAtMost(value, "criteria", 50) ||
+    !hasArrayAtMost(value, "feedback", 200) ||
+    !hasArrayAtMost(value, "nextActions", 100)
+  ) {
+    return false;
+  }
+
+  const criteria = value.criteria as unknown[];
+  const feedback = value.feedback as unknown[];
+  const nextActions = value.nextActions as unknown[];
+
+  return (
+    criteria.every(
+      (criterion) =>
+        isRecord(criterion) &&
+        hasArrayAtMost(criterion, "strengths", 100) &&
+        hasArrayAtMost(criterion, "gaps", 100) &&
+        hasArrayAtMost(criterion, "evidenceRefs", 100),
+    ) &&
+    feedback.every(
+      (item) =>
+        isRecord(item) &&
+        hasArrayAtMost(item, "rubricIds", 50) &&
+        hasArrayAtMost(item, "draftEvidence", 50) &&
+        hasArrayAtMost(item, "sourceEvidenceRefs", 100),
+    ) &&
+    nextActions.every(
+      (action) => isRecord(action) && hasArrayAtMost(action, "rubricIds", 50),
+    )
+  );
+}
+
+function hasBoundedProjectCollections(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    !hasArrayAtMost(value, "visitedViews", VIEWS.length) ||
+    !hasArrayAtMost(value, "completedTaskIds", MAX_TASK_IDS) ||
+    !hasArrayAtMost(value, "uploadedCriterionReviews", MAX_CRITERIA) ||
+    !hasArrayAtMost(value, "readinessChecks", MAX_READINESS_IDS) ||
+    !hasBoundedDraftResultCollections(value.draftResult)
+  ) {
+    return false;
+  }
+
+  if (value.uploadedProject === null) return true;
+  return (
+    isRecord(value.uploadedProject) &&
+    hasArrayAtMost(value.uploadedProject, "fileNames", MAX_FILES) &&
+    hasArrayAtMost(value.uploadedProject, "criteria", MAX_CRITERIA)
+  );
+}
+
+export function parsePersistedProjectStateValue(
+  value: unknown,
+): ProjectStateParseResult {
+  if (!isRecord(value)) return { ok: false, reason: "invalid-state" };
+  if (value.version !== 2) {
+    return {
+      ok: false,
+      reason: typeof value.version === "number" ? "unsupported-version" : "invalid-state",
+    };
+  }
+  if (!hasBoundedProjectCollections(value)) {
+    return { ok: false, reason: "invalid-state" };
+  }
+
+  const parsed = persistedProjectStateSchema.safeParse(value);
+  if (!parsed.success) return { ok: false, reason: "invalid-state" };
+  return { ok: true, ...normalizeValidatedState(parsed.data) };
+}
+
+export function serializePersistedProjectStateValue(
+  value: unknown,
+): ProjectStateSerializationResult {
+  const parsed = parsePersistedProjectStateValue(value);
+  if (!parsed.ok) return parsed;
+  const serialized = JSON.stringify(parsed.state);
+  if (serialized.length > MAX_STORED_CHARACTERS) {
+    return { ok: false, reason: "invalid-state" };
+  }
+  return { ...parsed, serialized };
+}
+
 function parseV2(raw: string): ReturnType<typeof normalizeValidatedState> | null {
   if (raw.length > MAX_STORED_CHARACTERS) return null;
   try {
-    const parsed = persistedProjectStateSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? normalizeValidatedState(parsed.data) : null;
+    const parsed = parsePersistedProjectStateValue(JSON.parse(raw));
+    return parsed.ok
+      ? { state: parsed.state, recovered: parsed.recovered }
+      : null;
   } catch {
     return null;
   }
@@ -305,7 +441,9 @@ function migrateLegacy(raw: string): PersistedProjectState | null {
     if (typeof legacy !== "object" || legacy === null || Array.isArray(legacy)) return null;
     const candidate = legacy as Record<string, unknown>;
     const fallback = createDefaultProjectState();
-    const parsedDraftResult = draftCheckResultSchema.safeParse(candidate.draftResult);
+    const parsedDraftResult = hasBoundedDraftResultCollections(candidate.draftResult)
+      ? draftCheckResultSchema.safeParse(candidate.draftResult)
+      : { success: false as const };
     const view = viewSchema.safeParse(candidate.view);
     const draftText =
       typeof candidate.draftText === "string" &&
@@ -393,16 +531,11 @@ export function readProjectState(): PersistedProjectState {
 export function writeProjectState(state: PersistedProjectState): ProjectStateWriteResult {
   if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
 
-  const parsed = persistedProjectStateSchema.safeParse(state);
-  if (!parsed.success) return { ok: false, reason: "invalid-state" };
-
-  const serialized = JSON.stringify(normalizeValidatedState(parsed.data).state);
-  if (serialized.length > MAX_STORED_CHARACTERS) {
-    return { ok: false, reason: "invalid-state" };
-  }
+  const parsed = serializePersistedProjectStateValue(state);
+  if (!parsed.ok) return { ok: false, reason: "invalid-state" };
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, serialized);
+    window.localStorage.setItem(STORAGE_KEY, parsed.serialized);
     return { ok: true };
   } catch {
     return { ok: false, reason: "storage-error" };

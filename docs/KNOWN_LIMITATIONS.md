@@ -9,8 +9,9 @@
    damaged documents receive a recovery message.
 4. **Simple rubric parser.** Explicit lines such as `Analysis | 30%` work best.
    Complex tables may require manual repair in the confirmation screen.
-5. **Single-browser storage.** There is no account, sync, collaboration, export
-   or multi-project dashboard. Sensitive local data remains until reset.
+5. **Manual portability only.** There is no account, automatic sync,
+   collaboration or multi-project dashboard. A versioned JSON backup can move one
+   project between browsers, but it is not encrypted and must be kept private.
 6. **English-first.** Date parsing intentionally leaves ambiguous numeric dates
    blank; language, grading and citation conventions are not universal yet.
 7. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal

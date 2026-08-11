@@ -16,13 +16,13 @@ import {
   UploadedBriefView,
   UploadedDraftReviewView,
   UploadedProgressView,
-  UPLOADED_READINESS,
   UploadedRubricView,
 } from "@/components/views/uploaded-project-views";
 import { BRAND } from "@/lib/brand";
 import { SAMPLE_ASSIGNMENT, SAMPLE_DRAFT_TEXT } from "@/lib/sample-data";
 import { generateActionPlan } from "@/lib/plan";
 import { runMockDraftCheck } from "@/lib/mock-service";
+import { UPLOADED_READINESS } from "@/lib/readiness";
 import {
   AssignmentFileParseError,
   buildUploadedAssignmentSummary,
@@ -34,6 +34,13 @@ import {
   readProjectStateWithStatus,
   writeProjectState,
 } from "@/lib/local-state";
+import {
+  projectBackupFileName,
+  projectBackupTitle,
+  ProjectBackupError,
+  readProjectBackupFile,
+  serializeProjectBackup,
+} from "@/lib/project-backup";
 import {
   buildUploadedPlanTemplates,
   isConfirmedUploadedReview,
@@ -69,6 +76,29 @@ function friendlyFileError(error: unknown): string {
     return `${error.message} ${recovery[error.code]}`;
   }
   return "The files could not be parsed locally. Try a text-based PDF, DOCX, or TXT file.";
+}
+
+function friendlyBackupError(error: unknown): string {
+  return error instanceof ProjectBackupError
+    ? error.message
+    : "The backup could not be read safely. Your current project was not changed.";
+}
+
+function backupDateLabel(value: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function backupProjectDetails(state: PersistedProjectState): string {
+  const course = state.uploadedProject?.course ?? SAMPLE_ASSIGNMENT.course;
+  const dueDate =
+    state.uploadedProject?.dueDate ?? SAMPLE_ASSIGNMENT.dueAt.slice(0, 10);
+  const dueLabel = new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+  }).format(new Date(`${dueDate}T12:00:00`));
+  return `Course: ${course}\nDue: ${dueLabel}`;
 }
 
 function planStartFor(dueDate: string, today: string): string {
@@ -151,6 +181,8 @@ export function RubricTrailApp() {
   const [uploadResult, setUploadResult] = useState<UploadFlowResult | null>(null);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "parsing" | "error">("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isImportingBackup, setIsImportingBackup] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
   const [isLoadingSample, setIsLoadingSample] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [checkingStage, setCheckingStage] = useState(0);
@@ -165,6 +197,10 @@ export function RubricTrailApp() {
   const persistenceReady = useRef(false);
   const hasPendingProjectChange = useRef(false);
   const persistHydratedState = useRef(false);
+  const skipNextPersistenceWrite = useRef(false);
+  const backupImportActive = useRef(false);
+  const intakeRunId = useRef(0);
+  const focusWelcomeUpload = useRef(false);
 
   const updateProject = useCallback(
     (
@@ -211,6 +247,10 @@ export function RubricTrailApp() {
       if (!persistHydratedState.current) return;
       persistHydratedState.current = false;
       hasPendingProjectChange.current = true;
+    }
+    if (skipNextPersistenceWrite.current) {
+      skipNextPersistenceWrite.current = false;
+      return;
     }
     if (persistenceTimer.current) window.clearTimeout(persistenceTimer.current);
     persistenceTimer.current = window.setTimeout(() => {
@@ -259,6 +299,23 @@ export function RubricTrailApp() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [hydrated, project.projectKind, project.view, uploadResult]);
+
+  useEffect(() => {
+    if (
+      !hydrated ||
+      project.projectKind !== "none" ||
+      !focusWelcomeUpload.current
+    ) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      focusWelcomeUpload.current = false;
+      document
+        .getElementById("choose-assignment-files")
+        ?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hydrated, project.projectKind]);
 
   const showNotice = useCallback((nextNotice: NoticeState) => {
     setNotice(nextNotice);
@@ -316,12 +373,16 @@ export function RubricTrailApp() {
   }
 
   async function loadSample() {
+    if (backupImportActive.current) return;
+    const operationId = ++intakeRunId.current;
     draftCheckRunId.current += 1;
     draftCheckActive.current = false;
     setUploadResult(null);
     setUploadError(null);
+    setBackupError(null);
     setIsLoadingSample(true);
     await wait(450);
+    if (operationId !== intakeRunId.current) return;
     updateProject({
       ...createDefaultProjectState(),
       projectKind: "sample",
@@ -334,10 +395,14 @@ export function RubricTrailApp() {
   }
 
   async function handleFiles(files: File[]) {
+    if (backupImportActive.current) return;
+    const operationId = ++intakeRunId.current;
     setUploadStatus("parsing");
     setUploadError(null);
+    setBackupError(null);
     try {
       const parsed = await parseAssignmentFiles(files);
+      if (operationId !== intakeRunId.current) return;
       const summary = buildUploadedAssignmentSummary(parsed);
       setUploadResult({
         fileNames: parsed.sources.map((source) => source.fileName),
@@ -346,6 +411,7 @@ export function RubricTrailApp() {
       });
       setUploadStatus("idle");
     } catch (error) {
+      if (operationId !== intakeRunId.current) return;
       setUploadStatus("error");
       setUploadError(friendlyFileError(error));
     }
@@ -362,6 +428,7 @@ export function RubricTrailApp() {
     });
     setUploadResult(null);
     setUploadStatus("idle");
+    setBackupError(null);
     setSelectedEvidenceId(null);
     showNotice({
       tone: "success",
@@ -371,6 +438,10 @@ export function RubricTrailApp() {
 
   function resetProject() {
     if (!window.confirm("Reset this local project? This clears saved draft excerpts, checks, results and task progress from this browser.")) return;
+    intakeRunId.current += 1;
+    backupImportActive.current = false;
+    setIsImportingBackup(false);
+    focusWelcomeUpload.current = true;
     clearProjectState();
     draftCheckRunId.current += 1;
     draftCheckActive.current = false;
@@ -380,7 +451,123 @@ export function RubricTrailApp() {
     setUploadResult(null);
     setUploadStatus("idle");
     setUploadError(null);
+    setBackupError(null);
     setPersistenceWarning(null);
+  }
+
+  function startOwnProject() {
+    if (!window.confirm("Leave the sample demo and use your own files? Demo changes and progress will be cleared from this browser.")) return;
+    intakeRunId.current += 1;
+    backupImportActive.current = false;
+    setIsImportingBackup(false);
+    focusWelcomeUpload.current = true;
+    clearProjectState();
+    draftCheckRunId.current += 1;
+    draftCheckActive.current = false;
+    setIsChecking(false);
+    updateProject(createDefaultProjectState());
+    setSelectedEvidenceId(null);
+    setUploadResult(null);
+    setUploadStatus("idle");
+    setUploadError(null);
+    setBackupError(null);
+    setPersistenceWarning(null);
+  }
+
+  function exportProjectBackup() {
+    const exportedAt = new Date().toISOString();
+    try {
+      const state = latestProject.current;
+      const serialized = serializeProjectBackup(state, exportedAt);
+      const url = URL.createObjectURL(
+        new Blob([serialized], { type: "application/json;charset=utf-8" }),
+      );
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = projectBackupFileName(state, exportedAt);
+      anchor.hidden = true;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      showNotice({
+        tone: "success",
+        message: "Project backup downloaded. It contains saved notes and excerpts, so keep the JSON file private.",
+      });
+    } catch (error) {
+      showNotice({ tone: "warning", message: friendlyBackupError(error) });
+    }
+  }
+
+  async function importProjectBackup(file: File) {
+    if (backupImportActive.current) return;
+    const operationId = ++intakeRunId.current;
+    backupImportActive.current = true;
+    setIsImportingBackup(true);
+    setIsLoadingSample(false);
+    setUploadStatus("idle");
+    setUploadError(null);
+    setBackupError(null);
+
+    try {
+      const backup = await readProjectBackupFile(file);
+      if (operationId !== intakeRunId.current) return;
+      const incomingTitle = projectBackupTitle(backup.state);
+      const current = latestProject.current;
+      const replacement = current.projectKind === "none"
+        ? "No existing project will be removed."
+        : `This will replace the local project “${projectBackupTitle(current)}”.`;
+      const confirmed = window.confirm(
+        `Restore “${incomingTitle}”?\n${backupProjectDetails(backup.state)}\nExported: ${backupDateLabel(backup.exportedAt)}\n\n${replacement}\n\nThe backup may contain course details, file names, source excerpts, draft text, self-checks and progress. Original files are not included.`,
+      );
+      if (!confirmed) return;
+
+      const writeResult = writeProjectState(backup.state);
+      if (!writeResult.ok) {
+        const message = writeResult.reason === "invalid-state"
+          ? "The restored project failed final validation. Your current project was not changed."
+          : "Browser storage is unavailable or full, so the backup was not restored and your current project was not changed.";
+        setBackupError(message);
+        setPersistenceWarning({ kind: "write", message });
+        showNotice({ tone: "warning", message });
+        return;
+      }
+      if (persistenceTimer.current) {
+        window.clearTimeout(persistenceTimer.current);
+        persistenceTimer.current = null;
+      }
+
+      draftCheckRunId.current += 1;
+      draftCheckActive.current = false;
+      setIsChecking(false);
+      latestProject.current = backup.state;
+      hasPendingProjectChange.current = false;
+      skipNextPersistenceWrite.current = true;
+      setProjectState(backup.state);
+      setSelectedEvidenceId(null);
+      setUploadResult(null);
+      setUploadStatus("idle");
+      setUploadError(null);
+      setPersistenceWarning(null);
+      showNotice({
+        tone: backup.recovered ? "info" : "success",
+        message: backup.recovered
+          ? "Project restored. Obsolete entries were safely removed during import."
+          : "Project restored from backup and saved in this browser.",
+      });
+    } catch (error) {
+      if (operationId !== intakeRunId.current) return;
+      const message = friendlyBackupError(error);
+      setBackupError(message);
+      if (latestProject.current.projectKind !== "none") {
+        showNotice({ tone: "warning", message });
+      }
+    } finally {
+      if (operationId === intakeRunId.current) {
+        backupImportActive.current = false;
+        setIsImportingBackup(false);
+      }
+    }
   }
 
   function rebalancePlan(weeklyHours: number, targetGrade: number) {
@@ -579,6 +766,9 @@ export function RubricTrailApp() {
           isLoadingSample={isLoadingSample}
           uploadStatus={uploadStatus}
           uploadError={uploadError}
+          onImportBackup={importProjectBackup}
+          isImportingBackup={isImportingBackup}
+          backupError={backupError}
         />
         {persistenceWarning ? (
           <div className="toast warning persistence-warning" role="alert">
@@ -700,6 +890,10 @@ export function RubricTrailApp() {
         view={project.view}
         onNavigate={navigate}
         onReset={resetProject}
+        onStartOwnProject={startOwnProject}
+        onExportBackup={exportProjectBackup}
+        onImportBackup={importProjectBackup}
+        isImportingBackup={isImportingBackup}
         progress={plan.completionPercent}
         stepStates={stepStates}
         project={projectMeta}

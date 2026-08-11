@@ -79,6 +79,16 @@ describe("rubricTrailFixtureSchema", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("bounds nested draft-check collections before they can be persisted or imported", () => {
+    const invalid = clone(SAMPLE_FIXTURE);
+    invalid.draftCheck.feedback = Array.from(
+      { length: 201 },
+      () => clone(SAMPLE_FIXTURE.draftCheck.feedback[0]),
+    );
+
+    expect(rubricTrailFixtureSchema.safeParse(invalid).success).toBe(false);
+  });
 });
 
 describe("planGenerationInputSchema", () => {

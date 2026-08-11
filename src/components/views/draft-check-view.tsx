@@ -2,6 +2,7 @@
 
 import { AlertTriangle, ArrowRight, CheckCircle2, FileCheck2, Highlighter, LoaderCircle, Quote, ShieldCheck, Sparkles } from "lucide-react";
 import type { AssignmentAnalysis, DraftCheckResult } from "@/lib/domain";
+import { PROJECT_DRAFT_MAX_CHARACTERS } from "@/lib/local-state";
 
 interface DraftCheckViewProps {
   analysis: AssignmentAnalysis;
@@ -61,7 +62,10 @@ export function DraftCheckView({
   const words = countWords(draftText);
   const isEmpty = words === 0;
   const isShort = words > 0 && words < 80;
-  const isStale = Boolean(result && checkedDraftText !== draftText);
+  const isStale = Boolean(
+    result &&
+      (checkedDraftText !== draftText || result.sectionId !== selectedSectionId),
+  );
   const criterionName = new Map(analysis.rubric.map((criterion) => [criterion.id, criterion.name]));
   const urgentGapCount = result?.feedback.filter(
     (item) => item.severity === "high" && item.kind !== "strength",
@@ -88,10 +92,11 @@ export function DraftCheckView({
             value={draftText}
             onChange={(event) => onDraftChange(event.target.value)}
             placeholder="Paste your own paragraph or section here…"
+            maxLength={PROJECT_DRAFT_MAX_CHARACTERS}
             aria-describedby="draft-help draft-count"
             data-testid="draft-text"
           />
-          <div className="editor-meta"><span id="draft-count">{words} words</span><span id="draft-help">Best for one section at a time</span></div>
+          <div className="editor-meta"><span id="draft-count">{words} words · {draftText.length.toLocaleString()} / {PROJECT_DRAFT_MAX_CHARACTERS.toLocaleString()} characters</span><span id="draft-help">Best for one section at a time</span></div>
           {isEmpty ? <p className="field-message error" role="alert">Paste your own writing to begin. RubricTrail prompts your review; it will not write the assignment for you.</p> : null}
           {isShort ? <p className="field-message warning">This is a short extract. You can still run a limited check, but structural coverage may be incomplete.</p> : null}
           <button className="button button-primary button-full" type="button" onClick={onCheck} disabled={isEmpty || isChecking} data-testid="run-draft-check">
@@ -110,7 +115,7 @@ export function DraftCheckView({
             </div>
           ) : result ? (
             <div className="results-stack" data-testid="draft-results">
-              {isStale ? <div className="inline-alert warning"><AlertTriangle aria-hidden="true" /><div><strong>Your draft has changed.</strong><span>Run the check again to refresh this feedback.</span></div></div> : null}
+               {isStale ? <div className="inline-alert warning"><AlertTriangle aria-hidden="true" /><div><strong>Your draft or selected section has changed.</strong><span>Run the check again to refresh this feedback.</span></div></div> : null}
               <div className="result-summary">
                 <div className="coverage-number"><strong>{signalLabel(result.coverageEstimate)}</strong><span>surface signals</span></div>
                 <div><h2 id="draft-results-title">{urgentGapCount > 0 ? `${urgentGapCount} high-priority review ${urgentGapCount === 1 ? "prompt" : "prompts"}.` : "No high-priority prompts from this demo scan."}</h2><p>{result.coverageDisclaimer} Verify every prompt yourself.</p></div>

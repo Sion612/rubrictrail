@@ -1,9 +1,21 @@
-import { planTaskTemplateSchema, type PlanTaskTemplate } from "@/lib/domain";
+import {
+  dateOnlySchema,
+  planTaskTemplateSchema,
+  type PlanTaskTemplate,
+} from "@/lib/domain";
 import type {
   UploadFlowResult,
+  UploadedCriterionReview,
   UploadedProject,
   UploadedProjectDraft,
 } from "@/lib/ui-types";
+
+export const UPLOADED_REVIEW_MAX_CHARACTERS = 40_000;
+
+export interface UploadedProjectDraftIssue {
+  targetId: string;
+  message: string;
+}
 
 function slug(value: string): string {
   return value
@@ -20,16 +32,68 @@ export function todayIso(): string {
   return local.toISOString().slice(0, 10);
 }
 
+export function maximumSupportedDueDate(baseDate = todayIso()): string {
+  return `${Number(baseDate.slice(0, 4)) + 4}${baseDate.slice(4)}`;
+}
+
+export function isConfirmedUploadedReview(
+  review: UploadedCriterionReview,
+): boolean {
+  return Boolean(
+    review.updatedAt &&
+      review.draftText.trim().length >= 20 &&
+      review.evidenceVisible &&
+      review.linkExplained &&
+      review.sourceTraceable,
+  );
+}
+
 export function normalizeDateForInput(value: string | null): string {
   if (!value) return "";
-  const iso = value.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+  const trimmed = value.trim();
+  const iso = trimmed.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
   if (iso) {
-    return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+    const normalized = `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+    return dateOnlySchema.safeParse(normalized).success ? normalized : "";
   }
-  if (/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(value.trim())) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+  if (/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(trimmed)) return "";
+
+  const months: Record<string, number> = {
+    jan: 1,
+    january: 1,
+    feb: 2,
+    february: 2,
+    mar: 3,
+    march: 3,
+    apr: 4,
+    april: 4,
+    may: 5,
+    jun: 6,
+    june: 6,
+    jul: 7,
+    july: 7,
+    aug: 8,
+    august: 8,
+    sep: 9,
+    sept: 9,
+    september: 9,
+    oct: 10,
+    october: 10,
+    nov: 11,
+    november: 11,
+    dec: 12,
+    december: 12,
+  };
+  const dayFirst = trimmed.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]+)\s+(\d{4})$/i);
+  const monthFirst = trimmed.match(/^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/i);
+  const match = dayFirst
+    ? { day: dayFirst[1], month: months[dayFirst[2].toLowerCase()], year: dayFirst[3] }
+    : monthFirst
+      ? { day: monthFirst[2], month: months[monthFirst[1].toLowerCase()], year: monthFirst[3] }
+      : null;
+  if (!match?.month) return "";
+  const normalized = `${match.year}-${String(match.month).padStart(2, "0")}-${match.day.padStart(2, "0")}`;
+  return dateOnlySchema.safeParse(normalized).success ? normalized : "";
 }
 
 export function draftFromUpload(result: UploadFlowResult): UploadedProjectDraft {
@@ -48,26 +112,58 @@ export function draftFromUpload(result: UploadFlowResult): UploadedProjectDraft 
   };
 }
 
-export function validateUploadedProjectDraft(draft: UploadedProjectDraft): string[] {
-  const errors: string[] = [];
+export function validateUploadedProjectDraftIssues(
+  draft: UploadedProjectDraft,
+): UploadedProjectDraftIssue[] {
+  const issues: UploadedProjectDraftIssue[] = [];
+  const addIssue = (targetId: string, message: string) => {
+    issues.push({ targetId, message });
+  };
   const wordCount = Number(draft.wordCount);
+  const maximumDueDate = maximumSupportedDueDate();
   const totalWeight = draft.criteria.reduce(
     (total, criterion) => total + (Number(criterion.weight) || 0),
     0,
   );
-  if (!draft.title.trim()) errors.push("Add an assignment title.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate)) errors.push("Add a valid deadline.");
-  if (!Number.isInteger(wordCount) || wordCount <= 0) errors.push("Add a positive whole-number word count.");
-  if (!draft.citationStyle.trim()) errors.push("Add a citation style, or enter “Not specified”.");
-  if (draft.criteria.length === 0) errors.push("Add at least one rubric criterion.");
-  if (draft.criteria.some((criterion) => !criterion.name.trim())) errors.push("Name every rubric criterion.");
-  if (draft.criteria.some((criterion) => !(Number(criterion.weight) > 0))) {
-    errors.push("Give every criterion a positive weight.");
-  }
+  if (!draft.title.trim()) addIssue("confirm-title", "Add an assignment title.");
+  else if (draft.title.trim().length > 300) addIssue("confirm-title", "Keep the assignment title under 300 characters.");
+  if (draft.course.trim().length > 200) addIssue("confirm-course", "Keep the course or module under 200 characters.");
+  if (!dateOnlySchema.safeParse(draft.dueDate).success) addIssue("confirm-deadline", "Add a real calendar deadline.");
+  else if (draft.dueDate > maximumDueDate) addIssue("confirm-deadline", "Choose a deadline within the next four years.");
+  if (!Number.isInteger(wordCount) || wordCount <= 0) addIssue("confirm-word-count", "Add a positive whole-number word count.");
+  else if (wordCount > 50_000) addIssue("confirm-word-count", "Keep the word count at or below 50,000 words.");
+  if (!draft.citationStyle.trim()) addIssue("confirm-citation-style", "Add a citation style, or enter “Not specified”.");
+  else if (draft.citationStyle.trim().length > 160) addIssue("confirm-citation-style", "Keep the citation style under 160 characters.");
+  if (draft.criteria.length === 0) addIssue("add-criterion", "Add at least one rubric criterion.");
+  else if (draft.criteria.length > 50) addIssue("rubric-detection-title", "Keep the rubric to 50 criteria or fewer.");
+  draft.criteria.forEach((criterion, index) => {
+    if (!criterion.name.trim()) {
+      addIssue(`criterion-name-${index}`, `Criterion ${index + 1}: add a name.`);
+    } else if (criterion.name.trim().length > 300) {
+      addIssue(
+        `criterion-name-${index}`,
+        `Criterion ${index + 1}: keep the name under 300 characters.`,
+      );
+    }
+    const weight = Number(criterion.weight);
+    if (!Number.isFinite(weight) || weight <= 0 || weight > 100) {
+      addIssue(
+        `criterion-weight-${index}`,
+        `Criterion ${index + 1}: use a weight greater than 0 and no more than 100.`,
+      );
+    }
+  });
   if (Math.abs(totalWeight - 100) > 0.01) {
-    errors.push(`Rubric weights must total 100%; they currently total ${totalWeight || 0}%.`);
+    addIssue(
+      draft.criteria.length ? "criterion-weight-0" : "add-criterion",
+      `Rubric weights must total 100%; they currently total ${totalWeight || 0}%.`,
+    );
   }
-  return errors;
+  return issues;
+}
+
+export function validateUploadedProjectDraft(draft: UploadedProjectDraft): string[] {
+  return validateUploadedProjectDraftIssues(draft).map((issue) => issue.message);
 }
 
 export function createUploadedProject(

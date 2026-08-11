@@ -815,6 +815,10 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 
 .toast { position: fixed; z-index: 120; right: 22px; bottom: 22px; max-width: min(470px, calc(100vw - 44px)); display: flex; align-items: center; gap: 9px; padding: 13px 16px; border: 1px solid var(--line); border-left: 4px solid var(--teal); border-radius: 7px; background: white; box-shadow: 0 14px 36px rgba(20,35,31,0.16); font-size: 0.78rem; animation: toast-in 180ms ease both; }
 .toast.warning { border-left-color: var(--amber); }
+.toast.info { border-left-color: #3f6f9a; }
+.persistence-warning { bottom: 82px; align-items: flex-start; }
+.persistence-warning > span { flex: 1; line-height: 1.45; }
+.persistence-warning .icon-button { width: 28px; height: 28px; flex: 0 0 28px; margin: -6px -8px -6px 2px; }
 @keyframes toast-in { from { transform: translateY(10px); opacity: 0; } }
 
 .app-loading { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }

@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ASSIGNMENT_EVIDENCE_EXCERPT_MAX_CHARACTERS,
+  ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS,
   ASSIGNMENT_FILE_MAX_BYTES,
+  ASSIGNMENT_FILE_MAX_COUNT,
+  ASSIGNMENT_FILES_MAX_TOTAL_BYTES,
   AssignmentFileParseError,
   buildUploadedAssignmentSummary,
   parseAssignmentFiles,
@@ -85,6 +89,74 @@ describe("parseAssignmentFiles", () => {
     await expect(parseAssignmentFiles([file])).rejects.toSatisfy(
       expectErrorCode("FILE_TOO_LARGE"),
     );
+  });
+
+  it("rejects more than the maximum file count before parsing", async () => {
+    const files = Array.from(
+      { length: ASSIGNMENT_FILE_MAX_COUNT + 1 },
+      (_, index) => makeFile(`Brief ${index + 1}`, `brief-${index + 1}.txt`),
+    );
+
+    await expect(parseAssignmentFiles(files)).rejects.toSatisfy(
+      expectErrorCode("TOO_MANY_FILES"),
+    );
+    expect(parserMocks.extractRawText).not.toHaveBeenCalled();
+    expect(parserMocks.getDocument).not.toHaveBeenCalled();
+  });
+
+  it("rejects a selection over the combined size limit before parsing", async () => {
+    const files = [
+      makeFile("first", "first.txt"),
+      makeFile("second", "second.txt"),
+      makeFile("third", "third.txt"),
+    ];
+    const sizes = [
+      ASSIGNMENT_FILE_MAX_BYTES,
+      ASSIGNMENT_FILE_MAX_BYTES,
+      ASSIGNMENT_FILES_MAX_TOTAL_BYTES - ASSIGNMENT_FILE_MAX_BYTES * 2 + 1,
+    ];
+    files.forEach((file, index) => {
+      Object.defineProperty(file, "size", {
+        configurable: true,
+        value: sizes[index],
+      });
+    });
+
+    await expect(parseAssignmentFiles(files)).rejects.toSatisfy(
+      expectErrorCode("TOTAL_FILE_SIZE_TOO_LARGE"),
+    );
+    expect(parserMocks.extractRawText).not.toHaveBeenCalled();
+    expect(parserMocks.getDocument).not.toHaveBeenCalled();
+  });
+
+  it("caps cumulative extracted text across files", async () => {
+    const firstLength = Math.floor(
+      ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS / 2,
+    );
+    parserMocks.extractRawText
+      .mockResolvedValueOnce({ value: "a".repeat(firstLength) })
+      .mockResolvedValueOnce({
+        value: "b".repeat(
+          ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS - firstLength,
+        ),
+      });
+    const files = [
+      makeFile(
+        "mock-docx-1",
+        "first.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+      makeFile(
+        "mock-docx-2",
+        "second.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    ];
+
+    await expect(parseAssignmentFiles(files)).rejects.toSatisfy(
+      expectErrorCode("EXTRACTED_TEXT_TOO_LARGE"),
+    );
+    expect(parserMocks.extractRawText).toHaveBeenCalledTimes(2);
   });
 
   it("rejects an empty or whitespace-only text file", async () => {
@@ -204,6 +276,27 @@ describe("parseAssignmentFiles", () => {
 });
 
 describe("buildUploadedAssignmentSummary", () => {
+  it("keeps a matched value inside a capped excerpt from a long source line", async () => {
+    const rawDate = "22 July 2026";
+    const longLine = `${"context-before ".repeat(80)}Deadline: ${rawDate} ${"context-after ".repeat(80)}`;
+    const parsed = await parseAssignmentFiles([
+      makeFile(longLine, "long-line.txt"),
+    ]);
+
+    const summary = buildUploadedAssignmentSummary(parsed);
+    const evidence = summary.dueDate.evidence;
+
+    expect(summary.dueDate.raw).toBe(rawDate);
+    expect(evidence).not.toBeNull();
+    expect(evidence?.excerpt.length).toBeLessThanOrEqual(
+      ASSIGNMENT_EVIDENCE_EXCERPT_MAX_CHARACTERS,
+    );
+    expect(evidence?.excerpt).toContain(rawDate);
+    expect(
+      parsed.text.slice(evidence?.startOffset, evidence?.endOffset),
+    ).toBe(evidence?.excerpt);
+  });
+
   it("extracts only explicit assignment fields and complete rubric weights", () => {
     const summary = buildUploadedAssignmentSummary(`
 Assignment title: Service Operations Improvement Report

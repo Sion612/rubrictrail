@@ -1,10 +1,188 @@
-import type { PersistedProjectState, WorkspaceView } from "@/lib/ui-types";
+import { z } from "zod";
+import { dateOnlySchema, draftCheckResultSchema } from "@/lib/domain";
+import type { UploadedSourceEvidence } from "@/lib/files/parse-assignment-files";
+import { DEFAULT_PLAN_TASK_TEMPLATES } from "@/lib/plan";
 import { SAMPLE_DRAFT_TEXT } from "@/lib/sample-data";
+import {
+  maximumSupportedDueDate,
+  UPLOADED_REVIEW_MAX_CHARACTERS,
+} from "@/lib/uploaded-project";
+import type {
+  PersistedProjectState,
+  UploadedCriterionReview,
+  UploadedProject,
+  UploadedProjectCriterion,
+} from "@/lib/ui-types";
 
 export const STORAGE_KEY = "rubrictrail.project.v2";
 const LEGACY_STORAGE_KEY = "proofline.project.v1";
 
-const VIEWS: WorkspaceView[] = ["overview", "rubric", "plan", "draft", "progress"];
+const MAX_STORED_CHARACTERS = 2_500_000;
+const MAX_ID_LENGTH = 160;
+export const PROJECT_DRAFT_MAX_CHARACTERS = 100_000;
+const MAX_CRITERIA = 50;
+const MAX_FILES = 25;
+const MAX_TASK_IDS = 200;
+const MAX_READINESS_IDS = 32;
+
+const VIEWS = ["overview", "rubric", "plan", "draft", "progress"] as const;
+const viewSchema = z.enum(VIEWS);
+
+const nonBlankString = (maximum: number) =>
+  z
+    .string()
+    .min(1)
+    .max(maximum)
+    .refine((value) => value.trim().length > 0, "Expected a non-blank string");
+
+const idSchema = nonBlankString(MAX_ID_LENGTH);
+
+const uploadedSourceEvidenceSchema: z.ZodType<UploadedSourceEvidence> = z
+  .object({
+    sourceId: idSchema.nullable(),
+    fileName: nonBlankString(255).nullable(),
+    page: z.number().int().positive().max(1_000_000).nullable(),
+    excerpt: nonBlankString(4_096),
+    startOffset: z.number().int().nonnegative().max(20_000_000),
+    endOffset: z.number().int().nonnegative().max(20_000_000),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    if (evidence.endOffset < evidence.startOffset) {
+      context.addIssue({
+        code: "custom",
+        message: "Evidence end offset cannot precede its start offset",
+        path: ["endOffset"],
+      });
+    }
+  });
+
+const uploadedProjectCriterionSchema: z.ZodType<UploadedProjectCriterion> = z
+  .object({
+    id: idSchema,
+    name: nonBlankString(300),
+    weight: z.number().finite().positive().max(100),
+    evidence: uploadedSourceEvidenceSchema.nullable(),
+  })
+  .strict();
+
+const uploadedProjectSchema: z.ZodType<UploadedProject> = z
+  .object({
+    id: idSchema,
+    title: nonBlankString(300),
+    course: nonBlankString(200),
+    dueDate: dateOnlySchema,
+    wordCount: z.number().int().positive().max(50_000),
+    citationStyle: nonBlankString(160),
+    fileNames: z.array(nonBlankString(255)).min(1).max(MAX_FILES),
+    extractedWordCount: z.number().int().nonnegative().max(5_000_000),
+    criteria: z.array(uploadedProjectCriterionSchema).min(1).max(MAX_CRITERIA),
+    createdAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .superRefine((project, context) => {
+    const criterionIds = new Set<string>();
+    project.criteria.forEach((criterion, index) => {
+      if (criterionIds.has(criterion.id)) {
+        context.addIssue({
+          code: "custom",
+          message: `Duplicate uploaded criterion id: ${criterion.id}`,
+          path: ["criteria", index, "id"],
+        });
+      }
+      criterionIds.add(criterion.id);
+    });
+
+    const totalWeight = project.criteria.reduce(
+      (total, criterion) => total + criterion.weight,
+      0,
+    );
+    if (Math.abs(totalWeight - 100) > 0.01) {
+      context.addIssue({
+        code: "custom",
+        message: "Uploaded criterion weights must total 100",
+        path: ["criteria"],
+      });
+    }
+
+    if (project.dueDate > maximumSupportedDueDate()) {
+      context.addIssue({
+        code: "custom",
+        message: "Uploaded project due date is outside the supported planning window",
+        path: ["dueDate"],
+      });
+    }
+    if (new Date(project.createdAt).getTime() > Date.now() + 86_400_000) {
+      context.addIssue({
+        code: "custom",
+        message: "Uploaded project creation time cannot be in the future",
+        path: ["createdAt"],
+      });
+    }
+  });
+
+const uploadedCriterionReviewSchema: z.ZodType<UploadedCriterionReview> = z
+  .object({
+    criterionId: idSchema,
+    draftText: z.string().max(UPLOADED_REVIEW_MAX_CHARACTERS),
+    evidenceVisible: z.boolean(),
+    linkExplained: z.boolean(),
+    sourceTraceable: z.boolean(),
+    updatedAt: z.string().datetime({ offset: true }).nullable(),
+  })
+  .strict();
+
+const persistedProjectStateSchema: z.ZodType<PersistedProjectState> = z
+  .object({
+    version: z.literal(2),
+    projectKind: z.enum(["none", "sample", "uploaded"]),
+    uploadedProject: uploadedProjectSchema.nullable(),
+    view: viewSchema,
+    visitedViews: z.array(viewSchema).max(VIEWS.length),
+    completedTaskIds: z.array(idSchema).max(MAX_TASK_IDS),
+    weeklyHours: z.number().finite().min(1).max(40),
+    targetGrade: z.number().finite().min(40).max(95),
+    draftText: z.string().max(PROJECT_DRAFT_MAX_CHARACTERS),
+    selectedSectionId: idSchema,
+    draftResult: draftCheckResultSchema.nullable(),
+    checkedDraftText: z.string().max(PROJECT_DRAFT_MAX_CHARACTERS).nullable(),
+    uploadedCriterionReviews: z
+      .array(uploadedCriterionReviewSchema)
+      .max(MAX_CRITERIA),
+    readinessChecks: z.array(idSchema).max(MAX_READINESS_IDS),
+  })
+  .strict()
+  .superRefine((state, context) => {
+    if (state.projectKind === "uploaded" && state.uploadedProject === null) {
+      context.addIssue({
+        code: "custom",
+        message: "Uploaded project state requires uploaded project data",
+        path: ["uploadedProject"],
+      });
+    }
+    if (state.projectKind !== "uploaded" && state.uploadedProject !== null) {
+      context.addIssue({
+        code: "custom",
+        message: "Only uploaded project state may contain uploaded project data",
+        path: ["uploadedProject"],
+      });
+    }
+  });
+
+export type ProjectStateReadSource = "v2" | "legacy" | "default";
+
+export interface ProjectStateReadResult {
+  state: PersistedProjectState;
+  source: ProjectStateReadSource;
+  recovered: boolean;
+}
+
+export type ProjectStateWriteResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "unavailable" | "invalid-state" | "storage-error";
+    };
 
 export function createDefaultProjectState(): PersistedProjectState {
   return {
@@ -27,91 +205,207 @@ export function createDefaultProjectState(): PersistedProjectState {
 
 export const DEFAULT_PROJECT_STATE = createDefaultProjectState();
 
-function strings(value: unknown): string[] {
+function unique<T>(values: readonly T[]): T[] {
+  return [...new Set(values)];
+}
+
+function boundedStrings(value: unknown, maximumCount: number): string[] {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
+    ? unique(
+        value.filter(
+          (item): item is string =>
+            typeof item === "string" &&
+            item.trim().length > 0 &&
+            item.length <= MAX_ID_LENGTH,
+        ),
+      ).slice(0, maximumCount)
     : [];
 }
 
-function normalizeState(candidate: Partial<PersistedProjectState>): PersistedProjectState {
-  const fallback = createDefaultProjectState();
-  const view = VIEWS.includes(candidate.view as WorkspaceView)
-    ? (candidate.view as WorkspaceView)
-    : "overview";
-  return {
-    ...fallback,
-    ...candidate,
-    version: 2,
-    projectKind:
-      candidate.projectKind === "sample" || candidate.projectKind === "uploaded"
-        ? candidate.projectKind
-        : "none",
-    uploadedProject:
-      candidate.uploadedProject && typeof candidate.uploadedProject === "object"
-        ? candidate.uploadedProject
-        : null,
-    view,
-    visitedViews: strings(candidate.visitedViews).filter((item): item is WorkspaceView =>
-      VIEWS.includes(item as WorkspaceView),
-    ),
-    completedTaskIds: strings(candidate.completedTaskIds),
-    readinessChecks: strings(candidate.readinessChecks),
+function knownCompletedTaskIds(state: PersistedProjectState): Set<string> {
+  if (state.projectKind === "sample") {
+    return new Set(DEFAULT_PLAN_TASK_TEMPLATES.map((template) => template.id));
+  }
+  if (state.projectKind === "uploaded" && state.uploadedProject) {
+    return new Set([
+      "confirm-brief",
+      "rubric-outline",
+      "draft",
+      "rubric-audit",
+      "submission-qa",
+      ...state.uploadedProject.criteria.map((_, index) => `criterion-${index + 1}`),
+    ]);
+  }
+  return new Set();
+}
+
+function normalizeValidatedState(state: PersistedProjectState): {
+  state: PersistedProjectState;
+  recovered: boolean;
+} {
+  const knownTaskIds = knownCompletedTaskIds(state);
+  const criterionIds = new Set(
+    state.uploadedProject?.criteria.map((criterion) => criterion.id) ?? [],
+  );
+  const reviewByCriterion = new Map<string, UploadedCriterionReview>();
+  if (state.projectKind === "uploaded") {
+    state.uploadedCriterionReviews.forEach((review) => {
+      if (criterionIds.has(review.criterionId)) {
+        reviewByCriterion.set(review.criterionId, review);
+      }
+    });
+  }
+
+  const nextState: PersistedProjectState = {
+    ...state,
+    visitedViews: unique(state.visitedViews),
+    completedTaskIds: unique(state.completedTaskIds).filter((id) => knownTaskIds.has(id)),
     selectedSectionId:
-      candidate.selectedSectionId === "analysis-and-recommendations"
+      state.selectedSectionId === "analysis-and-recommendations"
         ? "analysis-recommendations"
-        : candidate.selectedSectionId || fallback.selectedSectionId,
-    uploadedCriterionReviews: Array.isArray(candidate.uploadedCriterionReviews)
-      ? candidate.uploadedCriterionReviews
-      : [],
+        : state.selectedSectionId,
+    uploadedCriterionReviews: [...reviewByCriterion.values()],
+    readinessChecks: unique(state.readinessChecks),
+  };
+
+  return {
+    state: nextState,
+    recovered: JSON.stringify(nextState) !== JSON.stringify(state),
   };
 }
 
-function migrateLegacy(raw: string): PersistedProjectState {
+function parseV2(raw: string): ReturnType<typeof normalizeValidatedState> | null {
+  if (raw.length > MAX_STORED_CHARACTERS) return null;
   try {
-    const legacy = JSON.parse(raw) as Record<string, unknown>;
-    return normalizeState({
-      projectKind: legacy.sampleLoaded === true ? "sample" : "none",
-      view: legacy.view as WorkspaceView,
-      completedTaskIds: strings(legacy.completedTaskIds),
-      weeklyHours: typeof legacy.weeklyHours === "number" ? legacy.weeklyHours : 10,
-      targetGrade: typeof legacy.targetGrade === "number" ? legacy.targetGrade : 70,
-      draftText: typeof legacy.draftText === "string" ? legacy.draftText : SAMPLE_DRAFT_TEXT,
-      selectedSectionId:
-        typeof legacy.selectedSectionId === "string"
-          ? legacy.selectedSectionId
-          : "analysis-recommendations",
-      draftResult: (legacy.draftResult as PersistedProjectState["draftResult"]) ?? null,
-      checkedDraftText:
-        typeof legacy.checkedDraftText === "string" ? legacy.checkedDraftText : null,
-      readinessChecks: strings(legacy.readinessChecks),
-    });
+    const parsed = persistedProjectStateSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? normalizeValidatedState(parsed.data) : null;
   } catch {
-    return createDefaultProjectState();
+    return null;
   }
+}
+
+function validNumber(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+  fallback: number,
+): number {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= minimum &&
+    value <= maximum
+    ? value
+    : fallback;
+}
+
+function migrateLegacy(raw: string): PersistedProjectState | null {
+  if (raw.length > MAX_STORED_CHARACTERS) return null;
+  try {
+    const legacy = JSON.parse(raw) as unknown;
+    if (typeof legacy !== "object" || legacy === null || Array.isArray(legacy)) return null;
+    const candidate = legacy as Record<string, unknown>;
+    const fallback = createDefaultProjectState();
+    const parsedDraftResult = draftCheckResultSchema.safeParse(candidate.draftResult);
+    const view = viewSchema.safeParse(candidate.view);
+    const draftText =
+      typeof candidate.draftText === "string" &&
+      candidate.draftText.length <= PROJECT_DRAFT_MAX_CHARACTERS
+        ? candidate.draftText
+        : SAMPLE_DRAFT_TEXT;
+    const checkedDraftText =
+      typeof candidate.checkedDraftText === "string" &&
+      candidate.checkedDraftText.length <= PROJECT_DRAFT_MAX_CHARACTERS
+        ? candidate.checkedDraftText
+        : null;
+    const selectedSectionId =
+      typeof candidate.selectedSectionId === "string" &&
+      candidate.selectedSectionId.trim().length > 0 &&
+      candidate.selectedSectionId.length <= MAX_ID_LENGTH
+        ? candidate.selectedSectionId
+        : fallback.selectedSectionId;
+
+    const migrated = persistedProjectStateSchema.safeParse({
+      ...fallback,
+      projectKind: candidate.sampleLoaded === true ? "sample" : "none",
+      view: view.success ? view.data : "overview",
+      visitedViews: [],
+      completedTaskIds: boundedStrings(candidate.completedTaskIds, MAX_TASK_IDS),
+      weeklyHours: validNumber(candidate.weeklyHours, 1, 40, fallback.weeklyHours),
+      targetGrade: validNumber(candidate.targetGrade, 40, 95, fallback.targetGrade),
+      draftText,
+      selectedSectionId,
+      draftResult: parsedDraftResult.success ? parsedDraftResult.data : null,
+      checkedDraftText,
+      uploadedCriterionReviews: [],
+      readinessChecks: boundedStrings(candidate.readinessChecks, MAX_READINESS_IDS),
+    });
+    return migrated.success ? normalizeValidatedState(migrated.data).state : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readProjectStateWithStatus(): ProjectStateReadResult {
+  const fallback = createDefaultProjectState();
+  if (typeof window === "undefined") {
+    return { state: fallback, source: "default", recovered: false };
+  }
+
+  let v2Raw: string | null;
+  try {
+    v2Raw = window.localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return { state: fallback, source: "default", recovered: true };
+  }
+
+  if (v2Raw !== null) {
+    const parsed = parseV2(v2Raw);
+    if (parsed) {
+      return { state: parsed.state, source: "v2", recovered: parsed.recovered };
+    }
+  }
+
+  let legacyRaw: string | null;
+  try {
+    legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+  } catch {
+    return { state: fallback, source: "default", recovered: true };
+  }
+
+  if (legacyRaw !== null) {
+    const migrated = migrateLegacy(legacyRaw);
+    if (migrated) {
+      return { state: migrated, source: "legacy", recovered: true };
+    }
+  }
+
+  return {
+    state: fallback,
+    source: "default",
+    recovered: v2Raw !== null || legacyRaw !== null,
+  };
 }
 
 export function readProjectState(): PersistedProjectState {
-  if (typeof window === "undefined") return createDefaultProjectState();
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const candidate = JSON.parse(raw) as Partial<PersistedProjectState>;
-      if (candidate.version === 2) return normalizeState(candidate);
-    }
-    const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-    return legacy ? migrateLegacy(legacy) : createDefaultProjectState();
-  } catch {
-    return createDefaultProjectState();
-  }
+  return readProjectStateWithStatus().state;
 }
 
-export function writeProjectState(state: PersistedProjectState): void {
-  if (typeof window === "undefined") return;
+export function writeProjectState(state: PersistedProjectState): ProjectStateWriteResult {
+  if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
+
+  const parsed = persistedProjectStateSchema.safeParse(state);
+  if (!parsed.success) return { ok: false, reason: "invalid-state" };
+
+  const serialized = JSON.stringify(normalizeValidatedState(parsed.data).state);
+  if (serialized.length > MAX_STORED_CHARACTERS) {
+    return { ok: false, reason: "invalid-state" };
+  }
+
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(STORAGE_KEY, serialized);
+    return { ok: true };
   } catch {
-    // Storage may be unavailable in private or restricted browser contexts.
+    return { ok: false, reason: "storage-error" };
   }
 }
 

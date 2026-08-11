@@ -60,9 +60,22 @@ describe("generateActionPlan", () => {
     expect(plan.rubricProgress.every((item) => item.percent > 0)).toBe(true);
   });
 
-  it("rejects invalid inputs and unknown task ids", () => {
+  it("rejects invalid inputs and ignores task ids from older plan versions", () => {
     expect(() => generateActionPlan({ ...DEFAULT_PLAN_INPUT, weeklyHours: 0 })).toThrow();
-    expect(() => generateActionPlan({ ...DEFAULT_PLAN_INPUT, completedTaskIds: ["missing"] })).toThrow("Unknown completed plan task");
+    const recovered = generateActionPlan({
+      ...DEFAULT_PLAN_INPUT,
+      completedTaskIds: ["missing"],
+    });
+    expect(recovered.tasks.every((task) => !task.completed)).toBe(true);
+  });
+
+  it("does not restore completed tasks whose active dependencies are incomplete", () => {
+    const recovered = generateActionPlan({
+      ...DEFAULT_PLAN_INPUT,
+      completedTaskIds: ["p2", "p3"],
+    });
+    expect(recovered.tasks.find((task) => task.id === "p2")?.completed).toBe(false);
+    expect(recovered.tasks.find((task) => task.id === "p3")?.completed).toBe(false);
   });
 });
 
@@ -87,4 +100,3 @@ describe("plan helpers", () => {
     expect(calculateAvailableMinutes(5.5, "2026-07-25", "2026-07-26")).toBe(30);
   });
 });
-

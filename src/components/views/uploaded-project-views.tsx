@@ -16,6 +16,12 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import type { ActionPlan } from "@/lib/domain";
+import { daysBetween } from "@/lib/plan";
+import {
+  isConfirmedUploadedReview,
+  todayIso,
+  UPLOADED_REVIEW_MAX_CHARACTERS,
+} from "@/lib/uploaded-project";
 import type {
   UploadedCriterionReview,
   UploadedProject,
@@ -178,6 +184,7 @@ export function UploadedRubricView({
 interface UploadedDraftReviewViewProps {
   project: UploadedProject;
   reviews: UploadedCriterionReview[];
+  onChange: (review: UploadedCriterionReview) => void;
   onSave: (review: UploadedCriterionReview) => void;
   onNavigate: (view: WorkspaceView) => void;
 }
@@ -185,6 +192,7 @@ interface UploadedDraftReviewViewProps {
 export function UploadedDraftReviewView({
   project,
   reviews,
+  onChange,
   onSave,
   onNavigate,
 }: UploadedDraftReviewViewProps) {
@@ -205,15 +213,28 @@ export function UploadedDraftReviewView({
   };
 
   function updateActive(patch: Partial<typeof activeReview>) {
+    const nextReview = { ...activeReview, ...patch };
     setWorkingReviews((current) => ({
       ...current,
-      [criterionId]: { ...activeReview, ...patch },
+      [criterionId]: nextReview,
     }));
+    onChange({
+      criterionId,
+      ...nextReview,
+      updatedAt: null,
+    });
   }
 
-  const completeCount = reviews.filter(
-    (review) => review.draftText.trim() && review.evidenceVisible && review.linkExplained && review.sourceTraceable,
-  ).length;
+  const validCriterionIds = new Set(project.criteria.map((criterion) => criterion.id));
+  const completeCount = new Set(
+    reviews
+      .filter(
+        (review) =>
+          validCriterionIds.has(review.criterionId) &&
+          isConfirmedUploadedReview(review),
+      )
+      .map((review) => review.criterionId),
+  ).size;
   const canSave = activeReview.draftText.trim().length >= 20;
 
   function save() {
@@ -258,16 +279,21 @@ export function UploadedDraftReviewView({
               value={activeReview.draftText}
               onChange={(event) => updateActive({ draftText: event.target.value })}
               placeholder="Paste your own draft text here…"
+              maxLength={UPLOADED_REVIEW_MAX_CHARACTERS}
+              aria-describedby="uploaded-review-count"
               data-testid="uploaded-review-text"
             />
           </label>
+          <p className="editor-meta" id="uploaded-review-count">
+            {activeReview.draftText.length.toLocaleString()} / {UPLOADED_REVIEW_MAX_CHARACTERS.toLocaleString()} characters
+          </p>
           {!canSave && activeReview.draftText ? <p className="field-message warning">Add at least 20 characters so the saved note is meaningful.</p> : null}
           <button className="button button-primary button-full" type="button" disabled={!canSave} onClick={save} data-testid="save-self-check">
             Save self-check
           </button>
           <div className="integrity-note compact">
             <LockKeyhole aria-hidden="true" />
-            <p><strong>Saved locally.</strong> This draft excerpt stays in this browser until reset.</p>
+            <p><strong>Autosave is on.</strong> Save records a review time; the criterion counts complete only when the note and all three checks are present.</p>
           </div>
         </section>
 
@@ -312,7 +338,7 @@ export function UploadedDraftReviewView({
   );
 }
 
-const UPLOADED_READINESS = [
+export const UPLOADED_READINESS = [
   ["deliverables", "Every required deliverable is present"],
   ["sources", "Every material claim has a traceable source"],
   ["format", "Word count, structure and citation format are checked"],
@@ -331,10 +357,7 @@ interface UploadedProgressViewProps {
 }
 
 function deadlineStatus(dueDate: string): { value: string; label: string; overdue: boolean } {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(`${dueDate}T00:00:00`);
-  const days = Math.ceil((due.getTime() - today.getTime()) / 86_400_000);
+  const days = daysBetween(todayIso(), dueDate);
   if (days < 0) return { value: `${Math.abs(days)} days`, label: "overdue", overdue: true };
   if (days === 0) return { value: "Today", label: "deadline", overdue: false };
   return { value: `${days} days`, label: "until deadline", overdue: false };
@@ -351,7 +374,7 @@ export function UploadedProgressView({
   const completedTasks = plan.tasks.filter((task) => task.completed).length;
   const completeReviewIds = new Set(
     reviews
-      .filter((review) => review.draftText.trim() && review.evidenceVisible && review.linkExplained && review.sourceTraceable)
+      .filter(isConfirmedUploadedReview)
       .map((review) => review.criterionId),
   );
   const checksComplete = UPLOADED_READINESS.filter(([id]) => readinessChecks.includes(id)).length;
@@ -360,6 +383,30 @@ export function UploadedProgressView({
   const deadline = deadlineStatus(project.dueDate);
   const nextTask = plan.tasks.find((task) => !task.completed);
   const nextUnchecked = project.criteria.find((criterion) => !completeReviewIds.has(criterion.id));
+  const checklistIncomplete = checksComplete < UPLOADED_READINESS.length;
+  const nextHeading = nextTask?.title ?? (nextUnchecked
+    ? `Self-check ${nextUnchecked.name}`
+    : checklistIncomplete
+      ? "Finish the human submission checklist"
+      : "All tracked gates are complete");
+  const nextDescription = nextTask?.doneDefinition[0] ?? (nextUnchecked
+    ? "Paste the relevant draft text and verify its evidence trail."
+    : checklistIncomplete
+      ? "Confirm each final gate against the actual file you will submit."
+      : "Carry out one final human review of the actual submission file.");
+
+  function continueNextAction() {
+    if (nextTask) {
+      onContinue("plan");
+      return;
+    }
+    if (nextUnchecked) {
+      onContinue("draft");
+      return;
+    }
+    document.getElementById("uploaded-readiness-title")?.focus({ preventScroll: true });
+    document.getElementById("uploaded-readiness-title")?.scrollIntoView({ block: "center" });
+  }
 
   return (
     <div className="view-stack uploaded-progress-view">
@@ -418,7 +465,7 @@ export function UploadedProgressView({
         </section>
 
         <section className="readiness-checklist" aria-labelledby="uploaded-readiness-title">
-          <div className="section-heading compact-heading"><div><p className="eyebrow">Final gate</p><h2 id="uploaded-readiness-title">Human submission checklist</h2></div><span>{checksComplete}/{UPLOADED_READINESS.length}</span></div>
+          <div className="section-heading compact-heading"><div><p className="eyebrow">Final gate</p><h2 id="uploaded-readiness-title" tabIndex={-1}>Human submission checklist</h2></div><span>{checksComplete}/{UPLOADED_READINESS.length}</span></div>
           <div className="checklist-items">
             {UPLOADED_READINESS.map(([id, label]) => (
               <label key={id}>
@@ -434,12 +481,14 @@ export function UploadedProgressView({
         <span className="next-number">01</span>
         <div>
           <p className="eyebrow">Next best action</p>
-          <h2 id="uploaded-next-action-title">{nextTask?.title ?? (nextUnchecked ? `Self-check ${nextUnchecked.name}` : "Finish the human submission checklist")}</h2>
-          <p>{nextTask?.doneDefinition[0] ?? (nextUnchecked ? "Paste the relevant draft text and verify its evidence trail." : "Confirm each final gate against the actual file you will submit.")}</p>
+          <h2 id="uploaded-next-action-title">{nextHeading}</h2>
+          <p>{nextDescription}</p>
         </div>
-        <button className="button button-primary" type="button" onClick={() => onContinue(nextTask ? "plan" : "draft")}>
-          Continue next action <ArrowRight aria-hidden="true" />
-        </button>
+        {!ready ? (
+          <button className="button button-primary" type="button" onClick={continueNextAction}>
+            {checklistIncomplete && !nextTask && !nextUnchecked ? "Open final checklist" : "Continue next action"} <ArrowRight aria-hidden="true" />
+          </button>
+        ) : <CheckCircle2 aria-label="Tracked gates complete" />}
       </section>
     </div>
   );

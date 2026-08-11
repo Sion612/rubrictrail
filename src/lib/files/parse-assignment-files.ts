@@ -1,10 +1,23 @@
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_COUNT = 10;
+const MAX_TOTAL_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const MAX_EXTRACTED_TEXT_CHARACTERS = 2_000_000;
+const MAX_EVIDENCE_EXCERPT_CHARACTERS = 500;
 
 export const ASSIGNMENT_FILE_MAX_BYTES = MAX_FILE_SIZE_BYTES;
+export const ASSIGNMENT_FILE_MAX_COUNT = MAX_FILE_COUNT;
+export const ASSIGNMENT_FILES_MAX_TOTAL_BYTES = MAX_TOTAL_FILE_SIZE_BYTES;
+export const ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS =
+  MAX_EXTRACTED_TEXT_CHARACTERS;
+export const ASSIGNMENT_EVIDENCE_EXCERPT_MAX_CHARACTERS =
+  MAX_EVIDENCE_EXCERPT_CHARACTERS;
 
 export type AssignmentFileErrorCode =
   | "UNSUPPORTED_FILE_TYPE"
   | "FILE_TOO_LARGE"
+  | "TOO_MANY_FILES"
+  | "TOTAL_FILE_SIZE_TOO_LARGE"
+  | "EXTRACTED_TEXT_TOO_LARGE"
   | "EMPTY_FILE"
   | "SCANNED_NO_TEXT"
   | "ENCRYPTED_PDF"
@@ -200,24 +213,49 @@ export async function parseAssignmentFiles(
     );
   }
 
+  if (files.length > MAX_FILE_COUNT) {
+    throw new AssignmentFileParseError(
+      "TOO_MANY_FILES",
+      `Choose no more than ${MAX_FILE_COUNT} assignment files at once.`,
+    );
+  }
+
   const validatedFiles = files.map((file) => ({
     file,
     kind: validateFile(file),
   }));
+  const totalBytes = files.reduce((total, file) => total + file.size, 0);
+  if (totalBytes > MAX_TOTAL_FILE_SIZE_BYTES) {
+    throw new AssignmentFileParseError(
+      "TOTAL_FILE_SIZE_TOO_LARGE",
+      "The selected files exceed the 25 MiB combined limit.",
+    );
+  }
 
   const parsedFiles: Array<{
     file: File;
     kind: AssignmentFileKind;
     parsed: LocallyParsedFile;
   }> = [];
+  let extractedCharacterCount = 0;
 
   // Keep input order stable and avoid loading several large documents at once.
   for (const { file, kind } of validatedFiles) {
+    const separatorLength = parsedFiles.length > 0 ? 2 : 0;
+    const remainingCharacters =
+      MAX_EXTRACTED_TEXT_CHARACTERS -
+      extractedCharacterCount -
+      separatorLength;
+    if (remainingCharacters <= 0) {
+      throw extractedTextTooLargeError(file);
+    }
+    const parsed = await parseSingleFile(file, kind, remainingCharacters);
     parsedFiles.push({
       file,
       kind,
-      parsed: await parseSingleFile(file, kind),
+      parsed,
     });
+    extractedCharacterCount += separatorLength + parsed.text.length;
   }
 
   let mergedText = "";
@@ -256,7 +294,7 @@ export async function parseAssignmentFiles(
   return {
     text: mergedText,
     sources,
-    totalBytes: files.reduce((total, file) => total + file.size, 0),
+    totalBytes,
     wordCount: countWords(mergedText),
   };
 }
@@ -352,28 +390,36 @@ function detectFileKind(file: File): AssignmentFileKind | null {
 async function parseSingleFile(
   file: File,
   kind: AssignmentFileKind,
+  maxExtractedCharacters: number,
 ): Promise<LocallyParsedFile> {
   if (kind === "txt") {
-    return parseTextFile(file);
+    return parseTextFile(file, maxExtractedCharacters);
   }
   if (kind === "docx") {
-    return parseDocxFile(file);
+    return parseDocxFile(file, maxExtractedCharacters);
   }
-  return parsePdfFile(file);
+  return parsePdfFile(file, maxExtractedCharacters);
 }
 
-async function parseTextFile(file: File): Promise<LocallyParsedFile> {
+async function parseTextFile(
+  file: File,
+  maxExtractedCharacters: number,
+): Promise<LocallyParsedFile> {
   try {
     const bytes = await file.arrayBuffer();
     const text = normalizeExtractedText(new TextDecoder("utf-8").decode(bytes));
     ensureTextWasExtracted(text, file, "EMPTY_FILE");
+    ensureExtractedTextWithinLimit(text, file, maxExtractedCharacters);
     return { text, pageCount: null, pages: [] };
   } catch (error) {
     throw preserveOrWrapCorruptError(error, file);
   }
 }
 
-async function parseDocxFile(file: File): Promise<LocallyParsedFile> {
+async function parseDocxFile(
+  file: File,
+  maxExtractedCharacters: number,
+): Promise<LocallyParsedFile> {
   try {
     const mammoth = (await import("mammoth")) as unknown as MammothModuleLike;
     const extractRawText =
@@ -385,13 +431,17 @@ async function parseDocxFile(file: File): Promise<LocallyParsedFile> {
     const result = await extractRawText({ arrayBuffer: await file.arrayBuffer() });
     const text = normalizeExtractedText(result.value);
     ensureTextWasExtracted(text, file, "EMPTY_FILE");
+    ensureExtractedTextWithinLimit(text, file, maxExtractedCharacters);
     return { text, pageCount: null, pages: [] };
   } catch (error) {
     throw preserveOrWrapCorruptError(error, file);
   }
 }
 
-async function parsePdfFile(file: File): Promise<LocallyParsedFile> {
+async function parsePdfFile(
+  file: File,
+  maxExtractedCharacters: number,
+): Promise<LocallyParsedFile> {
   let document: PdfDocumentLike | null = null;
 
   try {
@@ -427,6 +477,14 @@ async function parsePdfFile(file: File): Promise<LocallyParsedFile> {
           .filter(Boolean)
           .join(""),
       );
+
+      const separatorLength = documentText && pageText ? 2 : 0;
+      if (
+        documentText.length + separatorLength + pageText.length >
+        maxExtractedCharacters
+      ) {
+        throw extractedTextTooLargeError(file);
+      }
 
       if (documentText && pageText) {
         documentText += "\n\n";
@@ -496,6 +554,25 @@ function ensureTextWasExtracted(
       ? `"${file.name}" contains no extractable text and may be a scanned PDF.`
       : `"${file.name}" contains no readable text.`;
   throw new AssignmentFileParseError(code, message, file.name);
+}
+
+function ensureExtractedTextWithinLimit(
+  text: string,
+  file: File,
+  maxExtractedCharacters: number,
+): void {
+  if (text.length <= maxExtractedCharacters) {
+    return;
+  }
+  throw extractedTextTooLargeError(file);
+}
+
+function extractedTextTooLargeError(file: File): AssignmentFileParseError {
+  return new AssignmentFileParseError(
+    "EXTRACTED_TEXT_TOO_LARGE",
+    `The selected files contain more than ${MAX_EXTRACTED_TEXT_CHARACTERS.toLocaleString("en-US")} extracted characters. Choose fewer or shorter files.`,
+    file.name,
+  );
 }
 
 function preserveOrWrapCorruptError(
@@ -595,7 +672,7 @@ function extractTitle(
     value: candidate.trimmed,
     raw: candidate.trimmed,
     status: "inferred",
-    evidence: evidenceForLine(candidate, sources),
+    evidence: evidenceForLine(candidate, sources, candidate.trimmed),
   };
 }
 
@@ -692,7 +769,7 @@ function extractRubric(
     seenNames.add(key);
     criteria.push({
       ...parsed,
-      evidence: evidenceForLine(line, sources),
+      evidence: evidenceForLine(line, sources, parsed.name),
     });
   }
 
@@ -846,7 +923,7 @@ function foundField<T>(
     value,
     raw: cleanInlineValue(raw),
     status: "found",
-    evidence: evidenceForLine(line, sources),
+    evidence: evidenceForLine(line, sources, raw),
   };
 }
 
@@ -857,25 +934,117 @@ function missingField<T>(): UploadedSummaryField<T> {
 function evidenceForLine(
   line: TextLine,
   sources: ParsedAssignmentSource[],
+  preferredMatch?: string,
 ): UploadedSourceEvidence {
+  const excerpt = excerptForLine(line, preferredMatch);
+  const excerptStartOffset = line.startOffset + excerpt.startOffset;
+  const excerptEndOffset = line.startOffset + excerpt.endOffset;
   const source = sources.find(
     (candidate) =>
-      line.startOffset >= candidate.startOffset &&
-      line.startOffset < candidate.endOffset,
+      excerptStartOffset >= candidate.startOffset &&
+      excerptStartOffset < candidate.endOffset,
   );
   const page = source?.pages.find(
     (candidate) =>
-      line.startOffset >= candidate.startOffset &&
-      line.startOffset < candidate.endOffset,
+      excerptStartOffset >= candidate.startOffset &&
+      excerptStartOffset < candidate.endOffset,
   );
   return {
     sourceId: source?.id ?? null,
     fileName: source?.fileName ?? null,
     page: page?.pageNumber ?? null,
-    excerpt: line.trimmed,
-    startOffset: line.startOffset,
-    endOffset: line.endOffset,
+    excerpt: excerpt.text,
+    startOffset: excerptStartOffset,
+    endOffset: excerptEndOffset,
   };
+}
+
+function excerptForLine(
+  line: TextLine,
+  preferredMatch?: string,
+): { text: string; startOffset: number; endOffset: number } {
+  const contentStart = line.raw.search(/\S/u);
+  if (contentStart < 0) {
+    return { text: "", startOffset: 0, endOffset: 0 };
+  }
+
+  let contentEnd = line.raw.length;
+  while (contentEnd > contentStart && /\s/u.test(line.raw[contentEnd - 1])) {
+    contentEnd -= 1;
+  }
+  const content = line.raw.slice(contentStart, contentEnd);
+  if (content.length <= MAX_EVIDENCE_EXCERPT_CHARACTERS) {
+    return {
+      text: content,
+      startOffset: contentStart,
+      endOffset: contentEnd,
+    };
+  }
+
+  const match = findPreferredMatch(content, preferredMatch);
+  if (!match) {
+    return {
+      text: content.slice(0, MAX_EVIDENCE_EXCERPT_CHARACTERS),
+      startOffset: contentStart,
+      endOffset: contentStart + MAX_EVIDENCE_EXCERPT_CHARACTERS,
+    };
+  }
+
+  const matchLength = Math.min(
+    match.end - match.start,
+    MAX_EVIDENCE_EXCERPT_CHARACTERS,
+  );
+  const surroundingCharacters =
+    MAX_EVIDENCE_EXCERPT_CHARACTERS - matchLength;
+  let windowStart = Math.max(
+    0,
+    match.start - Math.floor(surroundingCharacters / 2),
+  );
+  let windowEnd = Math.min(
+    content.length,
+    windowStart + MAX_EVIDENCE_EXCERPT_CHARACTERS,
+  );
+  windowStart = Math.max(0, windowEnd - MAX_EVIDENCE_EXCERPT_CHARACTERS);
+  if (windowEnd < match.end) {
+    windowEnd = Math.min(content.length, match.end);
+    windowStart = Math.max(0, windowEnd - MAX_EVIDENCE_EXCERPT_CHARACTERS);
+  }
+
+  return {
+    text: content.slice(windowStart, windowEnd),
+    startOffset: contentStart + windowStart,
+    endOffset: contentStart + windowEnd,
+  };
+}
+
+function findPreferredMatch(
+  content: string,
+  preferredMatch?: string,
+): { start: number; end: number } | null {
+  const preferred = preferredMatch?.trim();
+  if (!preferred) {
+    return null;
+  }
+
+  const directIndex = content.indexOf(preferred);
+  if (directIndex >= 0) {
+    return { start: directIndex, end: directIndex + preferred.length };
+  }
+
+  const tokens = preferred.split(/\s+/u).filter(Boolean);
+  if (tokens.length === 0) {
+    return null;
+  }
+  const flexibleWhitespacePattern = tokens
+    .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("\\s+");
+  const flexibleMatch = new RegExp(flexibleWhitespacePattern, "iu").exec(content);
+  return flexibleMatch
+    ? {
+        start: flexibleMatch.index,
+        end: flexibleMatch.index + flexibleMatch[0].length,
+      }
+    : null;
 }
 
 function cleanInlineValue(value: string): string {

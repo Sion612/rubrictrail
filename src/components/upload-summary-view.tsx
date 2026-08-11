@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -14,8 +14,10 @@ import {
 import {
   createUploadedProject,
   draftFromUpload,
-  validateUploadedProjectDraft,
+  validateUploadedProjectDraftIssues,
+  type UploadedProjectDraftIssue,
 } from "@/lib/uploaded-project";
+import type { UploadedSummaryFieldStatus } from "@/lib/files/parse-assignment-files";
 import type {
   UploadFlowResult,
   UploadedProject,
@@ -41,18 +43,70 @@ function EvidenceNote({ evidence }: { evidence: UploadedProjectDraft["criteria"]
   );
 }
 
+function FieldStatus({
+  status,
+  edited,
+}: {
+  status: UploadedSummaryFieldStatus;
+  edited: boolean;
+}) {
+  if (edited) {
+    return <small className="field-source-status manual">Edited manually — compare with the source excerpt</small>;
+  }
+  const message = {
+    found: "Found in the uploaded source",
+    inferred: "Inferred from a heading — verify this",
+    missing: "Not detected — enter this manually",
+  }[status];
+  return <small className={`field-source-status ${status}`}>{message}</small>;
+}
+
+function FieldError({ issue }: { issue: UploadedProjectDraftIssue | undefined }) {
+  if (!issue) return null;
+  return (
+    <small className="field-message error" id={`${issue.targetId}-error`}>
+      {issue.message}
+    </small>
+  );
+}
+
 export function UploadSummaryView({
   result,
   onBack,
   onCreateProject,
 }: UploadSummaryViewProps) {
-  const [draft, setDraft] = useState<UploadedProjectDraft>(() => draftFromUpload(result));
+  const initialDraft = useMemo(() => draftFromUpload(result), [result]);
+  const [draft, setDraft] = useState<UploadedProjectDraft>(() => initialDraft);
   const [showErrors, setShowErrors] = useState(false);
-  const errors = useMemo(() => validateUploadedProjectDraft(draft), [draft]);
+  const criterionOriginsRef = useRef<
+    Array<UploadedProjectDraft["criteria"][number] | null>
+  >(
+    initialDraft.criteria.map((criterion) => ({ ...criterion })),
+  );
+  const [criterionKeys, setCriterionKeys] = useState(
+    initialDraft.criteria.map((_, index) => `detected-${index + 1}`),
+  );
+  const nextCriterionKeyRef = useRef(0);
+  const errorSummaryRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const issues = useMemo(() => validateUploadedProjectDraftIssues(draft), [draft]);
+  const issueByTarget = useMemo(() => {
+    const firstIssueByTarget = new Map<string, UploadedProjectDraftIssue>();
+    issues.forEach((issue) => {
+      if (!firstIssueByTarget.has(issue.targetId)) {
+        firstIssueByTarget.set(issue.targetId, issue);
+      }
+    });
+    return firstIssueByTarget;
+  }, [issues]);
   const totalWeight = draft.criteria.reduce(
     (total, criterion) => total + (Number(criterion.weight) || 0),
     0,
   );
+
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, []);
 
   function updateField<K extends keyof Omit<UploadedProjectDraft, "criteria">>(
     key: K,
@@ -64,13 +118,31 @@ export function UploadSummaryView({
   function updateCriterion(index: number, key: "name" | "weight", value: string) {
     setDraft((current) => ({
       ...current,
-      criteria: current.criteria.map((criterion, criterionIndex) =>
-        criterionIndex === index ? { ...criterion, [key]: value } : criterion,
-      ),
+      criteria: current.criteria.map((criterion, criterionIndex) => {
+        if (criterionIndex !== index) return criterion;
+        const nextCriterion = { ...criterion, [key]: value };
+        const origin = criterionOriginsRef.current[index];
+        return {
+          ...nextCriterion,
+          evidence:
+            origin &&
+            nextCriterion.name === origin.name &&
+            nextCriterion.weight === origin.weight
+              ? origin.evidence
+              : null,
+        };
+      }),
     }));
   }
 
   function addCriterion() {
+    criterionOriginsRef.current = [...criterionOriginsRef.current, null];
+    nextCriterionKeyRef.current += 1;
+    const nextCriterionKey = `manual-${nextCriterionKeyRef.current}`;
+    setCriterionKeys((current) => [
+      ...current,
+      nextCriterionKey,
+    ]);
     setDraft((current) => ({
       ...current,
       criteria: [...current.criteria, { name: "", weight: "", evidence: null }],
@@ -78,16 +150,41 @@ export function UploadSummaryView({
   }
 
   function removeCriterion(index: number) {
+    criterionOriginsRef.current = criterionOriginsRef.current.filter(
+      (_, criterionIndex) => criterionIndex !== index,
+    );
+    setCriterionKeys((current) => current.filter(
+      (_, criterionIndex) => criterionIndex !== index,
+    ));
     setDraft((current) => ({
       ...current,
       criteria: current.criteria.filter((_, criterionIndex) => criterionIndex !== index),
     }));
   }
 
-  function submit() {
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setShowErrors(true);
-    if (errors.length) return;
+    if (issues.length) {
+      window.requestAnimationFrame(() => errorSummaryRef.current?.focus());
+      return;
+    }
     onCreateProject(createUploadedProject(result, draft));
+  }
+
+  function errorAttributes(targetId: string) {
+    const issue = showErrors ? issueByTarget.get(targetId) : undefined;
+    return {
+      id: targetId,
+      "aria-invalid": issue ? true : undefined,
+      "aria-describedby": issue ? `${targetId}-error` : undefined,
+    };
+  }
+
+  function focusIssue(targetId: string) {
+    const target = document.getElementById(targetId);
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: "center" });
   }
 
   return (
@@ -99,12 +196,12 @@ export function UploadSummaryView({
         <div className="mode-indicator"><span aria-hidden="true" />Local parse complete</div>
       </header>
 
-      <section className="summary-content summary-content-wide">
+      <form className="summary-content summary-content-wide" onSubmit={submit} noValidate>
         <div className="summary-intro">
           <CheckCircle2 aria-hidden="true" />
           <div>
             <p className="eyebrow">Review before saving</p>
-            <h1>Confirm what the files actually say.</h1>
+            <h1 ref={headingRef} tabIndex={-1}>Confirm what the files actually say.</h1>
             <p>
               RubricTrail filled only what it could locate. Edit anything that is missing or
               ambiguous; your confirmation, not a guess, creates the project.
@@ -117,11 +214,21 @@ export function UploadSummaryView({
           <div>
             <strong>{result.fileNames.join(", ")}</strong>
             <span>
-              {result.totalWords.toLocaleString()} extracted words · original files remain in
-              this browser session
+              {result.totalWords.toLocaleString()} extracted words · processed locally for this
+              preview; original files are not stored
             </span>
           </div>
         </div>
+
+        {result.summary.warnings.length ? (
+          <section className="inline-alert warning" aria-labelledby="parse-warning-title">
+            <AlertTriangle aria-hidden="true" />
+            <div>
+              <strong id="parse-warning-title">Items that need your confirmation</strong>
+              <ul>{result.summary.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+            </div>
+          </section>
+        ) : null}
 
         <section className="confirm-fields" aria-labelledby="project-details-title">
           <div className="section-heading compact-heading">
@@ -134,54 +241,72 @@ export function UploadSummaryView({
             <label>
               <span>Assignment title</span>
               <input
+                {...errorAttributes("confirm-title")}
                 value={draft.title}
                 onChange={(event) => updateField("title", event.target.value)}
                 placeholder="e.g. Strategy report"
+                maxLength={300}
                 data-testid="confirm-title"
               />
+              <FieldStatus status={result.summary.title.status} edited={draft.title !== initialDraft.title} />
               <EvidenceNote evidence={result.summary.title.evidence} />
+              <FieldError issue={showErrors ? issueByTarget.get("confirm-title") : undefined} />
             </label>
             <label>
               <span>Course or module <small>optional</small></span>
               <input
+                {...errorAttributes("confirm-course")}
                 value={draft.course}
                 onChange={(event) => updateField("course", event.target.value)}
                 placeholder="e.g. BUS302"
+                maxLength={200}
               />
               <small>Used only to label this local project.</small>
+              <FieldError issue={showErrors ? issueByTarget.get("confirm-course") : undefined} />
             </label>
             <label>
               <span>Deadline</span>
               <input
+                {...errorAttributes("confirm-deadline")}
                 type="date"
                 value={draft.dueDate}
                 onChange={(event) => updateField("dueDate", event.target.value)}
                 data-testid="confirm-deadline"
               />
+              <FieldStatus status={result.summary.dueDate.status} edited={draft.dueDate !== initialDraft.dueDate} />
               <EvidenceNote evidence={result.summary.dueDate.evidence} />
+              <FieldError issue={showErrors ? issueByTarget.get("confirm-deadline") : undefined} />
             </label>
             <label>
               <span>Word count</span>
               <input
+                {...errorAttributes("confirm-word-count")}
                 type="number"
                 min="1"
+                max="50000"
                 step="1"
                 value={draft.wordCount}
                 onChange={(event) => updateField("wordCount", event.target.value)}
                 placeholder="2500"
                 data-testid="confirm-word-count"
               />
+              <FieldStatus status={result.summary.wordCount.status} edited={draft.wordCount !== initialDraft.wordCount} />
               <EvidenceNote evidence={result.summary.wordCount.evidence} />
+              <FieldError issue={showErrors ? issueByTarget.get("confirm-word-count") : undefined} />
             </label>
             <label className="confirm-field-wide">
               <span>Citation style</span>
               <input
+                {...errorAttributes("confirm-citation-style")}
                 value={draft.citationStyle}
                 onChange={(event) => updateField("citationStyle", event.target.value)}
                 placeholder="e.g. APA 7, Harvard, or Not specified"
+                maxLength={160}
                 data-testid="confirm-citation-style"
               />
+              <FieldStatus status={result.summary.citationStyle.status} edited={draft.citationStyle !== initialDraft.citationStyle} />
               <EvidenceNote evidence={result.summary.citationStyle.evidence} />
+              <FieldError issue={showErrors ? issueByTarget.get("confirm-citation-style") : undefined} />
             </label>
           </div>
         </section>
@@ -190,7 +315,8 @@ export function UploadSummaryView({
           <div className="section-heading compact-heading">
             <div>
               <p className="eyebrow">Rubric</p>
-              <h2 id="rubric-detection-title">Confirm what earns marks</h2>
+              <h2 id="rubric-detection-title" tabIndex={-1}>Confirm what earns marks</h2>
+              <p>{result.summary.rubric.message}</p>
             </div>
             <span className={`text-status ${Math.abs(totalWeight - 100) < 0.01 ? "complete" : "incomplete"}`}>
               {totalWeight}% total
@@ -199,21 +325,25 @@ export function UploadSummaryView({
 
           <div className="rubric-editor-list">
             {draft.criteria.map((criterion, index) => (
-              <div className="rubric-editor-row" key={`${index}-${criterion.evidence?.startOffset ?? "manual"}`}>
+              <div className="rubric-editor-row" key={criterionKeys[index]}>
                 <span className="criterion-index" aria-hidden="true">{index + 1}</span>
                 <label>
                   <span>Criterion</span>
                   <input
+                    {...errorAttributes(`criterion-name-${index}`)}
                     value={criterion.name}
                     onChange={(event) => updateCriterion(index, "name", event.target.value)}
                     placeholder="Criterion name"
+                    maxLength={300}
                     data-testid={`criterion-name-${index}`}
                   />
+                  <FieldError issue={showErrors ? issueByTarget.get(`criterion-name-${index}`) : undefined} />
                 </label>
                 <label className="weight-field">
                   <span>Weight</span>
                   <span className="input-with-suffix">
                     <input
+                      {...errorAttributes(`criterion-weight-${index}`)}
                       type="number"
                       min="0.01"
                       max="100"
@@ -225,6 +355,7 @@ export function UploadSummaryView({
                     />
                     <b>%</b>
                   </span>
+                  <FieldError issue={showErrors ? issueByTarget.get(`criterion-weight-${index}`) : undefined} />
                 </label>
                 <button
                   className="icon-button"
@@ -239,17 +370,44 @@ export function UploadSummaryView({
             ))}
           </div>
 
-          <button className="button button-secondary add-criterion" type="button" onClick={addCriterion}>
+          <button
+            id="add-criterion"
+            className="button button-secondary add-criterion"
+            type="button"
+            onClick={addCriterion}
+            disabled={draft.criteria.length >= 50}
+          >
             <Plus aria-hidden="true" />Add missing criterion
           </button>
+          <FieldError issue={showErrors ? issueByTarget.get("add-criterion") : undefined} />
         </section>
 
-        {showErrors && errors.length ? (
-          <section className="inline-alert danger confirm-errors" role="alert" data-testid="confirm-errors">
+        {showErrors && issues.length ? (
+          <section
+            className="inline-alert danger confirm-errors"
+            role="alert"
+            tabIndex={-1}
+            ref={errorSummaryRef}
+            data-testid="confirm-errors"
+          >
             <AlertTriangle aria-hidden="true" />
             <div>
               <strong>Finish these checks before creating the project</strong>
-              <ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul>
+              <ul>
+                {issues.map((issue, index) => (
+                  <li key={`${issue.targetId}-${index}`}>
+                    <a
+                      href={`#${issue.targetId}`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        focusIssue(issue.targetId);
+                      }}
+                    >
+                      {issue.message}
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </div>
           </section>
         ) : null}
@@ -266,11 +424,11 @@ export function UploadSummaryView({
           <button className="button button-secondary" type="button" onClick={onBack}>
             Upload different files
           </button>
-          <button className="button button-primary" type="button" onClick={submit} data-testid="create-project">
+          <button className="button button-primary" type="submit" data-testid="create-project">
             Create local project <ArrowRight aria-hidden="true" />
           </button>
         </div>
-      </section>
+      </form>
     </main>
   );
 }

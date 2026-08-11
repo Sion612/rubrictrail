@@ -549,18 +549,13 @@ export function generateActionPlan(
     planTaskTemplateSchema.parse(template),
   );
   const knownTemplateIds = new Set(parsedTemplates.map((template) => template.id));
-  const unknownCompletedId = input.completedTaskIds.find(
-    (id) => !knownTemplateIds.has(id),
+  const requestedCompletedIds = new Set(
+    input.completedTaskIds.filter((id) => knownTemplateIds.has(id)),
   );
-  if (unknownCompletedId) {
-    throw new Error(`Unknown completed plan task: ${unknownCompletedId}`);
-  }
-
-  const completedIds = new Set(input.completedTaskIds);
   const initiallyActiveTemplates = parsedTemplates.filter(
     (template) =>
       (template.minTargetGrade ?? 0) <= input.targetGrade ||
-      completedIds.has(template.id),
+      requestedCompletedIds.has(template.id),
   );
   const activeQualityGateIds = initiallyActiveTemplates
     .filter((template) => template.id.startsWith("s"))
@@ -577,6 +572,18 @@ export function generateActionPlan(
   );
   const activeIds = new Set(activeTemplates.map((template) => template.id));
   const orderedTemplates = topologicalOrder(activeTemplates);
+  const completedIds = new Set<string>();
+  for (const template of orderedTemplates) {
+    const activeDependencies = template.dependencies.filter((id) =>
+      activeIds.has(id),
+    );
+    if (
+      requestedCompletedIds.has(template.id) &&
+      activeDependencies.every((id) => completedIds.has(id))
+    ) {
+      completedIds.add(template.id);
+    }
+  }
   const effortFactor = getTargetEffortFactor(input.targetGrade);
   const asOfDate = input.asOfDate ?? input.startDate;
   const scheduleStart = laterDate(input.startDate, asOfDate);
@@ -695,4 +702,3 @@ export function daysBetween(startDate: string, endDate: string): number {
       DAY_IN_MILLISECONDS,
   );
 }
-

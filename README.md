@@ -121,7 +121,7 @@ and mobile browser suite:
 pnpm test:e2e --workers=1
 ```
 
-Current local verification on 12 August 2026:
+Current verification on 12 August 2026:
 
 | Gate | Result |
 | --- | --- |
@@ -129,7 +129,7 @@ Current local verification on 12 August 2026:
 | TypeScript | Passed |
 | Vitest | 89/89 tests passed across 13 files |
 | Next.js production build | Passed |
-| Playwright | Last v0.2.0 baseline: 8/8 flows at 1440×900 and 390×844 |
+| Playwright | GitHub Actions: 12/12 flows passed at 1440×900 and 390×844, including a 320px backup-menu check |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, a complete real-file project, manual repair

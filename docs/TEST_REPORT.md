@@ -2,9 +2,9 @@
 
 Date: 12 August 2026  
 Runtime: Node.js 24.14.0, pnpm 11.16.0  
-Browser method: GitHub Actions Playwright projects at desktop and mobile sizes;
-see the [v0.3.2 feature verification run](https://github.com/Sion612/rubrictrail/actions/runs/31533801988)
-and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
+Browser method: GitHub Actions Playwright projects at desktop and mobile sizes.
+The v0.3.3 exact-commit result is pending; see the
+[main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
 
@@ -12,10 +12,10 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 14 files, 110/110 tests passed |
+| `pnpm test` | 14 files, 125/125 tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed |
-| `pnpm test:e2e --workers=1` | GitHub Actions: 16/16 desktop/mobile flows passed |
-| `pnpm audit --audit-level high` | No known vulnerabilities found |
+| `pnpm test:e2e --workers=1` | Exact-commit GitHub Actions pending; expanded suite contains 18 desktop/mobile flows |
+| `pnpm audit --audit-level high` | Latest published v0.3.2 run found no known vulnerabilities; v0.3.3 exact-commit run pending |
 
 The browser suite runs each scenario at 1440×900 and 390×844, with targeted
 mobile checks narrowed to 320×700:
@@ -31,6 +31,7 @@ mobile checks narrowed to 320×700:
 - custom rubric source drawer and focus restoration;
 - generic plan task completion and dependency behavior;
 - custom evidence self-check and refresh persistence;
+- stale-tab edit, navigation and page-close protection plus explicit recovery;
 - missing-rubric manual repair with an enforced 100% total;
 - unsupported-file and empty-draft recovery;
 - console/page errors and document-level horizontal overflow.

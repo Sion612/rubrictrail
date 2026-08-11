@@ -19,8 +19,10 @@
 6. **Simple rubric parser.** Explicit lines such as `Analysis | 30%` work best.
    Complex tables may require manual repair in the confirmation screen.
 7. **Manual portability only.** There is no account, automatic sync,
-   collaboration or multi-project dashboard. A versioned JSON backup can move one
-   project between browsers, but it is not encrypted and must be kept private.
+   collaboration or multi-project dashboard. Simultaneous tabs are detected and
+   autosave is paused, but edits are not merged; download either version before
+   choosing which one to keep. A versioned JSON backup can move one project
+   between browsers, but it is not encrypted and must be kept private.
 8. **English-first.** Date parsing intentionally leaves ambiguous numeric dates
    blank; language, grading and citation conventions are not universal yet.
 9. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal

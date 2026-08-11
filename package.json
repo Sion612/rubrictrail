@@ -1,6 +1,6 @@
 {
   "name": "rubrictrail",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "description": "A local-first, evidence-linked assignment planner that turns briefs and rubrics into an auditable plan.",
   "license": "Apache-2.0",

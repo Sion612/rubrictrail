@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  clearProjectState,
   createDefaultProjectState,
   parsePersistedProjectStateValue,
   readProjectState,
@@ -86,11 +87,15 @@ describe("local project persistence", () => {
   it("round-trips a deeply validated uploaded v2 project", () => {
     const state = uploadedState();
 
-    expect(writeProjectState(state)).toEqual({ ok: true });
+    const writeResult = writeProjectState(state);
+    expect(writeResult).toEqual({ ok: true, serialized: expect.any(String) });
+    if (!writeResult.ok) throw new Error("Expected project state write to succeed");
     expect(readProjectStateWithStatus()).toEqual({
       state,
       source: "v2",
       recovered: false,
+      storedValue: writeResult.serialized,
+      storageAvailable: true,
     });
     expect(readProjectState()).toEqual(state);
   });
@@ -102,6 +107,8 @@ describe("local project persistence", () => {
       state: createDefaultProjectState(),
       source: "default",
       recovered: true,
+      storedValue: "{not valid JSON",
+      storageAvailable: true,
     });
   });
 
@@ -112,20 +119,25 @@ describe("local project persistence", () => {
       ...project.criteria[0].evidence!,
       page: -1,
     };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const storedValue = JSON.stringify(state);
+    window.localStorage.setItem(STORAGE_KEY, storedValue);
 
     expect(readProjectStateWithStatus()).toEqual({
       state: createDefaultProjectState(),
       source: "default",
       recovered: true,
+      storedValue,
+      storageAvailable: true,
     });
   });
 
   it("continues to a valid legacy project when v2 is structurally invalid", () => {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ version: 2, projectKind: "uploaded", uploadedProject: null }),
-    );
+    const invalidV2 = JSON.stringify({
+      version: 2,
+      projectKind: "uploaded",
+      uploadedProject: null,
+    });
+    window.localStorage.setItem(STORAGE_KEY, invalidV2);
     window.localStorage.setItem(
       LEGACY_STORAGE_KEY,
       JSON.stringify({
@@ -143,6 +155,8 @@ describe("local project persistence", () => {
     const result = readProjectStateWithStatus();
     expect(result.source).toBe("legacy");
     expect(result.recovered).toBe(true);
+    expect(result.storedValue).toBe(invalidV2);
+    expect(result.storageAvailable).toBe(true);
     expect(result.state).toMatchObject({
       projectKind: "sample",
       view: "draft",
@@ -161,7 +175,8 @@ describe("local project persistence", () => {
       completedTaskIds: ["p1", "removed-task"],
       readinessChecks: ["sources", "removed-check"],
     };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const storedValue = JSON.stringify(state);
+    window.localStorage.setItem(STORAGE_KEY, storedValue);
 
     expect(readProjectStateWithStatus()).toEqual({
       state: {
@@ -171,7 +186,87 @@ describe("local project persistence", () => {
       },
       source: "v2",
       recovered: true,
+      storedValue,
+      storageAvailable: true,
     });
+  });
+
+  it("reports a missing current storage value as null", () => {
+    const result = readProjectStateWithStatus();
+    expect(result.storedValue).toBeNull();
+    expect(result.storageAvailable).toBe(true);
+  });
+
+  it("distinguishes an unavailable storage read from a missing project", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Storage unavailable", "SecurityError");
+    });
+
+    expect(readProjectStateWithStatus()).toMatchObject({
+      source: "default",
+      recovered: true,
+      storedValue: null,
+      storageAvailable: false,
+    });
+  });
+
+  it("conditionally writes when the expected storage value is null", () => {
+    const result = writeProjectState(createDefaultProjectState(), null);
+
+    expect(result).toEqual({ ok: true, serialized: expect.any(String) });
+    if (!result.ok) throw new Error("Expected project state write to succeed");
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(result.serialized);
+  });
+
+  it("conditionally writes when the expected storage value matches", () => {
+    const initialResult = writeProjectState(createDefaultProjectState());
+    if (!initialResult.ok) throw new Error("Expected initial project state write to succeed");
+    const updated = uploadedState();
+
+    const result = writeProjectState(updated, initialResult.serialized);
+
+    expect(result).toEqual({ ok: true, serialized: expect.any(String) });
+    if (!result.ok) throw new Error("Expected conditional project state write to succeed");
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(result.serialized);
+    expect(result.serialized).not.toBe(initialResult.serialized);
+  });
+
+  it("rejects a stale expected value without changing stored bytes", () => {
+    const storedValue = '{"sentinel":"preserve exact bytes"}';
+    window.localStorage.setItem(STORAGE_KEY, storedValue);
+
+    expect(writeProjectState(createDefaultProjectState(), "stale value")).toEqual({
+      ok: false,
+      reason: "conflict",
+    });
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(storedValue);
+  });
+
+  it("returns storage-error without writing when the conditional read throws", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Storage unavailable", "SecurityError");
+    });
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+    expect(writeProjectState(createDefaultProjectState(), null)).toEqual({
+      ok: false,
+      reason: "storage-error",
+    });
+    expect(setItem).not.toHaveBeenCalled();
+  });
+
+  it("conditionally clears only the storage value this tab observed", () => {
+    const initialResult = writeProjectState(createDefaultProjectState());
+    if (!initialResult.ok) throw new Error("Expected initial project state write to succeed");
+
+    expect(clearProjectState("stale value")).toEqual({
+      ok: false,
+      reason: "conflict",
+    });
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(initialResult.serialized);
+
+    expect(clearProjectState(initialResult.serialized)).toEqual({ ok: true });
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   it("rejects invalid state before writing", () => {

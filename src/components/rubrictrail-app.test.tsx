@@ -1,7 +1,11 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RubricTrailApp } from "@/components/rubrictrail-app";
-import { createDefaultProjectState, STORAGE_KEY } from "@/lib/local-state";
+import {
+  createDefaultProjectState,
+  serializePersistedProjectStateValue,
+  STORAGE_KEY,
+} from "@/lib/local-state";
 import { serializeProjectBackup } from "@/lib/project-backup";
 import type { PersistedProjectState, UploadedProject } from "@/lib/ui-types";
 
@@ -64,6 +68,43 @@ async function restoreBackup(input: HTMLElement, state: PersistedProjectState) {
     await Promise.resolve();
     await Promise.resolve();
   });
+}
+
+async function openSavedSampleCheck() {
+  render(<RubricTrailApp />);
+  await advance(0);
+  fireEvent.click(screen.getByTestId("try-sample"));
+  await advance(700);
+  fireEvent.click(screen.getAllByRole("button", { name: /Check/i })[0]);
+  await advance(250);
+
+  const storedValue = window.localStorage.getItem(STORAGE_KEY);
+  if (storedValue === null) throw new Error("Expected a saved sample project");
+  return {
+    draft: screen.getByTestId("draft-text"),
+    storedValue,
+  };
+}
+
+function storedDraftValue(storedValue: string, draftText: string) {
+  const state = JSON.parse(storedValue) as PersistedProjectState;
+  return JSON.stringify({ ...state, draftText }, null, 2);
+}
+
+function dispatchExternalStorageUpdate(
+  oldValue: string | null,
+  newValue: string | null,
+) {
+  fireEvent(
+    window,
+    new StorageEvent("storage", {
+      key: STORAGE_KEY,
+      oldValue,
+      newValue,
+      storageArea: window.localStorage,
+      url: window.location.href,
+    }),
+  );
 }
 
 beforeEach(() => {
@@ -142,6 +183,214 @@ describe("RubricTrailApp reliability", () => {
       projectKind: "sample",
       draftText: "A last-second draft edit that must reach local storage.",
     });
+  });
+
+  it("keeps exact external bytes when a stale tab edits or closes", async () => {
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const externalValue = storedDraftValue(
+      storedValue,
+      "The draft saved by the other tab.",
+    );
+    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    dispatchExternalStorageUpdate(storedValue, externalValue);
+
+    expect(
+      screen.getByRole("heading", { name: "Project changed in another tab" }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(draft, {
+      target: { value: "A stale local draft that must not win silently." },
+    });
+    await advance(250);
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+
+    window.dispatchEvent(new Event("pagehide"));
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(
+      screen.getByRole("heading", { name: "Project changed in another tab" }),
+    ).toBeInTheDocument();
+  });
+
+  it("detects an unannounced external write during pagehide", async () => {
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const externalValue = storedDraftValue(
+      storedValue,
+      "External bytes written before this tab could receive an event.",
+    );
+    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    fireEvent.change(draft, {
+      target: { value: "A pending local edit flushed immediately on close." },
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(
+      screen.getByRole("heading", { name: "Project changed in another tab" }),
+    ).toBeInTheDocument();
+    await advance(250);
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+  });
+
+  it("refuses a confirmed reset after an unannounced external write", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const currentDraft = (draft as HTMLTextAreaElement).value;
+    const externalValue = storedDraftValue(
+      storedValue,
+      "External bytes that reset must not clear.",
+    );
+    window.localStorage.setItem(STORAGE_KEY, externalValue);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset local project" }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("Reset this local project?"),
+    );
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(screen.getByTestId("draft-text")).toHaveValue(currentDraft);
+    expect(screen.getByRole("button", { name: "Use my assignment" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Project changed in another tab" }),
+    ).toBeInTheDocument();
+
+    await advance(250);
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+  });
+
+  it("loads the exact saved version after confirmation and clears the conflict", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const externalDraft = "The newer draft loaded from browser storage.";
+    const externalValue = storedDraftValue(storedValue, externalDraft);
+    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    dispatchExternalStorageUpdate(storedValue, externalValue);
+    fireEvent.change(draft, {
+      target: { value: "This tab has a pending draft that should be replaced." },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Load saved version" }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("Load the project version saved by another tab?"),
+    );
+    expect(screen.getByTestId("draft-text")).toHaveValue(externalDraft);
+    expect(
+      screen.queryByRole("heading", { name: "Project changed in another tab" }),
+    ).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+
+    await advance(250);
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+  });
+
+  it("keeps the current tab when browser storage cannot be read during load", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const currentDraft = "This in-memory draft must survive a failed read.";
+    const externalValue = storedDraftValue(
+      storedValue,
+      "The other tab's saved draft.",
+    );
+    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    dispatchExternalStorageUpdate(storedValue, externalValue);
+    fireEvent.change(draft, { target: { value: currentDraft } });
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Storage unavailable", "SecurityError");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Load saved version" }));
+
+    expect(screen.getByTestId("draft-text")).toHaveValue(currentDraft);
+    expect(
+      screen.getByRole("heading", { name: "Project changed in another tab" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Browser storage could not be read, so nothing was replaced/),
+    ).not.toHaveLength(0);
+  });
+
+  it("keeps this tab after confirmation and replaces the external bytes", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const localDraft = "The explicitly chosen draft from this tab.";
+    const externalValue = storedDraftValue(
+      storedValue,
+      "The newer draft currently saved by the other tab.",
+    );
+    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    dispatchExternalStorageUpdate(storedValue, externalValue);
+    fireEvent.change(draft, { target: { value: localDraft } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep this tab" }));
+
+    const expected = serializePersistedProjectStateValue({
+      ...(JSON.parse(storedValue) as PersistedProjectState),
+      draftText: localDraft,
+    });
+    expect(expected.ok).toBe(true);
+    if (!expected.ok) throw new Error("Expected the local sample to serialize");
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(expected.serialized);
+    expect(window.localStorage.getItem(STORAGE_KEY)).not.toBe(externalValue);
+    expect(
+      screen.queryByRole("heading", { name: "Project changed in another tab" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not offer project overwrite actions for unsaved intake", async () => {
+    render(<RubricTrailApp />);
+    await advance(0);
+    const externalState: PersistedProjectState = {
+      ...createDefaultProjectState(),
+      projectKind: "sample",
+    };
+    const serialized = serializePersistedProjectStateValue(externalState);
+    if (!serialized.ok) throw new Error("Expected external sample state to serialize");
+    window.localStorage.setItem(STORAGE_KEY, serialized.serialized);
+    dispatchExternalStorageUpdate(null, serialized.serialized);
+
+    expect(
+      screen.getByRole("button", {
+        name: "Discard intake and load saved version",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Download this tab" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Keep this tab" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/intake is not part of a saved project yet/i)).toBeInTheDocument();
+  });
+
+  it("rejects backup restore after an unannounced external write", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { storedValue } = await openSavedSampleCheck();
+    const externalValue = storedDraftValue(
+      storedValue,
+      "External bytes written without a storage event.",
+    );
+    window.localStorage.setItem(STORAGE_KEY, externalValue);
+
+    await restoreBackup(
+      screen.getByTestId("workspace-backup-file-input"),
+      uploadedBackupState(),
+    );
+
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(
+      screen.getByRole("heading", { name: "Project changed in another tab" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "backup was not restored",
+    );
+
+    await advance(250);
+    window.dispatchEvent(new Event("pagehide"));
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
   });
 
   it("cancels an in-flight demo check when the draft changes", async () => {

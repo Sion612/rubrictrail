@@ -1,5 +1,6 @@
 import type { DraftCheckResult } from "@/lib/domain";
 import type {
+  AssignmentFileErrorCode,
   UploadedAssignmentSummary,
   UploadedSourceEvidence,
 } from "@/lib/files/parse-assignment-files";
@@ -7,6 +8,20 @@ import type {
 export type WorkspaceView = "overview" | "rubric" | "plan" | "draft" | "progress";
 export type ProjectKind = "none" | "sample" | "uploaded";
 export type WorkflowState = "complete" | "in_progress" | "needs_review" | "not_started";
+export type AssignmentIntakeMode = "files" | "paste";
+
+export interface AssignmentFileIntakeError {
+  code: AssignmentFileErrorCode | "UNKNOWN";
+  fileName: string | null;
+  title: string;
+  message: string;
+  preferredRecovery: AssignmentIntakeMode;
+}
+
+export interface PastedTextIntakeError {
+  target: "brief" | "combined" | "unknown";
+  message: string;
+}
 
 export interface UploadedProjectCriterion {
   id: string;
@@ -55,6 +70,7 @@ export interface PersistedProjectState {
 }
 
 export interface UploadFlowResult {
+  intakeMethod: AssignmentIntakeMode;
   fileNames: string[];
   totalWords: number;
   summary: UploadedAssignmentSummary;

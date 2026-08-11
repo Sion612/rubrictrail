@@ -1,10 +1,18 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WelcomeScreen } from "@/components/welcome-screen";
 
 const defaultProps = {
   onTrySample: vi.fn(),
   onFiles: vi.fn(),
+  onPastedText: vi.fn(),
+  intakeMode: "files" as const,
+  onIntakeModeChange: vi.fn(),
+  pastedBrief: "",
+  onPastedBriefChange: vi.fn(),
+  pastedRubric: "",
+  onPastedRubricChange: vi.fn(),
+  pastedTextError: null,
   isLoadingSample: false,
   uploadStatus: "idle" as const,
   uploadError: null,
@@ -35,7 +43,13 @@ describe("WelcomeScreen upload controls", () => {
         {...defaultProps}
         onFiles={onFiles}
         uploadStatus="error"
-        uploadError="Try again"
+        uploadError={{
+          code: "UNKNOWN",
+          fileName: null,
+          title: "Try again",
+          message: "Choose another source.",
+          preferredRecovery: "files",
+        }}
       />,
     );
     fireEvent.drop(screen.getByTestId("upload-zone"), drop);
@@ -73,6 +87,44 @@ describe("WelcomeScreen upload controls", () => {
     expect(screen.queryByTestId("upload-error")).not.toBeInTheDocument();
   });
 
+  it("puts the preferred file-error recovery first and uses precise labels", () => {
+    const { rerender } = render(
+      <WelcomeScreen
+        {...defaultProps}
+        uploadStatus="error"
+        uploadError={{
+          code: "SCANNED_NO_TEXT",
+          fileName: "scan.pdf",
+          title: "This file has no selectable text.",
+          message: "Paste the assignment instructions.",
+          preferredRecovery: "paste",
+        }}
+      />,
+    );
+    expect(
+      within(screen.getByTestId("upload-error")).getAllByRole("button").map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(["Paste text instead", "Choose another file"]);
+
+    rerender(
+      <WelcomeScreen
+        {...defaultProps}
+        uploadStatus="error"
+        uploadError={{
+          code: "FILE_TOO_LARGE",
+          fileName: "large.pdf",
+          title: "There is too much to process at once.",
+          message: "Choose a smaller file.",
+          preferredRecovery: "files",
+        }}
+      />,
+    );
+    expect(
+      within(screen.getByTestId("upload-error")).getAllByRole("button")[0],
+    ).toHaveTextContent("Choose a smaller file");
+  });
+
   it("makes sample, assignment upload, and backup restore mutually exclusive", () => {
     render(
       <WelcomeScreen {...defaultProps} isImportingBackup />,
@@ -86,6 +138,61 @@ describe("WelcomeScreen upload controls", () => {
     expect(screen.getByTestId("upload-zone")).toHaveAttribute(
       "aria-disabled",
       "true",
+    );
+  });
+
+  it("keeps paste intake discoverable and submits a valid draft only once", () => {
+    const onPastedText = vi.fn();
+    render(
+      <WelcomeScreen
+        {...defaultProps}
+        intakeMode="paste"
+        pastedBrief="Assignment title: Service report"
+        pastedRubric={"Rubric\nAnalysis | 100%"}
+        onPastedText={onPastedText}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Paste text" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const submit = screen.getByRole("button", {
+      name: "Review assignment details",
+    });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    expect(onPastedText).toHaveBeenCalledOnce();
+    expect(onPastedText).toHaveBeenCalledWith(
+      "Assignment title: Service report",
+      "Rubric\nAnalysis | 100%",
+    );
+  });
+
+  it("marks pasted-text errors against the relevant input", () => {
+    render(
+      <WelcomeScreen
+        {...defaultProps}
+        intakeMode="paste"
+        pastedTextError={{
+          target: "brief",
+          message: "Paste the assignment brief or instructions before continuing.",
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("pasted-assignment-brief")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.getByTestId("pasted-assignment-brief")).toBeRequired();
+    expect(
+      screen.getByTestId("pasted-assignment-rubric").getAttribute("aria-describedby"),
+    ).not.toContain("pasted-text-error");
+    expect(screen.getByTestId("pasted-text-error")).toHaveTextContent(
+      "Nothing was saved or changed.",
     );
   });
 });

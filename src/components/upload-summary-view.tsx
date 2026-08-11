@@ -30,12 +30,18 @@ interface UploadSummaryViewProps {
   onCreateProject: (project: UploadedProject) => void;
 }
 
+function sourceDisplayName(value: string): string {
+  return /^Pasted (?:assignment brief|rubric)\.txt$/i.test(value)
+    ? value.replace(/\.txt$/i, "")
+    : value;
+}
+
 function EvidenceNote({ evidence }: { evidence: UploadedProjectDraft["criteria"][number]["evidence"] }) {
   if (!evidence) return <small>No source excerpt was retained for this field.</small>;
   return (
     <details className="source-evidence-note">
       <summary>
-        Source: {evidence.fileName ?? "uploaded file"}
+        Source: {evidence.fileName ? sourceDisplayName(evidence.fileName) : "source text"}
         {evidence.page ? ` · page ${evidence.page}` : ""}
       </summary>
       <blockquote>{evidence.excerpt}</blockquote>
@@ -46,16 +52,20 @@ function EvidenceNote({ evidence }: { evidence: UploadedProjectDraft["criteria"]
 function FieldStatus({
   status,
   edited,
+  isPasted,
 }: {
   status: UploadedSummaryFieldStatus;
   edited: boolean;
+  isPasted: boolean;
 }) {
   if (edited) {
     return <small className="field-source-status manual">Edited manually — compare with the source excerpt</small>;
   }
   const message = {
-    found: "Found in the uploaded source",
-    inferred: "Inferred from a heading — verify this",
+    found: isPasted ? "Found in pasted text" : "Found in the uploaded source",
+    inferred: isPasted
+      ? "Inferred from pasted text — verify this"
+      : "Inferred from a heading — verify this",
     missing: "Not detected — enter this manually",
   }[status];
   return <small className={`field-source-status ${status}`}>{message}</small>;
@@ -103,6 +113,7 @@ export function UploadSummaryView({
     (total, criterion) => total + (Number(criterion.weight) || 0),
     0,
   );
+  const isPasted = result.intakeMethod === "paste";
 
   useEffect(() => {
     headingRef.current?.focus({ preventScroll: true });
@@ -193,7 +204,7 @@ export function UploadSummaryView({
         <button className="button button-ghost" type="button" onClick={onBack}>
           <ArrowLeft aria-hidden="true" />Back
         </button>
-        <div className="mode-indicator"><span aria-hidden="true" />Local parse complete</div>
+        <div className="mode-indicator"><span aria-hidden="true" />{isPasted ? "Pasted text ready" : "Local parse complete"}</div>
       </header>
 
       <form className="summary-content summary-content-wide" onSubmit={submit} noValidate>
@@ -201,9 +212,9 @@ export function UploadSummaryView({
           <CheckCircle2 aria-hidden="true" />
           <div>
             <p className="eyebrow">Review before saving</p>
-            <h1 ref={headingRef} tabIndex={-1}>Confirm what the files actually say.</h1>
+            <h1 ref={headingRef} tabIndex={-1}>Confirm what the assignment says.</h1>
             <p>
-              RubricTrail filled only what it could locate. Edit anything that is missing or
+              RubricTrail filled only what it could locate in the source. Edit anything that is missing or
               ambiguous; your confirmation, not a guess, creates the project.
             </p>
           </div>
@@ -212,10 +223,10 @@ export function UploadSummaryView({
         <div className="source-strip">
           <FileText aria-hidden="true" />
           <div>
-            <strong>{result.fileNames.join(", ")}</strong>
+            <strong>{result.fileNames.map(sourceDisplayName).join(", ")}</strong>
             <span>
-              {result.totalWords.toLocaleString()} extracted words · processed locally for this
-              preview; original files are not stored
+              {result.totalWords.toLocaleString()} source words · processed locally for this
+              preview; full source text is not stored
             </span>
           </div>
         </div>
@@ -248,7 +259,7 @@ export function UploadSummaryView({
                 maxLength={300}
                 data-testid="confirm-title"
               />
-              <FieldStatus status={result.summary.title.status} edited={draft.title !== initialDraft.title} />
+              <FieldStatus status={result.summary.title.status} edited={draft.title !== initialDraft.title} isPasted={isPasted} />
               <EvidenceNote evidence={result.summary.title.evidence} />
               <FieldError issue={showErrors ? issueByTarget.get("confirm-title") : undefined} />
             </label>
@@ -273,7 +284,7 @@ export function UploadSummaryView({
                 onChange={(event) => updateField("dueDate", event.target.value)}
                 data-testid="confirm-deadline"
               />
-              <FieldStatus status={result.summary.dueDate.status} edited={draft.dueDate !== initialDraft.dueDate} />
+              <FieldStatus status={result.summary.dueDate.status} edited={draft.dueDate !== initialDraft.dueDate} isPasted={isPasted} />
               <EvidenceNote evidence={result.summary.dueDate.evidence} />
               <FieldError issue={showErrors ? issueByTarget.get("confirm-deadline") : undefined} />
             </label>
@@ -290,7 +301,7 @@ export function UploadSummaryView({
                 placeholder="2500"
                 data-testid="confirm-word-count"
               />
-              <FieldStatus status={result.summary.wordCount.status} edited={draft.wordCount !== initialDraft.wordCount} />
+              <FieldStatus status={result.summary.wordCount.status} edited={draft.wordCount !== initialDraft.wordCount} isPasted={isPasted} />
               <EvidenceNote evidence={result.summary.wordCount.evidence} />
               <FieldError issue={showErrors ? issueByTarget.get("confirm-word-count") : undefined} />
             </label>
@@ -304,7 +315,7 @@ export function UploadSummaryView({
                 maxLength={160}
                 data-testid="confirm-citation-style"
               />
-              <FieldStatus status={result.summary.citationStyle.status} edited={draft.citationStyle !== initialDraft.citationStyle} />
+              <FieldStatus status={result.summary.citationStyle.status} edited={draft.citationStyle !== initialDraft.citationStyle} isPasted={isPasted} />
               <EvidenceNote evidence={result.summary.citationStyle.evidence} />
               <FieldError issue={showErrors ? issueByTarget.get("confirm-citation-style") : undefined} />
             </label>
@@ -416,13 +427,13 @@ export function UploadSummaryView({
           <ShieldCheck aria-hidden="true" />
           <p>
             <strong>Compact local save:</strong> confirmed fields, rubric names, weights and short
-            source excerpts are saved in this browser. Original files and full extracted text are not.
+            source excerpts are saved in this browser. Original files and full source text are not.
           </p>
         </div>
 
         <div className="summary-actions">
           <button className="button button-secondary" type="button" onClick={onBack}>
-            Upload different files
+            {isPasted ? "Edit pasted text" : "Choose different files"}
           </button>
           <button className="button button-primary" type="submit" data-testid="create-project">
             Create local project <ArrowRight aria-hidden="true" />

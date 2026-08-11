@@ -1,11 +1,13 @@
 # RubricTrail technical architecture
 
 RubricTrail is a local-first Next.js application with two deliberately separate
-paths: a conservative user-upload path and a rich fictional sample path.
+paths: a conservative user-source path and a rich fictional sample path.
 
 ```mermaid
 flowchart LR
   U["User files"] --> P["Local parser"]
+  PT["Pasted brief + rubric"] --> PF["Bounded synthetic TXT sources"]
+  PF --> P
   P --> C["Editable confirmation"]
   C --> LP["Compact UploadedProject"]
   LP --> LS["Validated local state"]
@@ -30,7 +32,7 @@ flowchart LR
 | Layer | Responsibility | Main files |
 | --- | --- | --- |
 | Product shell | Project type, navigation, real step states, notices | `src/components/rubrictrail-app.tsx`, `workspace-shell.tsx` |
-| File intake | Browser-local TXT, DOCX and text-PDF parsing | `src/lib/files/parse-assignment-files.ts` |
+| Source intake | Browser-local TXT, DOCX and text-PDF parsing plus bounded pasted plain text | `src/lib/files/parse-assignment-files.ts`, `src/lib/pasted-text-intake.ts` |
 | Confirmation | Editable fields, criteria and 100% weight gate | `src/components/upload-summary-view.tsx` |
 | Uploaded project | Compact persisted model and generic task templates | `src/lib/uploaded-project.ts` |
 | Planning | Deterministic dependency and capacity scheduling | `src/lib/plan.ts` |
@@ -40,9 +42,9 @@ flowchart LR
 | Data portability | Versioned UTF-8 JSON export/import with atomic restore | `src/lib/project-backup.ts` |
 | Optional Live boundary | Authenticated, bounded, disabled-by-default routes | `src/lib/ai/*`, `src/app/api/live/*` |
 
-## Trust boundary for user files
+## Trust boundary for user sources
 
-Parsing and extraction do not turn an arbitrary upload into a trusted analysis.
+Parsing and extraction do not turn an arbitrary upload or paste into a trusted analysis.
 The parser reports only conservative fields and explicit rubric lines. The user
 must confirm or edit every planning input. Rubric weights must total 100% before
 a project can be created.
@@ -50,12 +52,15 @@ a project can be created.
 The persisted uploaded project includes:
 
 - confirmed title, course label, deadline, word count and citation style;
-- filename list and aggregate extracted word count;
+- source-label or filename list and aggregate extracted word count;
 - criterion names, weights and short retained source excerpts;
 - task completion, self-check text and checklist state.
 
-It excludes original files and full extracted text. A future need for larger
-local documents should use IndexedDB rather than expanding localStorage.
+It excludes original files and full uploaded or pasted source text. Pasted
+intake is bounded before parsing at 100,000 UTF-16 characters and 10,000 lines,
+then converted to one or two in-memory plain-text sources so the existing file,
+extracted-text and evidence-offset boundaries still apply. A future need for
+larger local documents should use IndexedDB rather than expanding localStorage.
 
 ## Backup and restore boundary
 

@@ -123,7 +123,7 @@ export function UploadedEvidencePanel({
             <h3 id="local-retention-title">What is retained</h3>
             <p className="evidence-panel__explanation">
               RubricTrail stores this short excerpt and the confirmed criterion locally. It does not
-              keep the original uploaded file or full extracted text.
+          keep the authoritative source because full source text is not retained.
             </p>
           </section>
         </div>

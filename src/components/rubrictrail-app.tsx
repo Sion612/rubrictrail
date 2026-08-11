@@ -29,6 +29,10 @@ import {
   parseAssignmentFiles,
 } from "@/lib/files/parse-assignment-files";
 import {
+  createPastedAssignmentFiles,
+  validatePastedAssignmentText,
+} from "@/lib/pasted-text-intake";
+import {
   clearProjectState,
   createDefaultProjectState,
   readProjectStateWithStatus,
@@ -47,7 +51,10 @@ import {
   todayIso,
 } from "@/lib/uploaded-project";
 import type {
+  AssignmentFileIntakeError,
+  AssignmentIntakeMode,
   NoticeState,
+  PastedTextIntakeError,
   PersistedProjectState,
   UploadedCriterionReview,
   UploadedProject,
@@ -60,28 +67,98 @@ function wait(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-function friendlyFileError(error: unknown): string {
+function friendlyFileError(error: unknown): AssignmentFileIntakeError {
   if (error instanceof AssignmentFileParseError) {
-    const recovery: Record<AssignmentFileParseError["code"], string> = {
-      UNSUPPORTED_FILE_TYPE: "Choose a PDF, DOCX, or TXT file.",
-      FILE_TOO_LARGE: "Choose a file smaller than 10 MB.",
-      TOO_MANY_FILES: "Upload no more than 10 files at a time.",
-      TOTAL_FILE_SIZE_TOO_LARGE: "Keep the combined upload at or below 25 MB.",
-      EXTRACTED_TEXT_TOO_LARGE: "Split the assignment into smaller files or remove unrelated text.",
-      EMPTY_FILE: "Choose a file that contains readable text.",
-      SCANNED_NO_TEXT: "This looks like a scanned PDF. Paste the text or use a text-based PDF.",
-      ENCRYPTED_PDF: "Remove the PDF password locally, then try again.",
-      CORRUPT_DOCUMENT: "The document could not be parsed. Export a fresh copy or try TXT.",
+    const recovery: Record<
+      AssignmentFileParseError["code"],
+      Pick<AssignmentFileIntakeError, "title" | "message" | "preferredRecovery">
+    > = {
+      UNSUPPORTED_FILE_TYPE: {
+        title: "This file type is not supported yet.",
+        message: "Choose a PDF, DOCX or TXT file, or paste the assignment text.",
+        preferredRecovery: "files",
+      },
+      FILE_TOO_LARGE: {
+        title: "There is too much to process at once.",
+        message: "Choose a file smaller than 10 MB, or paste only the assignment instructions.",
+        preferredRecovery: "files",
+      },
+      TOO_MANY_FILES: {
+        title: "There is too much to process at once.",
+        message: "Choose no more than 10 files, keeping only the brief and rubric.",
+        preferredRecovery: "files",
+      },
+      TOTAL_FILE_SIZE_TOO_LARGE: {
+        title: "There is too much to process at once.",
+        message: "Keep the combined upload at or below 25 MB, or paste only the relevant text.",
+        preferredRecovery: "files",
+      },
+      EXTRACTED_TEXT_TOO_LARGE: {
+        title: "There is too much text to process at once.",
+        message: "Remove unrelated material, split the source, or paste only the brief and rubric.",
+        preferredRecovery: "paste",
+      },
+      EMPTY_FILE: {
+        title: "This file has no readable text.",
+        message: "Open it, copy the assignment instructions, then paste them here.",
+        preferredRecovery: "paste",
+      },
+      SCANNED_NO_TEXT: {
+        title: "This file has no selectable text.",
+        message: "Open the scan, copy or transcribe the assignment instructions, then paste them here.",
+        preferredRecovery: "paste",
+      },
+      ENCRYPTED_PDF: {
+        title: "This PDF needs a password.",
+        message: "Open it with the password and save an unlocked copy, or paste the text.",
+        preferredRecovery: "paste",
+      },
+      CORRUPT_DOCUMENT: {
+        title: "We could not open this file.",
+        message: "Download or save a fresh copy, choose another file, or paste the text.",
+        preferredRecovery: "files",
+      },
     };
-    return `${error.message} ${recovery[error.code]}`;
+    return {
+      code: error.code,
+      fileName: error.fileName,
+      ...recovery[error.code],
+    };
   }
-  return "The files could not be parsed locally. Try a text-based PDF, DOCX, or TXT file.";
+  return {
+    code: "UNKNOWN",
+    fileName: null,
+    title: "We could not prepare these files.",
+    message: "Try a text-based PDF, DOCX or TXT file, or paste the assignment text.",
+    preferredRecovery: "files",
+  };
 }
 
 function friendlyBackupError(error: unknown): string {
   return error instanceof ProjectBackupError
     ? error.message
     : "The backup could not be read safely. Your current project was not changed.";
+}
+
+function friendlyPastedParseError(error: unknown): PastedTextIntakeError {
+  if (error instanceof AssignmentFileParseError) {
+    if (error.code === "EMPTY_FILE" || error.code === "SCANNED_NO_TEXT") {
+      return {
+        target: "brief",
+        message: "The pasted brief does not contain readable text. Paste the assignment instructions, then try again.",
+      };
+    }
+    if (error.code === "EXTRACTED_TEXT_TOO_LARGE") {
+      return {
+        target: "combined",
+        message: "The pasted source is too large to prepare safely. Remove unrelated text, then try again.",
+      };
+    }
+  }
+  return {
+    target: "unknown",
+    message: "The pasted source could not be prepared locally. Your current project was not changed.",
+  };
 }
 
 function backupDateLabel(value: string): string {
@@ -180,7 +257,12 @@ export function RubricTrailApp() {
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadFlowResult | null>(null);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "parsing" | "error">("idle");
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<AssignmentFileIntakeError | null>(null);
+  const [intakeMode, setIntakeMode] = useState<AssignmentIntakeMode>("files");
+  const [pastedBrief, setPastedBrief] = useState("");
+  const [pastedRubric, setPastedRubric] = useState("");
+  const [pastedTextError, setPastedTextError] =
+    useState<PastedTextIntakeError | null>(null);
   const [isImportingBackup, setIsImportingBackup] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [isLoadingSample, setIsLoadingSample] = useState(false);
@@ -200,7 +282,7 @@ export function RubricTrailApp() {
   const skipNextPersistenceWrite = useRef(false);
   const backupImportActive = useRef(false);
   const intakeRunId = useRef(0);
-  const focusWelcomeUpload = useRef(false);
+  const focusWelcomeIntake = useRef<AssignmentIntakeMode | null>(null);
 
   const updateProject = useCallback(
     (
@@ -304,18 +386,21 @@ export function RubricTrailApp() {
     if (
       !hydrated ||
       project.projectKind !== "none" ||
-      !focusWelcomeUpload.current
+      !focusWelcomeIntake.current
     ) {
       return;
     }
+    const target = focusWelcomeIntake.current;
     const frame = window.requestAnimationFrame(() => {
-      focusWelcomeUpload.current = false;
+      focusWelcomeIntake.current = null;
       document
-        .getElementById("choose-assignment-files")
+        .getElementById(
+          target === "paste" ? "paste-intake-title" : "choose-assignment-files",
+        )
         ?.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [hydrated, project.projectKind]);
+  }, [hydrated, project.projectKind, uploadResult]);
 
   const showNotice = useCallback((nextNotice: NoticeState) => {
     setNotice(nextNotice);
@@ -379,6 +464,9 @@ export function RubricTrailApp() {
     draftCheckActive.current = false;
     setUploadResult(null);
     setUploadError(null);
+    setPastedTextError(null);
+    setPastedBrief("");
+    setPastedRubric("");
     setBackupError(null);
     setIsLoadingSample(true);
     await wait(450);
@@ -394,17 +482,23 @@ export function RubricTrailApp() {
     showNotice({ tone: "success", message: "Sample mapped with traceable evidence links. No API request was sent." });
   }
 
-  async function handleFiles(files: File[]) {
+  async function handleFiles(
+    files: File[],
+    intakeMethod: AssignmentIntakeMode = "files",
+  ) {
     if (backupImportActive.current) return;
     const operationId = ++intakeRunId.current;
+    setIntakeMode(intakeMethod);
     setUploadStatus("parsing");
     setUploadError(null);
+    setPastedTextError(null);
     setBackupError(null);
     try {
       const parsed = await parseAssignmentFiles(files);
       if (operationId !== intakeRunId.current) return;
       const summary = buildUploadedAssignmentSummary(parsed);
       setUploadResult({
+        intakeMethod,
         fileNames: parsed.sources.map((source) => source.fileName),
         totalWords: parsed.wordCount,
         summary,
@@ -413,8 +507,23 @@ export function RubricTrailApp() {
     } catch (error) {
       if (operationId !== intakeRunId.current) return;
       setUploadStatus("error");
-      setUploadError(friendlyFileError(error));
+      if (intakeMethod === "paste") {
+        setPastedTextError(friendlyPastedParseError(error));
+      } else {
+        setUploadError(friendlyFileError(error));
+      }
     }
+  }
+
+  function handlePastedText(brief: string, rubric: string) {
+    if (backupImportActive.current) return;
+    const value = { brief, rubric };
+    const issue = validatePastedAssignmentText(value);
+    if (issue) {
+      setPastedTextError(issue);
+      return;
+    }
+    void handleFiles(createPastedAssignmentFiles(value), "paste");
   }
 
   function createLocalProject(uploadedProject: UploadedProject) {
@@ -428,11 +537,15 @@ export function RubricTrailApp() {
     });
     setUploadResult(null);
     setUploadStatus("idle");
+    setUploadError(null);
+    setPastedTextError(null);
+    setPastedBrief("");
+    setPastedRubric("");
     setBackupError(null);
     setSelectedEvidenceId(null);
     showNotice({
       tone: "success",
-      message: "Local project created in this session. Original files were not retained; confirmed fields and short excerpts are set to autosave.",
+      message: "Local project created in this session. Full source text was not retained; confirmed fields and short excerpts are set to autosave.",
     });
   }
 
@@ -441,7 +554,8 @@ export function RubricTrailApp() {
     intakeRunId.current += 1;
     backupImportActive.current = false;
     setIsImportingBackup(false);
-    focusWelcomeUpload.current = true;
+    focusWelcomeIntake.current = "files";
+    setIntakeMode("files");
     clearProjectState();
     draftCheckRunId.current += 1;
     draftCheckActive.current = false;
@@ -451,16 +565,20 @@ export function RubricTrailApp() {
     setUploadResult(null);
     setUploadStatus("idle");
     setUploadError(null);
+    setPastedTextError(null);
+    setPastedBrief("");
+    setPastedRubric("");
     setBackupError(null);
     setPersistenceWarning(null);
   }
 
   function startOwnProject() {
-    if (!window.confirm("Leave the sample demo and use your own files? Demo changes and progress will be cleared from this browser.")) return;
+    if (!window.confirm("Leave the sample demo and use your own assignment? Demo changes and progress will be cleared from this browser.")) return;
     intakeRunId.current += 1;
     backupImportActive.current = false;
     setIsImportingBackup(false);
-    focusWelcomeUpload.current = true;
+    focusWelcomeIntake.current = "files";
+    setIntakeMode("files");
     clearProjectState();
     draftCheckRunId.current += 1;
     draftCheckActive.current = false;
@@ -470,6 +588,9 @@ export function RubricTrailApp() {
     setUploadResult(null);
     setUploadStatus("idle");
     setUploadError(null);
+    setPastedTextError(null);
+    setPastedBrief("");
+    setPastedRubric("");
     setBackupError(null);
     setPersistenceWarning(null);
   }
@@ -507,6 +628,7 @@ export function RubricTrailApp() {
     setIsLoadingSample(false);
     setUploadStatus("idle");
     setUploadError(null);
+    setPastedTextError(null);
     setBackupError(null);
 
     try {
@@ -518,7 +640,7 @@ export function RubricTrailApp() {
         ? "No existing project will be removed."
         : `This will replace the local project “${projectBackupTitle(current)}”.`;
       const confirmed = window.confirm(
-        `Restore “${incomingTitle}”?\n${backupProjectDetails(backup.state)}\nExported: ${backupDateLabel(backup.exportedAt)}\n\n${replacement}\n\nThe backup may contain course details, file names, source excerpts, draft text, self-checks and progress. Original files are not included.`,
+        `Restore “${incomingTitle}”?\n${backupProjectDetails(backup.state)}\nExported: ${backupDateLabel(backup.exportedAt)}\n\n${replacement}\n\nThe backup may contain course details, source labels or file names, short excerpts, draft text, self-checks and progress. Original files and full intake text are not included.`,
       );
       if (!confirmed) return;
 
@@ -548,6 +670,9 @@ export function RubricTrailApp() {
       setUploadResult(null);
       setUploadStatus("idle");
       setUploadError(null);
+      setPastedTextError(null);
+      setPastedBrief("");
+      setPastedRubric("");
       setPersistenceWarning(null);
       showNotice({
         tone: backup.recovered ? "info" : "success",
@@ -741,6 +866,8 @@ export function RubricTrailApp() {
         <UploadSummaryView
           result={uploadResult}
           onBack={() => {
+            focusWelcomeIntake.current = uploadResult.intakeMethod;
+            setIntakeMode(uploadResult.intakeMethod);
             setUploadResult(null);
             setUploadStatus("idle");
           }}
@@ -763,6 +890,20 @@ export function RubricTrailApp() {
         <WelcomeScreen
           onTrySample={loadSample}
           onFiles={handleFiles}
+          onPastedText={handlePastedText}
+          intakeMode={intakeMode}
+          onIntakeModeChange={setIntakeMode}
+          pastedBrief={pastedBrief}
+          onPastedBriefChange={(value) => {
+            setPastedBrief(value);
+            setPastedTextError(null);
+          }}
+          pastedRubric={pastedRubric}
+          onPastedRubricChange={(value) => {
+            setPastedRubric(value);
+            setPastedTextError(null);
+          }}
+          pastedTextError={pastedTextError}
           isLoadingSample={isLoadingSample}
           uploadStatus={uploadStatus}
           uploadError={uploadError}

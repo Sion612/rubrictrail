@@ -18,8 +18,11 @@ seen and will coordinate disclosure after a fix is available.
 
 ## Deployment boundary
 
-- Uploaded files are parsed in the browser; confirmed fields, short excerpts,
-  draft snippets and progress can remain in `localStorage` until reset.
+- Uploaded files and pasted assignment text are parsed as plain text in the
+  browser. Paste intake is rejected above 100,000 characters or 10,000 lines.
+- Full source text is temporary and is not written to `localStorage`; confirmed
+  fields, source labels, short excerpts, draft snippets and progress can remain
+  until reset and can appear in an unencrypted project backup.
 - Do not use a shared computer for sensitive work without resetting afterward.
 - The experimental Live routes are disabled by default. Enabling them requires a
   server-side API key and a separate 32-character bearer token.

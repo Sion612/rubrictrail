@@ -13,14 +13,25 @@
 4. **No OCR.** Text PDFs, DOCX and TXT are supported. Scanned, encrypted or
    damaged documents receive a recovery path to another file or pasted text;
    RubricTrail does not extract text from the image itself.
-5. **Partial recovery replaces the selection.** A mixed batch can continue with
-   its readable subset after explicit confirmation. Choosing files again replaces
-   the whole batch; it does not append one repaired file to the retained subset.
-   Omitted files never contribute detected fields or evidence.
-6. **Retained-output limits are not a full sandbox.** Count, byte and
-   retained-text limits reduce resource risk, but DOCX decompression and PDF page
-   extraction can consume CPU and peak memory before the retained-text limit is
-   applied. Do not open deliberately malicious documents.
+5. **Partial recovery is explicit and per-file.** A mixed batch can continue
+   with its readable subset only after explicit confirmation. This includes
+   omitting one PDF above the 200-page per-file limit. Choosing files again
+   replaces the whole batch; it does not append one repaired file to the
+   retained subset. Omitted files never contribute detected fields or evidence.
+   The 400-page selection limit and merged-text limits are fatal to the complete
+   batch and never select later files for omission based on their order. Every
+   selected PDF with readable page-count metadata contributes to the 400-page
+   total, including one later offered for omission because it exceeds 200 pages.
+6. **Resource limits are not a full sandbox.** Real-file intake is limited to 10
+   files, 10 MiB each and 25 MiB combined; PDFs are limited to 200 pages each and
+   400 pages per selection; merged text is limited to 2,000,000 normalized
+   characters, 50,000 merged lines and 100,000 merged whitespace-delimited
+   words. These checks reduce resource risk but do not cap CPU or peak memory.
+   PDF metadata, one page's text items, and DOCX decompression may consume
+   resources before the relevant limit is available. Parsing is currently not
+   cancellable. The internal direct-string summary overload also applies the
+   2,000,000-character ceiling to raw input before normalization. Do not open
+   deliberately malicious documents.
 7. **Weight availability needs human confirmation.** A parser `null` means that
    RubricTrail did not confidently extract a weight; it does not prove that the
    school published no weights. Users must check the authoritative source and

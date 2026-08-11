@@ -31,6 +31,11 @@ import {
 import { runMockDraftCheck } from "@/lib/mock-service";
 import { UPLOADED_READINESS } from "@/lib/readiness";
 import {
+  ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS,
+  ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES,
+  ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS,
+  ASSIGNMENT_PDF_MAX_PAGES,
+  ASSIGNMENT_PDFS_MAX_TOTAL_PAGES,
   AssignmentFileBatchParseError,
   AssignmentFileParseError,
   buildUploadedAssignmentSummary,
@@ -95,7 +100,7 @@ const FILE_ERROR_RECOVERY: Record<
   },
   FILE_TOO_LARGE: {
     title: "There is too much to process at once.",
-    message: "Choose a file smaller than 10 MB, or paste only the assignment instructions.",
+    message: "Choose a file at or below 10 MiB, or paste only the assignment instructions.",
     preferredRecovery: "files",
   },
   TOO_MANY_FILES: {
@@ -105,12 +110,32 @@ const FILE_ERROR_RECOVERY: Record<
   },
   TOTAL_FILE_SIZE_TOO_LARGE: {
     title: "There is too much to process at once.",
-    message: "Keep the combined upload at or below 25 MB, or paste only the relevant text.",
+    message: "Keep the combined upload at or below 25 MiB, or paste only the relevant text.",
     preferredRecovery: "files",
   },
   EXTRACTED_TEXT_TOO_LARGE: {
-    title: "There is too much text to process at once.",
-    message: "Remove unrelated material, split the source, or paste only the brief and rubric.",
+    title: "The selected files contain too much text to process at once.",
+    message: `Choose fewer or shorter files with ${ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS.toLocaleString("en-US")} characters or fewer combined, or paste only the brief and rubric.`,
+    preferredRecovery: "paste",
+  },
+  EXTRACTED_TEXT_TOO_MANY_LINES: {
+    title: "The selected files contain too many lines to process at once.",
+    message: `Choose fewer or shorter files with ${ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES.toLocaleString("en-US")} lines or fewer combined, or paste only the brief and rubric.`,
+    preferredRecovery: "paste",
+  },
+  EXTRACTED_TEXT_TOO_MANY_WORDS: {
+    title: "The selected files contain too many words to process at once.",
+    message: `Choose fewer or shorter files with ${ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS.toLocaleString("en-US")} words or fewer combined, or paste only the brief and rubric.`,
+    preferredRecovery: "paste",
+  },
+  PDF_TOO_MANY_PAGES: {
+    title: "This PDF has too many pages to process at once.",
+    message: `Choose a PDF with ${ASSIGNMENT_PDF_MAX_PAGES.toLocaleString("en-US")} pages or fewer, split out only the relevant pages, or paste only the brief and rubric.`,
+    preferredRecovery: "paste",
+  },
+  TOTAL_PDF_PAGES_TOO_LARGE: {
+    title: "The selected PDFs have too many pages to process at once.",
+    message: `Choose fewer or shorter PDFs with ${ASSIGNMENT_PDFS_MAX_TOTAL_PAGES.toLocaleString("en-US")} pages or fewer combined, or paste only the brief and rubric.`,
     preferredRecovery: "paste",
   },
   EMPTY_FILE: {
@@ -140,7 +165,16 @@ const FILE_ERROR_RECOVERY: Record<
   },
 };
 
-function friendlyFileError(error: unknown): AssignmentFileIntakeError {
+const BATCH_WIDE_FILE_ERROR_CODES = new Set<AssignmentFileParseError["code"]>([
+  "TOO_MANY_FILES",
+  "TOTAL_FILE_SIZE_TOO_LARGE",
+  "EXTRACTED_TEXT_TOO_LARGE",
+  "EXTRACTED_TEXT_TOO_MANY_LINES",
+  "EXTRACTED_TEXT_TOO_MANY_WORDS",
+  "TOTAL_PDF_PAGES_TOO_LARGE",
+]);
+
+export function friendlyFileError(error: unknown): AssignmentFileIntakeError {
   if (error instanceof AssignmentFileBatchParseError) {
     if (error.failures.length === 1) {
       const failure = error.failures[0];
@@ -166,7 +200,9 @@ function friendlyFileError(error: unknown): AssignmentFileIntakeError {
   if (error instanceof AssignmentFileParseError) {
     return {
       code: error.code,
-      fileName: error.fileName,
+      fileName: BATCH_WIDE_FILE_ERROR_CODES.has(error.code)
+        ? null
+        : error.fileName,
       ...FILE_ERROR_RECOVERY[error.code],
       fileIssues: [],
     };

@@ -70,6 +70,7 @@ describe("WelcomeScreen upload controls", () => {
     });
     expect(uploadGroup).toHaveAttribute("aria-busy", "true");
     expect(uploadGroup).toHaveAttribute("aria-disabled", "true");
+    expect(uploadGroup).toHaveTextContent("10 MiB each · 25 MiB combined");
     expect(
       screen.getByLabelText("Upload assignment brief and rubric files"),
     ).toBeDisabled();
@@ -91,7 +92,7 @@ describe("WelcomeScreen upload controls", () => {
     expect(screen.queryByTestId("upload-error")).not.toBeInTheDocument();
   });
 
-  it("puts the preferred file-error recovery first and uses precise labels", () => {
+  it("puts the preferred file-error recovery first and uses precise labels", async () => {
     const { rerender } = render(
       <WelcomeScreen
         {...defaultProps}
@@ -111,6 +112,7 @@ describe("WelcomeScreen upload controls", () => {
         (button) => button.textContent,
       ),
     ).toEqual(["Paste text instead", "Choose another file"]);
+    await waitFor(() => expect(screen.getByTestId("upload-error")).toHaveFocus());
 
     rerender(
       <WelcomeScreen
@@ -129,6 +131,34 @@ describe("WelcomeScreen upload controls", () => {
     expect(
       within(screen.getByTestId("upload-error")).getAllByRole("button")[0],
     ).toHaveTextContent("Choose a smaller file");
+
+    for (const { code, chooseLabel } of [
+      { code: "PDF_TOO_MANY_PAGES", chooseLabel: "Choose a shorter PDF" },
+      { code: "TOTAL_PDF_PAGES_TOO_LARGE", chooseLabel: "Choose fewer files" },
+      { code: "EXTRACTED_TEXT_TOO_LARGE", chooseLabel: "Choose fewer files" },
+      { code: "EXTRACTED_TEXT_TOO_MANY_LINES", chooseLabel: "Choose fewer files" },
+      { code: "EXTRACTED_TEXT_TOO_MANY_WORDS", chooseLabel: "Choose fewer files" },
+    ] as const) {
+      rerender(
+        <WelcomeScreen
+          {...defaultProps}
+          uploadStatus="error"
+          uploadError={{
+            code,
+            fileName: code === "PDF_TOO_MANY_PAGES" ? "long.pdf" : null,
+            title: "Bounded parsing limit reached.",
+            message: "Choose a bounded source or paste the relevant text.",
+            preferredRecovery: "paste",
+            fileIssues: [],
+          }}
+        />,
+      );
+      expect(
+        within(screen.getByTestId("upload-error")).getAllByRole("button").map(
+          (button) => button.textContent,
+        ),
+      ).toEqual(["Paste text instead", chooseLabel]);
+    }
   });
 
   it("makes sample, assignment upload, and backup restore mutually exclusive", () => {

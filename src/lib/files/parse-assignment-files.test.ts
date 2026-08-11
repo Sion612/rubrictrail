@@ -3,9 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ASSIGNMENT_EVIDENCE_EXCERPT_MAX_CHARACTERS,
   ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS,
+  ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES,
+  ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS,
   ASSIGNMENT_FILE_MAX_BYTES,
   ASSIGNMENT_FILE_MAX_COUNT,
   ASSIGNMENT_FILES_MAX_TOTAL_BYTES,
+  ASSIGNMENT_PDF_MAX_PAGES,
+  ASSIGNMENT_PDFS_MAX_TOTAL_PAGES,
   AssignmentFileBatchParseError,
   AssignmentFileParseError,
   buildUploadedAssignmentSummary,
@@ -41,6 +45,50 @@ function expectErrorCode(code: AssignmentFileParseError["code"]) {
     expect(error).toBeInstanceOf(AssignmentFileParseError);
     expect((error as AssignmentFileParseError).code).toBe(code);
     return true;
+  };
+}
+
+function makeLineText(lineCount: number): string {
+  return "x\n".repeat(lineCount);
+}
+
+function makeWordText(wordCount: number): string {
+  return "x ".repeat(wordCount);
+}
+
+function retainedLineCount(text: string): number {
+  if (!text) return 0;
+  let lineCount = 1;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 10) lineCount += 1;
+  }
+  return lineCount;
+}
+
+function makePdfDocument(
+  pageCount: number,
+  options: {
+    destroyError?: Error;
+    pageText?: (pageNumber: number) => string | null;
+  } = {},
+) {
+  const destroy = options.destroyError
+    ? vi.fn().mockRejectedValue(options.destroyError)
+    : vi.fn();
+  const getPage = vi.fn().mockImplementation(async (pageNumber: number) => {
+    const text = options.pageText
+      ? options.pageText(pageNumber)
+      : `Page ${pageNumber}`;
+    return {
+      getTextContent: vi.fn().mockResolvedValue({
+        items: text === null ? [] : [{ str: text, hasEOL: false }],
+      }),
+    };
+  });
+  return {
+    document: { numPages: pageCount, getPage, destroy },
+    destroy,
+    getPage,
   };
 }
 
@@ -161,6 +209,116 @@ describe("parseAssignmentFiles", () => {
     expect(parserMocks.extractRawText).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts the exact extracted-character limit and rejects one more", async () => {
+    const accepted = await parseAssignmentFiles([
+      makeFile(
+        "x".repeat(ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS),
+        "exact-characters.txt",
+      ),
+    ]);
+
+    expect(accepted.text).toHaveLength(
+      ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS,
+    );
+    expect(accepted.wordCount).toBe(1);
+
+    await expect(
+      parseAssignmentFiles([
+        makeFile(
+          "x".repeat(ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS + 1),
+          "too-many-characters.txt",
+        ),
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("EXTRACTED_TEXT_TOO_LARGE"));
+  });
+
+  it("bounds retained lines without changing word-count semantics", async () => {
+    const accepted = await parseAssignmentFiles([
+      makeFile(
+        makeLineText(ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES),
+        "exact-lines.txt",
+      ),
+    ]);
+
+    expect(accepted.sources[0].wordCount).toBe(
+      ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES,
+    );
+    expect(accepted.wordCount).toBe(ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES);
+
+    await expect(
+      parseAssignmentFiles([
+        makeFile(
+          makeLineText(ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES + 1),
+          "too-many-lines.txt",
+        ),
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("EXTRACTED_TEXT_TOO_MANY_LINES"));
+  });
+
+  it("bounds words with Unicode whitespace and no split-sized token array", async () => {
+    const unicode = await parseAssignmentFiles([
+      makeFile("one\ttwo\nthree\u00a0four\u2028five", "unicode-words.txt"),
+    ]);
+    expect(unicode.sources[0].wordCount).toBe(5);
+    expect(unicode.wordCount).toBe(5);
+
+    const accepted = await parseAssignmentFiles([
+      makeFile(
+        makeWordText(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS),
+        "exact-words.txt",
+      ),
+    ]);
+    expect(accepted.sources[0].wordCount).toBe(
+      ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS,
+    );
+    expect(accepted.wordCount).toBe(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS);
+
+    await expect(
+      parseAssignmentFiles([
+        makeFile(
+          makeWordText(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS + 1),
+          "too-many-words.txt",
+        ),
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("EXTRACTED_TEXT_TOO_MANY_WORDS"));
+  });
+
+  it("counts merged line separators and source words at exact batch boundaries", async () => {
+    const firstLineCount = Math.floor(ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES / 2);
+    const secondLineCount =
+      ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES - firstLineCount - 1;
+    const exactLines = await parseAssignmentFiles([
+      makeFile(makeLineText(firstLineCount), "first-lines.txt"),
+      makeFile(makeLineText(secondLineCount), "second-lines.txt"),
+    ]);
+    expect(retainedLineCount(exactLines.text)).toBe(
+      ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES,
+    );
+
+    await expect(
+      parseAssignmentFiles([
+        makeFile(makeLineText(firstLineCount), "first-lines.txt"),
+        makeFile(makeLineText(secondLineCount + 1), "second-lines.txt"),
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("EXTRACTED_TEXT_TOO_MANY_LINES"));
+
+    const firstWordCount = Math.floor(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS / 2);
+    const secondWordCount =
+      ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS - firstWordCount;
+    const exactWords = await parseAssignmentFiles([
+      makeFile(makeWordText(firstWordCount), "first-words.txt"),
+      makeFile(makeWordText(secondWordCount), "second-words.txt"),
+    ]);
+    expect(exactWords.wordCount).toBe(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS);
+
+    await expect(
+      parseAssignmentFiles([
+        makeFile(makeWordText(firstWordCount), "first-words.txt"),
+        makeFile(makeWordText(secondWordCount + 1), "second-words.txt"),
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("EXTRACTED_TEXT_TOO_MANY_WORDS"));
+  });
+
   it("rejects an empty or whitespace-only text file", async () => {
     const file = makeFile("  \n\t ", "empty.txt");
 
@@ -234,6 +392,190 @@ describe("parseAssignmentFiles", () => {
     );
     expect(result.text).toContain("Analyse the queue");
     expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it("accepts a 200-page PDF and rejects 201 pages before reading page one", async () => {
+    const acceptedDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES);
+    parserMocks.getDocument.mockReturnValueOnce({
+      promise: Promise.resolve(acceptedDocument.document),
+    });
+
+    const accepted = await parseAssignmentFiles([
+      makeFile("pdf", "exact-pages.pdf", "application/pdf"),
+    ]);
+
+    expect(accepted.sources[0].pageCount).toBe(ASSIGNMENT_PDF_MAX_PAGES);
+    expect(acceptedDocument.getPage).toHaveBeenCalledTimes(
+      ASSIGNMENT_PDF_MAX_PAGES,
+    );
+    expect(acceptedDocument.destroy).toHaveBeenCalledOnce();
+
+    const oversizedDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES + 1);
+    parserMocks.getDocument.mockReturnValueOnce({
+      promise: Promise.resolve(oversizedDocument.document),
+    });
+
+    await expect(
+      parseAssignmentFiles([
+        makeFile("pdf", "too-many-pages.pdf", "application/pdf"),
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("PDF_TOO_MANY_PAGES"));
+    expect(oversizedDocument.getPage).not.toHaveBeenCalled();
+    expect(oversizedDocument.destroy).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    {
+      code: "EXTRACTED_TEXT_TOO_LARGE" as const,
+      firstPageText: "x".repeat(
+        ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS + 1,
+      ),
+      name: "character",
+    },
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_LINES" as const,
+      firstPageText: makeLineText(ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES + 1),
+      name: "line",
+    },
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_WORDS" as const,
+      firstPageText: makeWordText(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS + 1),
+      name: "word",
+    },
+  ])(
+    "stops after the first PDF page exceeds the $name budget",
+    async ({ code, firstPageText }) => {
+      const document = makePdfDocument(2, {
+        pageText: (pageNumber) =>
+          pageNumber === 1 ? firstPageText : "This page must not be read.",
+      });
+      parserMocks.getDocument.mockReturnValueOnce({
+        promise: Promise.resolve(document.document),
+      });
+
+      await expect(
+        parseAssignmentFiles([
+          makeFile("pdf", "resource-heavy.pdf", "application/pdf"),
+        ]),
+      ).rejects.toSatisfy(expectErrorCode(code));
+      expect(document.getPage).toHaveBeenCalledTimes(1);
+      expect(document.getPage).toHaveBeenLastCalledWith(1);
+      expect(document.destroy).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("does not charge empty PDF pages against text line or word budgets", async () => {
+    const exactText = "x x\n".repeat(ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES);
+    const document = makePdfDocument(2, {
+      pageText: (pageNumber) => (pageNumber === 1 ? null : exactText),
+    });
+    parserMocks.getDocument.mockReturnValueOnce({
+      promise: Promise.resolve(document.document),
+    });
+
+    const result = await parseAssignmentFiles([
+      makeFile("pdf", "empty-first-page.pdf", "application/pdf"),
+    ]);
+
+    expect(result.wordCount).toBe(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS);
+    expect(retainedLineCount(result.text)).toBe(
+      ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES,
+    );
+    expect(result.sources[0].pages[0]).toMatchObject({
+      startOffset: 0,
+      endOffset: 0,
+      text: "",
+    });
+    expect(result.sources[0].pages[1].startOffset).toBe(0);
+  });
+
+  it("keeps PDF cleanup best-effort after success and stable page-limit errors", async () => {
+    const successfulDocument = makePdfDocument(1, {
+      destroyError: new Error("cleanup failed"),
+    });
+    parserMocks.getDocument.mockReturnValueOnce({
+      promise: Promise.resolve(successfulDocument.document),
+    });
+
+    const result = await parseAssignmentFiles([
+      makeFile("pdf", "readable.pdf", "application/pdf"),
+    ]);
+    expect(result.sources[0].pageCount).toBe(1);
+    expect(successfulDocument.destroy).toHaveBeenCalledOnce();
+
+    const oversizedDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES + 1, {
+      destroyError: new Error("cleanup failed"),
+    });
+    parserMocks.getDocument.mockReturnValueOnce({
+      promise: Promise.resolve(oversizedDocument.document),
+    });
+
+    await expect(
+      parseAssignmentFiles([
+        makeFile("pdf", "oversized.pdf", "application/pdf"),
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("PDF_TOO_MANY_PAGES"));
+    expect(oversizedDocument.getPage).not.toHaveBeenCalled();
+    expect(oversizedDocument.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a 401st accepted PDF page before reading it and destroys every document", async () => {
+    const firstDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES);
+    const secondDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES);
+    const lastDocument = makePdfDocument(
+      ASSIGNMENT_PDFS_MAX_TOTAL_PAGES - ASSIGNMENT_PDF_MAX_PAGES * 2 + 1,
+    );
+    for (const candidate of [
+      firstDocument,
+      secondDocument,
+      lastDocument,
+    ]) {
+      parserMocks.getDocument.mockReturnValueOnce({
+        promise: Promise.resolve(candidate.document),
+      });
+    }
+
+    await expect(
+      parseAssignmentFiles([
+        makeFile("pdf", "first.pdf", "application/pdf"),
+        makeFile("pdf", "second.pdf", "application/pdf"),
+        makeFile("pdf", "last.pdf", "application/pdf"),
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("TOTAL_PDF_PAGES_TOO_LARGE"));
+
+    expect(firstDocument.getPage).toHaveBeenCalledTimes(
+      ASSIGNMENT_PDF_MAX_PAGES,
+    );
+    expect(secondDocument.getPage).toHaveBeenCalledTimes(
+      ASSIGNMENT_PDF_MAX_PAGES,
+    );
+    expect(lastDocument.getPage).not.toHaveBeenCalled();
+    expect(firstDocument.destroy).toHaveBeenCalledOnce();
+    expect(secondDocument.destroy).toHaveBeenCalledOnce();
+    expect(lastDocument.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("prioritises the total PDF budget when the current file also exceeds 200 pages", async () => {
+    const acceptedDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES);
+    const bothLimitsDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES + 1);
+    for (const candidate of [acceptedDocument, bothLimitsDocument]) {
+      parserMocks.getDocument.mockReturnValueOnce({
+        promise: Promise.resolve(candidate.document),
+      });
+    }
+
+    await expect(
+      parseAssignmentFiles([
+        makeFile("pdf", "accepted.pdf", "application/pdf"),
+        makeFile("pdf", "both-limits.pdf", "application/pdf"),
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("TOTAL_PDF_PAGES_TOO_LARGE"));
+
+    expect(acceptedDocument.getPage).toHaveBeenCalledTimes(
+      ASSIGNMENT_PDF_MAX_PAGES,
+    );
+    expect(bothLimitsDocument.getPage).not.toHaveBeenCalled();
+    expect(bothLimitsDocument.destroy).toHaveBeenCalledOnce();
   });
 
   it("identifies a PDF with no extractable text as scanned", async () => {
@@ -384,6 +726,87 @@ describe("parseAssignmentFilesWithRecovery", () => {
     expect(trailingRead).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_LINES" as const,
+      content: makeLineText(ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES + 1),
+      name: "line exhaustion",
+    },
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_WORDS" as const,
+      content: makeWordText(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS + 1),
+      name: "word exhaustion",
+    },
+  ])("keeps $name fatal and stops before later files", async ({ code, content }) => {
+    const trailing = makeFile("Rubric\nAnalysis | 100%", "rubric.txt");
+    const trailingRead = vi.spyOn(trailing, "arrayBuffer");
+
+    await expect(
+      parseAssignmentFilesWithRecovery([
+        makeFile("Readable brief", "brief.txt"),
+        makeFile(content, "resource-heavy.txt"),
+        trailing,
+      ]),
+    ).rejects.toSatisfy(expectErrorCode(code));
+    expect(trailingRead).not.toHaveBeenCalled();
+  });
+
+  it("charges a skipped PDF's metadata pages to the 400-page selection budget", async () => {
+    const skippedDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES + 1);
+    const acceptedPageCount =
+      ASSIGNMENT_PDFS_MAX_TOTAL_PAGES - (ASSIGNMENT_PDF_MAX_PAGES + 1);
+    const acceptedDocument = makePdfDocument(acceptedPageCount);
+    for (const candidate of [skippedDocument, acceptedDocument]) {
+      parserMocks.getDocument.mockReturnValueOnce({
+        promise: Promise.resolve(candidate.document),
+      });
+    }
+
+    const result = await parseAssignmentFilesWithRecovery([
+      makeFile("pdf", "oversized.pdf", "application/pdf"),
+      makeFile("pdf", "accepted.pdf", "application/pdf"),
+    ]);
+
+    expect(result.parsed.sources.map((source) => source.id)).toEqual(["source-2"]);
+    expect(result.parsed.sources[0].pageCount).toBe(acceptedPageCount);
+    expect(result.skippedFiles).toEqual([
+      expect.objectContaining({
+        inputIndex: 0,
+        code: "PDF_TOO_MANY_PAGES",
+      }),
+    ]);
+    expect(skippedDocument.getPage).not.toHaveBeenCalled();
+    expect(skippedDocument.destroy).toHaveBeenCalledOnce();
+    expect(acceptedDocument.getPage).toHaveBeenCalledTimes(acceptedPageCount);
+    expect(acceptedDocument.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("keeps total PDF page exhaustion fatal during mixed recovery", async () => {
+    const firstDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES + 1);
+    const secondDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES);
+    for (const candidate of [firstDocument, secondDocument]) {
+      parserMocks.getDocument.mockReturnValueOnce({
+        promise: Promise.resolve(candidate.document),
+      });
+    }
+    const trailing = makeFile("Rubric\nAnalysis | 100%", "rubric.txt");
+    const trailingRead = vi.spyOn(trailing, "arrayBuffer");
+
+    await expect(
+      parseAssignmentFilesWithRecovery([
+        makeFile("pdf", "skipped-201-pages.pdf", "application/pdf"),
+        makeFile("pdf", "over-budget-200-pages.pdf", "application/pdf"),
+        trailing,
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("TOTAL_PDF_PAGES_TOO_LARGE"));
+
+    expect(firstDocument.getPage).not.toHaveBeenCalled();
+    expect(firstDocument.destroy).toHaveBeenCalledOnce();
+    expect(secondDocument.getPage).not.toHaveBeenCalled();
+    expect(secondDocument.destroy).toHaveBeenCalledOnce();
+    expect(trailingRead).not.toHaveBeenCalled();
+  });
+
   it("rejects selection-wide file count and byte limits before reading files", async () => {
     const tooMany = Array.from(
       { length: ASSIGNMENT_FILE_MAX_COUNT + 1 },
@@ -458,6 +881,38 @@ describe("parseAssignmentFilesWithRecovery", () => {
 });
 
 describe("buildUploadedAssignmentSummary", () => {
+  it.each([
+    {
+      code: "EXTRACTED_TEXT_TOO_LARGE" as const,
+      makeInput: () =>
+        "x".repeat(ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS + 1),
+      name: "character",
+    },
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_LINES" as const,
+      makeInput: () =>
+        makeLineText(ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES + 1),
+      name: "line",
+    },
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_WORDS" as const,
+      makeInput: () =>
+        makeWordText(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS + 1),
+      name: "word",
+    },
+  ])("rejects a direct string over the $name limit", ({ code, makeInput }) => {
+    let caught: unknown;
+    try {
+      buildUploadedAssignmentSummary(makeInput());
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(AssignmentFileParseError);
+    expect((caught as AssignmentFileParseError).code).toBe(code);
+    expect((caught as AssignmentFileParseError).fileName).toBeNull();
+  });
+
   it("keeps a matched value inside a capped excerpt from a long source line", async () => {
     const rawDate = "22 July 2026";
     const longLine = `${"context-before ".repeat(80)}Deadline: ${rawDate} ${"context-after ".repeat(80)}`;

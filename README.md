@@ -24,10 +24,15 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ### Use your own assignment
 
-1. Upload up to 10 TXT, DOCX or text-based PDF files (10 MB each, 25 MB combined),
-   or paste the brief and optional rubric from a course page, email or scan.
-2. If one file cannot be read, explicitly choose whether to continue with the
-   readable files, replace the complete selection or paste all text instead.
+1. Upload up to 10 TXT, DOCX or text-based PDF files (10 MiB each, 25 MiB
+   combined), or paste the brief and optional rubric from a course page, email
+   or scan. A PDF can contain up to 200 pages, with 400 PDF pages allowed across
+   the complete selection. Every selected PDF whose page-count metadata can be
+   read contributes to that 400-page total, even if the PDF is later explicitly
+   omitted because it exceeds the 200-page per-file limit.
+2. If one file has a recoverable per-file problem, explicitly choose whether to
+   continue with the readable files, replace the complete selection or paste all
+   text instead. This includes a PDF that exceeds its 200-page file limit.
 3. Review fields found in the included sources and fill anything missing.
 4. Confirm the rubric names and whether the official rubric provides a complete
    percentage breakdown. Complete weighting requires every criterion to have a
@@ -42,8 +47,11 @@ The production screenshot above and the mobile viewport are reviewed in
 The custom workflow includes:
 
 - deterministic browser-local file extraction and plain-text paste intake;
-- bounded parsing with file-count, combined-size and extracted-text limits;
-- explicit mixed-batch recovery that never silently drops an unreadable file;
+- bounded parsing with file-count, per-file and combined byte limits, PDF page
+  limits, and merged extracted-text limits of 2,000,000 normalized characters,
+  50,000 merged lines and 100,000 merged whitespace-delimited words;
+- explicit mixed-batch recovery that requires a decision before omitting a file
+  with a recoverable per-file problem;
 - exact retained rubric excerpts with filename and PDF page when available;
 - a generic dependency-aware plan linked only to confirmed criteria;
 - `focused`, `standard`, `thorough` and `extended` planning-depth choices that
@@ -69,8 +77,11 @@ Original files and full uploaded or pasted source text are not written to
 before it enters the same bounded TXT parser. Confirmed fields, weighting status,
 rubric percentages or `null`, short source excerpts, pasted self-check text and
 progress are stored until the user resets the project. Names and error details
-for files omitted from a partial batch stay
-only in the current intake flow and are not added to the saved project or backup.
+for files omitted from a partial batch stay only in the current intake flow and
+are not added to the saved project or backup. Selection-wide PDF-page and merged
+text limits stop the complete batch; they do not omit later files according to
+selection order. The PDF-page total includes every selected PDF with readable
+page-count metadata, including a per-file over-limit PDF offered for omission.
 
 ### Back up or restore a project
 
@@ -189,7 +200,7 @@ Chromium viewports; they are not mobile-device, touch or mobile-UA emulation.
 
 ```mermaid
 flowchart LR
-  A["TXT / DOCX / text PDF"] --> B["Strict batch limits"]
+  A["TXT / DOCX / text PDF"] --> B["Batch + resource limits"]
   B --> R["Readable + omitted review"]
   P["Pasted brief + optional rubric"] --> T["Strict bounded TXT parser"]
   R --> C["User confirmation"]
@@ -243,9 +254,10 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
 
 - Scanned and encrypted PDFs are not parsed directly; there is no OCR, but users
   can paste the readable brief and rubric text instead.
-- Local byte and retained-text limits reduce accidental resource exhaustion but
-  do not provide a complete CPU or peak-memory sandbox for malicious compressed
-  DOCX/PDF files.
+- Local byte, PDF-page and merged-text limits reduce resource risk but are not a
+  CPU or peak-memory sandbox. PDF metadata, one page's text items, or DOCX
+  decompression may consume resources before a limit can be applied. Parsing is
+  currently not cancellable; do not open deliberately malicious documents.
 - Custom projects rely on user confirmation rather than semantic AI extraction.
 - Planning depth changes the generated task scope and time allowance, not the
   meaning of the rubric or the likelihood of a grade.
@@ -263,7 +275,8 @@ More detail is in [docs/KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md).
 
 ## Roadmap
 
-- cancellable worker-based document parsing with stronger peak-resource limits;
+- cancellable worker-based document parsing with stronger pre-extraction
+  resource controls;
 - stronger table extraction for real-world rubrics;
 - more date and grading-system formats;
 - accessibility review with external users;

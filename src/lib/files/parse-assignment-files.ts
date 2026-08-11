@@ -2,6 +2,10 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_FILE_COUNT = 10;
 const MAX_TOTAL_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const MAX_EXTRACTED_TEXT_CHARACTERS = 2_000_000;
+const MAX_EXTRACTED_TEXT_LINES = 50_000;
+const MAX_EXTRACTED_TEXT_WORDS = 100_000;
+const MAX_PDF_PAGES = 200;
+const MAX_TOTAL_PDF_PAGES = 400;
 const MAX_EVIDENCE_EXCERPT_CHARACTERS = 500;
 const UNSAFE_FILE_NAME_CHARACTER = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
 
@@ -10,6 +14,10 @@ export const ASSIGNMENT_FILE_MAX_COUNT = MAX_FILE_COUNT;
 export const ASSIGNMENT_FILES_MAX_TOTAL_BYTES = MAX_TOTAL_FILE_SIZE_BYTES;
 export const ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS =
   MAX_EXTRACTED_TEXT_CHARACTERS;
+export const ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES = MAX_EXTRACTED_TEXT_LINES;
+export const ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS = MAX_EXTRACTED_TEXT_WORDS;
+export const ASSIGNMENT_PDF_MAX_PAGES = MAX_PDF_PAGES;
+export const ASSIGNMENT_PDFS_MAX_TOTAL_PAGES = MAX_TOTAL_PDF_PAGES;
 export const ASSIGNMENT_EVIDENCE_EXCERPT_MAX_CHARACTERS =
   MAX_EVIDENCE_EXCERPT_CHARACTERS;
 
@@ -20,6 +28,10 @@ export type AssignmentFileErrorCode =
   | "TOO_MANY_FILES"
   | "TOTAL_FILE_SIZE_TOO_LARGE"
   | "EXTRACTED_TEXT_TOO_LARGE"
+  | "EXTRACTED_TEXT_TOO_MANY_LINES"
+  | "EXTRACTED_TEXT_TOO_MANY_WORDS"
+  | "PDF_TOO_MANY_PAGES"
+  | "TOTAL_PDF_PAGES_TOO_LARGE"
   | "EMPTY_FILE"
   | "SCANNED_NO_TEXT"
   | "ENCRYPTED_PDF"
@@ -144,6 +156,8 @@ export interface UploadedAssignmentSummary {
 
 interface LocallyParsedFile {
   text: string;
+  lineCount: number;
+  wordCount: number;
   pageCount: number | null;
   pages: Array<{
     pageNumber: number;
@@ -151,6 +165,13 @@ interface LocallyParsedFile {
     startOffset: number;
     endOffset: number;
   }>;
+}
+
+interface RemainingExtractionLimits {
+  characters: number;
+  lines: number;
+  words: number;
+  onPdfPagesDiscovered: (pageCount: number) => void;
 }
 
 interface PdfTextItemLike {
@@ -232,6 +253,7 @@ const RECOVERABLE_PER_FILE_ERROR_CODES = new Set<AssignmentFileErrorCode>([
   "EMPTY_FILE",
   "SCANNED_NO_TEXT",
   "ENCRYPTED_PDF",
+  "PDF_TOO_MANY_PAGES",
   "CORRUPT_DOCUMENT",
 ]);
 
@@ -276,20 +298,46 @@ export async function parseAssignmentFiles(
     parsed: LocallyParsedFile;
   }> = [];
   let extractedCharacterCount = 0;
+  let extractedLineCount = 0;
+  let extractedWordCount = 0;
+  let discoveredPdfPageCount = 0;
 
   // Keep input order stable and avoid loading several large documents at once.
   for (const { file, inputIndex, kind } of validatedFiles) {
     const separatorLength = parsedFiles.length > 0 ? 2 : 0;
+    const separatorLineCount = parsedFiles.length > 0 ? 1 : 0;
     const remainingCharacters =
       MAX_EXTRACTED_TEXT_CHARACTERS -
       extractedCharacterCount -
       separatorLength;
+    const remainingLines =
+      MAX_EXTRACTED_TEXT_LINES - extractedLineCount - separatorLineCount;
+    const remainingWords = MAX_EXTRACTED_TEXT_WORDS - extractedWordCount;
     if (remainingCharacters <= 0) {
       throw extractedTextTooLargeError(file);
     }
-    const parsed = await parseSingleFile(file, kind, remainingCharacters);
+    if (remainingLines <= 0) {
+      throw extractedTextTooManyLinesError(file);
+    }
+    if (remainingWords <= 0) {
+      throw extractedTextTooManyWordsError(file);
+    }
+    const parsed = await parseSingleFile(file, kind, {
+      characters: remainingCharacters,
+      lines: remainingLines,
+      words: remainingWords,
+      onPdfPagesDiscovered: (pageCount) => {
+        const nextPageCount = discoveredPdfPageCount + pageCount;
+        if (nextPageCount > MAX_TOTAL_PDF_PAGES) {
+          throw totalPdfPagesTooLargeError(file);
+        }
+        discoveredPdfPageCount = nextPageCount;
+      },
+    });
     parsedFiles.push({ file, inputIndex, kind, parsed });
     extractedCharacterCount += separatorLength + parsed.text.length;
+    extractedLineCount += separatorLineCount + parsed.lineCount;
+    extractedWordCount += parsed.wordCount;
   }
 
   return mergeParsedAssignmentFiles(parsedFiles, totalBytes);
@@ -333,22 +381,48 @@ export async function parseAssignmentFilesWithRecovery(
   }> = [];
   const skippedFiles: SkippedAssignmentFile[] = [];
   let extractedCharacterCount = 0;
+  let extractedLineCount = 0;
+  let extractedWordCount = 0;
+  let discoveredPdfPageCount = 0;
 
   // Parse sequentially so one large or damaged source cannot fan out memory use.
   for (const [inputIndex, file] of files.entries()) {
     try {
       const kind = validateFile(file);
       const separatorLength = parsedFiles.length > 0 ? 2 : 0;
+      const separatorLineCount = parsedFiles.length > 0 ? 1 : 0;
       const remainingCharacters =
         MAX_EXTRACTED_TEXT_CHARACTERS -
         extractedCharacterCount -
         separatorLength;
+      const remainingLines =
+        MAX_EXTRACTED_TEXT_LINES - extractedLineCount - separatorLineCount;
+      const remainingWords = MAX_EXTRACTED_TEXT_WORDS - extractedWordCount;
       if (remainingCharacters <= 0) {
         throw extractedTextTooLargeError(file);
       }
-      const parsed = await parseSingleFile(file, kind, remainingCharacters);
+      if (remainingLines <= 0) {
+        throw extractedTextTooManyLinesError(file);
+      }
+      if (remainingWords <= 0) {
+        throw extractedTextTooManyWordsError(file);
+      }
+      const parsed = await parseSingleFile(file, kind, {
+        characters: remainingCharacters,
+        lines: remainingLines,
+        words: remainingWords,
+        onPdfPagesDiscovered: (pageCount) => {
+          const nextPageCount = discoveredPdfPageCount + pageCount;
+          if (nextPageCount > MAX_TOTAL_PDF_PAGES) {
+            throw totalPdfPagesTooLargeError(file);
+          }
+          discoveredPdfPageCount = nextPageCount;
+        },
+      });
       parsedFiles.push({ file, inputIndex, kind, parsed });
       extractedCharacterCount += separatorLength + parsed.text.length;
+      extractedLineCount += separatorLineCount + parsed.lineCount;
+      extractedWordCount += parsed.wordCount;
     } catch (error) {
       if (!(error instanceof AssignmentFileParseError)) {
         throw error;
@@ -405,7 +479,7 @@ function mergeParsedAssignmentFiles(
       lastModified:
         typeof file.lastModified === "number" ? file.lastModified : null,
       text: parsed.text,
-      wordCount: countWords(parsed.text),
+      wordCount: parsed.wordCount,
       startOffset,
       endOffset,
       pageCount: parsed.pageCount,
@@ -421,7 +495,10 @@ function mergeParsedAssignmentFiles(
     text: mergedText,
     sources,
     totalBytes,
-    wordCount: countWords(mergedText),
+    wordCount: parsedFiles.reduce(
+      (total, item) => total + item.parsed.wordCount,
+      0,
+    ),
   };
 }
 
@@ -459,8 +536,19 @@ function safeDisplayFileName(value: string, inputIndex: number): string {
 export function buildUploadedAssignmentSummary(
   input: ParsedAssignmentFiles | string,
 ): UploadedAssignmentSummary {
+  if (
+    typeof input === "string" &&
+    input.length > MAX_EXTRACTED_TEXT_CHARACTERS
+  ) {
+    throw extractedTextTooLargeError(null);
+  }
   const text = typeof input === "string" ? normalizeExtractedText(input) : input.text;
   const sources = typeof input === "string" ? [] : input.sources;
+  extractedTextMetrics(text, null, {
+    characters: MAX_EXTRACTED_TEXT_CHARACTERS,
+    lines: MAX_EXTRACTED_TEXT_LINES,
+    words: MAX_EXTRACTED_TEXT_WORDS,
+  });
   const lines = toTextLines(text);
 
   const title = extractTitle(lines, sources);
@@ -530,7 +618,7 @@ function validateFile(file: File): AssignmentFileKind {
   if (file.size > MAX_FILE_SIZE_BYTES) {
     throw new AssignmentFileParseError(
       "FILE_TOO_LARGE",
-      `"${file.name}" is larger than the 10 MB per-file limit.`,
+      `"${file.name}" is larger than the 10 MiB per-file limit.`,
       file.name,
     );
   }
@@ -555,27 +643,27 @@ function detectFileKind(file: File): AssignmentFileKind | null {
 async function parseSingleFile(
   file: File,
   kind: AssignmentFileKind,
-  maxExtractedCharacters: number,
+  limits: RemainingExtractionLimits,
 ): Promise<LocallyParsedFile> {
   if (kind === "txt") {
-    return parseTextFile(file, maxExtractedCharacters);
+    return parseTextFile(file, limits);
   }
   if (kind === "docx") {
-    return parseDocxFile(file, maxExtractedCharacters);
+    return parseDocxFile(file, limits);
   }
-  return parsePdfFile(file, maxExtractedCharacters);
+  return parsePdfFile(file, limits);
 }
 
 async function parseTextFile(
   file: File,
-  maxExtractedCharacters: number,
+  limits: RemainingExtractionLimits,
 ): Promise<LocallyParsedFile> {
   try {
     const bytes = await file.arrayBuffer();
     const text = normalizeExtractedText(new TextDecoder("utf-8").decode(bytes));
     ensureTextWasExtracted(text, file, "EMPTY_FILE");
-    ensureExtractedTextWithinLimit(text, file, maxExtractedCharacters);
-    return { text, pageCount: null, pages: [] };
+    const metrics = extractedTextMetrics(text, file, limits);
+    return { text, ...metrics, pageCount: null, pages: [] };
   } catch (error) {
     throw preserveOrWrapCorruptError(error, file);
   }
@@ -583,7 +671,7 @@ async function parseTextFile(
 
 async function parseDocxFile(
   file: File,
-  maxExtractedCharacters: number,
+  limits: RemainingExtractionLimits,
 ): Promise<LocallyParsedFile> {
   let mammoth: MammothModuleLike;
   try {
@@ -605,8 +693,8 @@ async function parseDocxFile(
     const result = await extractRawText({ arrayBuffer: await file.arrayBuffer() });
     const text = normalizeExtractedText(result.value);
     ensureTextWasExtracted(text, file, "EMPTY_FILE");
-    ensureExtractedTextWithinLimit(text, file, maxExtractedCharacters);
-    return { text, pageCount: null, pages: [] };
+    const metrics = extractedTextMetrics(text, file, limits);
+    return { text, ...metrics, pageCount: null, pages: [] };
   } catch (error) {
     throw preserveOrWrapCorruptError(error, file);
   }
@@ -614,7 +702,7 @@ async function parseDocxFile(
 
 async function parsePdfFile(
   file: File,
-  maxExtractedCharacters: number,
+  limits: RemainingExtractionLimits,
 ): Promise<LocallyParsedFile> {
   let pdfjs: PdfModuleLike;
   try {
@@ -647,8 +735,15 @@ async function parsePdfFile(
     });
     document = await loadingTask.promise;
 
+    limits.onPdfPagesDiscovered(document.numPages);
+    if (document.numPages > MAX_PDF_PAGES) {
+      throw pdfTooManyPagesError(file);
+    }
+
     const pages: LocallyParsedFile["pages"] = [];
     let documentText = "";
+    let documentLineCount = 0;
+    let documentWordCount = 0;
 
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
@@ -661,11 +756,19 @@ async function parsePdfFile(
       );
 
       const separatorLength = documentText && pageText ? 2 : 0;
-      if (
-        documentText.length + separatorLength + pageText.length >
-        maxExtractedCharacters
-      ) {
-        throw extractedTextTooLargeError(file);
+      const separatorLineCount = documentText && pageText ? 1 : 0;
+      let pageMetrics: Pick<LocallyParsedFile, "lineCount" | "wordCount"> = {
+        lineCount: 0,
+        wordCount: 0,
+      };
+      if (pageText) {
+        pageMetrics = extractedTextMetrics(pageText, file, {
+          characters:
+            limits.characters - documentText.length - separatorLength,
+          lines:
+            limits.lines - documentLineCount - separatorLineCount,
+          words: limits.words - documentWordCount,
+        });
       }
 
       if (documentText && pageText) {
@@ -679,13 +782,18 @@ async function parsePdfFile(
         startOffset,
         endOffset: documentText.length,
       });
+      if (pageText) {
+        documentLineCount += separatorLineCount + pageMetrics.lineCount;
+        documentWordCount += pageMetrics.wordCount;
+      }
     }
 
-    documentText = normalizeExtractedText(documentText);
     ensureTextWasExtracted(documentText, file, "SCANNED_NO_TEXT");
 
     return {
       text: documentText,
+      lineCount: documentLineCount,
+      wordCount: documentWordCount,
       pageCount: document.numPages,
       pages,
     };
@@ -708,7 +816,11 @@ async function parsePdfFile(
       { cause: error },
     );
   } finally {
-    await document?.destroy?.();
+    try {
+      await document?.destroy?.();
+    } catch {
+      // PDF.js cleanup is best effort and must not replace a stable parse result.
+    }
   }
 }
 
@@ -751,21 +863,68 @@ function ensureTextWasExtracted(
   throw new AssignmentFileParseError(code, message, file.name);
 }
 
-function ensureExtractedTextWithinLimit(
+function extractedTextMetrics(
   text: string,
-  file: File,
-  maxExtractedCharacters: number,
-): void {
-  if (text.length <= maxExtractedCharacters) {
-    return;
+  file: File | null,
+  limits: Pick<RemainingExtractionLimits, "characters" | "lines" | "words">,
+): Pick<LocallyParsedFile, "lineCount" | "wordCount"> {
+  if (text.length > limits.characters) {
+    throw extractedTextTooLargeError(file);
   }
-  throw extractedTextTooLargeError(file);
+
+  const lineCount = countExtractedTextLines(text, limits.lines);
+  if (lineCount > limits.lines) {
+    throw extractedTextTooManyLinesError(file);
+  }
+
+  const wordCount = countWords(text, limits.words);
+  if (wordCount > limits.words) {
+    throw extractedTextTooManyWordsError(file);
+  }
+
+  return { lineCount, wordCount };
 }
 
-function extractedTextTooLargeError(file: File): AssignmentFileParseError {
+function extractedTextTooLargeError(file: File | null): AssignmentFileParseError {
   return new AssignmentFileParseError(
     "EXTRACTED_TEXT_TOO_LARGE",
     `The selected files contain more than ${MAX_EXTRACTED_TEXT_CHARACTERS.toLocaleString("en-US")} extracted characters. Choose fewer or shorter files.`,
+    file?.name ?? null,
+  );
+}
+
+function extractedTextTooManyLinesError(
+  file: File | null,
+): AssignmentFileParseError {
+  return new AssignmentFileParseError(
+    "EXTRACTED_TEXT_TOO_MANY_LINES",
+    `The selected files contain more than ${MAX_EXTRACTED_TEXT_LINES.toLocaleString("en-US")} extracted lines. Choose fewer or simpler files.`,
+    file?.name ?? null,
+  );
+}
+
+function extractedTextTooManyWordsError(
+  file: File | null,
+): AssignmentFileParseError {
+  return new AssignmentFileParseError(
+    "EXTRACTED_TEXT_TOO_MANY_WORDS",
+    `The selected files contain more than ${MAX_EXTRACTED_TEXT_WORDS.toLocaleString("en-US")} extracted words. Choose fewer or shorter files.`,
+    file?.name ?? null,
+  );
+}
+
+function pdfTooManyPagesError(file: File): AssignmentFileParseError {
+  return new AssignmentFileParseError(
+    "PDF_TOO_MANY_PAGES",
+    `"${file.name}" contains more than ${MAX_PDF_PAGES.toLocaleString("en-US")} pages. Choose a shorter PDF or paste only the relevant text.`,
+    file.name,
+  );
+}
+
+function totalPdfPagesTooLargeError(file: File): AssignmentFileParseError {
+  return new AssignmentFileParseError(
+    "TOTAL_PDF_PAGES_TOO_LARGE",
+    `The selected PDF files contain more than ${MAX_TOTAL_PDF_PAGES.toLocaleString("en-US")} pages in total. Choose fewer or shorter PDFs.`,
     file.name,
   );
 }
@@ -806,9 +965,34 @@ function normalizeExtractedText(value: string): string {
     .trim();
 }
 
-function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed ? trimmed.split(/\s+/u).length : 0;
+function countExtractedTextLines(text: string, maximum: number): number {
+  if (!text) {
+    return 0;
+  }
+
+  let lineCount = 1;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) !== 10) {
+      continue;
+    }
+    lineCount += 1;
+    if (lineCount > maximum) {
+      return lineCount;
+    }
+  }
+  return lineCount;
+}
+
+function countWords(text: string, maximum = Number.POSITIVE_INFINITY): number {
+  const matcher = /\S+/gu;
+  let wordCount = 0;
+  while (matcher.exec(text) !== null) {
+    wordCount += 1;
+    if (wordCount > maximum) {
+      return wordCount;
+    }
+  }
+  return wordCount;
 }
 
 function mediaTypeForKind(kind: AssignmentFileKind): string {
@@ -822,17 +1006,27 @@ function mediaTypeForKind(kind: AssignmentFileKind): string {
 }
 
 function toTextLines(text: string): TextLine[] {
+  const lines: TextLine[] = [];
   let cursor = 0;
-  return text.split("\n").map((raw) => {
-    const line = {
+  while (cursor <= text.length) {
+    if (lines.length >= MAX_EXTRACTED_TEXT_LINES) {
+      throw extractedTextTooManyLinesError(null);
+    }
+    const newlineIndex = text.indexOf("\n", cursor);
+    const endOffset = newlineIndex < 0 ? text.length : newlineIndex;
+    const raw = text.slice(cursor, endOffset);
+    lines.push({
       raw,
       trimmed: raw.trim(),
       startOffset: cursor,
-      endOffset: cursor + raw.length,
-    };
-    cursor += raw.length + 1;
-    return line;
-  });
+      endOffset,
+    });
+    if (newlineIndex < 0) {
+      break;
+    }
+    cursor = newlineIndex + 1;
+  }
+  return lines;
 }
 
 function extractTitle(

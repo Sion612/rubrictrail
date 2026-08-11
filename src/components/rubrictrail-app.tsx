@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Route } from "lucide-react";
+import { AlertTriangle, Check, Info, Route, X } from "lucide-react";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { WorkspaceShell, type WorkspaceProjectMeta } from "@/components/workspace-shell";
 import { UploadSummaryView } from "@/components/upload-summary-view";
@@ -16,6 +16,7 @@ import {
   UploadedBriefView,
   UploadedDraftReviewView,
   UploadedProgressView,
+  UPLOADED_READINESS,
   UploadedRubricView,
 } from "@/components/views/uploaded-project-views";
 import { BRAND } from "@/lib/brand";
@@ -30,10 +31,14 @@ import {
 import {
   clearProjectState,
   createDefaultProjectState,
-  readProjectState,
+  readProjectStateWithStatus,
   writeProjectState,
 } from "@/lib/local-state";
-import { buildUploadedPlanTemplates, todayIso } from "@/lib/uploaded-project";
+import {
+  buildUploadedPlanTemplates,
+  isConfirmedUploadedReview,
+  todayIso,
+} from "@/lib/uploaded-project";
 import type {
   NoticeState,
   PersistedProjectState,
@@ -53,6 +58,9 @@ function friendlyFileError(error: unknown): string {
     const recovery: Record<AssignmentFileParseError["code"], string> = {
       UNSUPPORTED_FILE_TYPE: "Choose a PDF, DOCX, or TXT file.",
       FILE_TOO_LARGE: "Choose a file smaller than 10 MB.",
+      TOO_MANY_FILES: "Upload no more than 10 files at a time.",
+      TOTAL_FILE_SIZE_TOO_LARGE: "Keep the combined upload at or below 25 MB.",
+      EXTRACTED_TEXT_TOO_LARGE: "Split the assignment into smaller files or remove unrelated text.",
       EMPTY_FILE: "Choose a file that contains readable text.",
       SCANNED_NO_TEXT: "This looks like a scanned PDF. Paste the text or use a text-based PDF.",
       ENCRYPTED_PDF: "Remove the PDF password locally, then try again.",
@@ -67,8 +75,17 @@ function planStartFor(dueDate: string, today: string): string {
   return dueDate < today ? dueDate : today;
 }
 
-function sampleStepStates(project: PersistedProjectState, completion: number) {
-  const draftState: WorkflowState = project.draftResult
+interface PersistenceWarningState {
+  kind: "recovered" | "write";
+  message: string;
+}
+
+function sampleStepStates(
+  project: PersistedProjectState,
+  completion: number,
+  hasCurrentDraftResult: boolean,
+) {
+  const draftState: WorkflowState = hasCurrentDraftResult
     ? "complete"
     : project.visitedViews.includes("draft")
       ? "in_progress"
@@ -78,7 +95,7 @@ function sampleStepStates(project: PersistedProjectState, completion: number) {
     rubric: "complete",
     plan: completion === 100
       ? "complete"
-      : project.completedTaskIds.length
+      : completion > 0
         ? "in_progress"
         : "needs_review",
     draft: draftState,
@@ -88,15 +105,17 @@ function sampleStepStates(project: PersistedProjectState, completion: number) {
 
 function uploadedStepStates(project: PersistedProjectState, completion: number) {
   const uploaded = project.uploadedProject;
+  const criterionIds = new Set(uploaded?.criteria.map((criterion) => criterion.id) ?? []);
   const completeReviews = uploaded
-    ? project.uploadedCriterionReviews.filter(
+    ? new Set(project.uploadedCriterionReviews.filter(
         (review) =>
-          review.draftText.trim() &&
-          review.evidenceVisible &&
-          review.linkExplained &&
-          review.sourceTraceable,
-      ).length
+          criterionIds.has(review.criterionId) &&
+          isConfirmedUploadedReview(review),
+      ).map((review) => review.criterionId)).size
     : 0;
+  const readinessComplete = UPLOADED_READINESS.filter(([id]) =>
+    project.readinessChecks.includes(id),
+  ).length;
   const reviewState: WorkflowState =
     uploaded && completeReviews === uploaded.criteria.length
       ? "complete"
@@ -107,13 +126,13 @@ function uploadedStepStates(project: PersistedProjectState, completion: number) 
     completion === 100 &&
     uploaded !== null &&
     completeReviews === uploaded.criteria.length &&
-    project.readinessChecks.length === 6;
+    readinessComplete === UPLOADED_READINESS.length;
   return {
     overview: "complete",
     rubric: "complete",
     plan: completion === 100
       ? "complete"
-      : project.completedTaskIds.length
+      : completion > 0
         ? "in_progress"
         : "needs_review",
     draft: reviewState,
@@ -127,7 +146,7 @@ function uploadedStepStates(project: PersistedProjectState, completion: number) 
 
 export function RubricTrailApp() {
   const [hydrated, setHydrated] = useState(false);
-  const [project, setProject] = useState<PersistedProjectState>(() => createDefaultProjectState());
+  const [project, setProjectState] = useState<PersistedProjectState>(() => createDefaultProjectState());
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadFlowResult | null>(null);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "parsing" | "error">("idle");
@@ -136,19 +155,96 @@ export function RubricTrailApp() {
   const [isChecking, setIsChecking] = useState(false);
   const [checkingStage, setCheckingStage] = useState(0);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [persistenceWarning, setPersistenceWarning] =
+    useState<PersistenceWarningState | null>(null);
   const noticeTimer = useRef<number | null>(null);
+  const persistenceTimer = useRef<number | null>(null);
+  const draftCheckRunId = useRef(0);
+  const draftCheckActive = useRef(false);
+  const latestProject = useRef(project);
+  const persistenceReady = useRef(false);
+  const hasPendingProjectChange = useRef(false);
+  const persistHydratedState = useRef(false);
+
+  const updateProject = useCallback(
+    (
+      action:
+        | PersistedProjectState
+        | ((current: PersistedProjectState) => PersistedProjectState),
+    ) => {
+      const current = latestProject.current;
+      const next = typeof action === "function" ? action(current) : action;
+      latestProject.current = next;
+      hasPendingProjectChange.current = true;
+      setProjectState(next);
+    },
+    [],
+  );
 
   useEffect(() => {
     const hydrationTimer = window.setTimeout(() => {
-      setProject(readProjectState());
+      const result = readProjectStateWithStatus();
+      latestProject.current = result.state;
+      persistHydratedState.current =
+        result.recovered && result.source !== "default";
+      setProjectState(result.state);
+      if (result.recovered) {
+        setPersistenceWarning({
+          kind: "recovered",
+          message:
+            result.source === "legacy"
+              ? "An older local project was recovered and is ready to upgrade. Review its details before continuing."
+              : result.source === "v2"
+                ? "Obsolete entries were removed from this saved project. Review its details before continuing."
+                : "Saved browser data was incomplete or incompatible, so RubricTrail recovered with safe defaults. Review the project before continuing.",
+        });
+      }
       setHydrated(true);
     }, 0);
     return () => window.clearTimeout(hydrationTimer);
   }, []);
 
   useEffect(() => {
-    if (hydrated) writeProjectState(project);
+    if (!hydrated) return;
+    if (!persistenceReady.current) {
+      persistenceReady.current = true;
+      if (!persistHydratedState.current) return;
+      persistHydratedState.current = false;
+      hasPendingProjectChange.current = true;
+    }
+    if (persistenceTimer.current) window.clearTimeout(persistenceTimer.current);
+    persistenceTimer.current = window.setTimeout(() => {
+      const result = writeProjectState(project);
+      if (result.ok) {
+        if (latestProject.current === project) {
+          hasPendingProjectChange.current = false;
+        }
+        setPersistenceWarning((current) =>
+          current?.kind === "write" ? null : current,
+        );
+        return;
+      }
+      const message =
+        result.reason === "invalid-state"
+          ? "This project failed local validation, so recent changes are only in this tab. Reset the local project if the warning continues."
+          : "Browser storage is unavailable or full. Recent changes are only in this tab and may be lost when it closes.";
+      setPersistenceWarning({ kind: "write", message });
+    }, 250);
+    return () => {
+      if (persistenceTimer.current) window.clearTimeout(persistenceTimer.current);
+    };
   }, [hydrated, project]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const flushLatestProject = () => {
+      if (hasPendingProjectChange.current) {
+        writeProjectState(latestProject.current);
+      }
+    };
+    window.addEventListener("pagehide", flushLatestProject);
+    return () => window.removeEventListener("pagehide", flushLatestProject);
+  }, [hydrated]);
 
   useEffect(() => {
     if (!hydrated || project.projectKind === "none" || uploadResult) return;
@@ -169,6 +265,14 @@ export function RubricTrailApp() {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setNotice(null), 3600);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+      if (persistenceTimer.current) window.clearTimeout(persistenceTimer.current);
+    },
+    [],
+  );
 
   const today = todayIso();
   const dueDate =
@@ -194,9 +298,15 @@ export function RubricTrailApp() {
       ),
     [dueDate, project.completedTaskIds, project.targetGrade, project.weeklyHours, today, uploadedTemplates],
   );
+  const currentDraftResult =
+    project.draftResult &&
+    project.checkedDraftText === project.draftText &&
+    project.draftResult.sectionId === project.selectedSectionId
+      ? project.draftResult
+      : null;
 
   function navigate(view: WorkspaceView) {
-    setProject((current) => ({
+    updateProject((current) => ({
       ...current,
       view,
       visitedViews: current.visitedViews.includes(view)
@@ -206,11 +316,13 @@ export function RubricTrailApp() {
   }
 
   async function loadSample() {
+    draftCheckRunId.current += 1;
+    draftCheckActive.current = false;
     setUploadResult(null);
     setUploadError(null);
     setIsLoadingSample(true);
     await wait(450);
-    setProject({
+    updateProject({
       ...createDefaultProjectState(),
       projectKind: "sample",
       view: "overview",
@@ -240,7 +352,7 @@ export function RubricTrailApp() {
   }
 
   function createLocalProject(uploadedProject: UploadedProject) {
-    setProject({
+    updateProject({
       ...createDefaultProjectState(),
       projectKind: "uploaded",
       uploadedProject,
@@ -253,22 +365,26 @@ export function RubricTrailApp() {
     setSelectedEvidenceId(null);
     showNotice({
       tone: "success",
-      message: "Local project created. Original files were not saved; confirmed fields and short excerpts were.",
+      message: "Local project created in this session. Original files were not retained; confirmed fields and short excerpts are set to autosave.",
     });
   }
 
   function resetProject() {
     if (!window.confirm("Reset this local project? This clears saved draft excerpts, checks, results and task progress from this browser.")) return;
     clearProjectState();
-    setProject(createDefaultProjectState());
+    draftCheckRunId.current += 1;
+    draftCheckActive.current = false;
+    setIsChecking(false);
+    updateProject(createDefaultProjectState());
     setSelectedEvidenceId(null);
     setUploadResult(null);
     setUploadStatus("idle");
     setUploadError(null);
+    setPersistenceWarning(null);
   }
 
   function rebalancePlan(weeklyHours: number, targetGrade: number) {
-    setProject((current) => ({ ...current, weeklyHours, targetGrade }));
+    updateProject((current) => ({ ...current, weeklyHours, targetGrade }));
     showNotice({
       tone: weeklyHours <= 5 ? "warning" : "success",
       message: `Plan updated for ${weeklyHours} hours per week and a ${targetGrade}% target band.`,
@@ -278,6 +394,9 @@ export function RubricTrailApp() {
   function toggleTask(taskId: string) {
     const task = plan.tasks.find((item) => item.id === taskId);
     if (!task) return;
+    const validCompletedIds = plan.tasks
+      .filter((item) => item.completed)
+      .map((item) => item.id);
     const incompleteDependencies = task.dependencies.filter(
       (id) => !plan.tasks.find((candidate) => candidate.id === id)?.completed,
     );
@@ -285,45 +404,133 @@ export function RubricTrailApp() {
       showNotice({ tone: "warning", message: "Finish the prerequisite task before marking this one complete." });
       return;
     }
-    setProject((current) => ({
+    if (task.completed) {
+      const idsToClear = new Set([taskId]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const candidate of plan.tasks) {
+          if (
+            !idsToClear.has(candidate.id) &&
+            candidate.dependencies.some((id) => idsToClear.has(id))
+          ) {
+            idsToClear.add(candidate.id);
+            changed = true;
+          }
+        }
+      }
+      updateProject((current) => ({
+        ...current,
+        completedTaskIds: validCompletedIds.filter(
+          (id) => !idsToClear.has(id),
+        ),
+      }));
+      const reopenedTaskCount = validCompletedIds.filter(
+        (id) => id !== taskId && idsToClear.has(id),
+      ).length;
+      if (reopenedTaskCount > 0) {
+        showNotice({
+          tone: "warning",
+          message: `${reopenedTaskCount} dependent ${reopenedTaskCount === 1 ? "task was" : "tasks were"} reopened with this prerequisite.`,
+        });
+      }
+      return;
+    }
+    updateProject((current) => ({
       ...current,
-      completedTaskIds: current.completedTaskIds.includes(taskId)
-        ? current.completedTaskIds.filter((id) => id !== taskId)
-        : [...current.completedTaskIds, taskId],
+      completedTaskIds: [...validCompletedIds, taskId],
     }));
   }
 
   async function runDraftCheck() {
-    if (project.projectKind !== "sample" || !project.draftText.trim() || isChecking) return;
+    if (
+      project.projectKind !== "sample" ||
+      !project.draftText.trim() ||
+      isChecking ||
+      draftCheckActive.current
+    ) return;
+    const runId = draftCheckRunId.current + 1;
+    draftCheckRunId.current = runId;
+    draftCheckActive.current = true;
+    const checkedDraftText = project.draftText;
+    const checkedSectionId = project.selectedSectionId;
     setIsChecking(true);
     setCheckingStage(0);
-    for (let stage = 1; stage < 4; stage += 1) {
-      await wait(230);
-      setCheckingStage(stage);
+    let committed = false;
+    try {
+      for (let stage = 1; stage < 4; stage += 1) {
+        await wait(230);
+        if (draftCheckRunId.current !== runId) return;
+        setCheckingStage(stage);
+      }
+      const result = await runMockDraftCheck(checkedDraftText, checkedSectionId);
+      if (draftCheckRunId.current !== runId) return;
+      const current = latestProject.current;
+      if (
+        current.projectKind !== "sample" ||
+        current.draftText !== checkedDraftText ||
+        current.selectedSectionId !== checkedSectionId
+      ) return;
+      updateProject({
+        ...current,
+        draftResult: result,
+        checkedDraftText,
+      });
+      committed = true;
+    } catch {
+      if (draftCheckRunId.current === runId) {
+        showNotice({
+          tone: "warning",
+          message: "The demo signal check could not finish. Your draft was not changed; try again.",
+        });
+      }
+    } finally {
+      if (draftCheckRunId.current === runId) {
+        draftCheckActive.current = false;
+        setIsChecking(false);
+      }
     }
-    const result = await runMockDraftCheck(project.draftText, project.selectedSectionId);
-    setProject((current) => ({
-      ...current,
-      draftResult: result,
-      checkedDraftText: current.draftText,
-    }));
-    setIsChecking(false);
-    showNotice({ tone: "info", message: "Deterministic demo check complete. Treat the signals as prompts, not a grade." });
+    if (committed) {
+      showNotice({ tone: "info", message: "Deterministic demo check complete. Treat the signals as prompts, not a grade." });
+    }
   }
 
-  function saveUploadedReview(review: UploadedCriterionReview) {
-    setProject((current) => ({
+  function changeDraftText(draftText: string) {
+    draftCheckRunId.current += 1;
+    draftCheckActive.current = false;
+    setIsChecking(false);
+    updateProject((current) => ({ ...current, draftText }));
+  }
+
+  function changeDraftSection(selectedSectionId: string) {
+    draftCheckRunId.current += 1;
+    draftCheckActive.current = false;
+    setIsChecking(false);
+    updateProject((current) => ({
+      ...current,
+      selectedSectionId,
+      draftResult: null,
+      checkedDraftText: null,
+    }));
+  }
+
+  function updateUploadedReview(review: UploadedCriterionReview) {
+    updateProject((current) => ({
       ...current,
       uploadedCriterionReviews: [
         ...current.uploadedCriterionReviews.filter((item) => item.criterionId !== review.criterionId),
         review,
       ],
     }));
-    showNotice({ tone: "success", message: "Self-check saved locally. It records your judgment; it does not validate the paragraph." });
+  }
+
+  function saveUploadedReview(review: UploadedCriterionReview) {
+    updateUploadedReview(review);
+    showNotice({ tone: "success", message: "Self-check recorded. It counts as complete only when the draft note and all three evidence checks are present." });
   }
 
   function toggleReadiness(id: string) {
-    setProject((current) => ({
+    updateProject((current) => ({
       ...current,
       readinessChecks: current.readinessChecks.includes(id)
         ? current.readinessChecks.filter((item) => item !== id)
@@ -343,26 +550,44 @@ export function RubricTrailApp() {
 
   if (uploadResult) {
     return (
-      <UploadSummaryView
-        result={uploadResult}
-        onBack={() => {
-          setUploadResult(null);
-          setUploadStatus("idle");
-        }}
-        onCreateProject={createLocalProject}
-      />
+      <>
+        <UploadSummaryView
+          result={uploadResult}
+          onBack={() => {
+            setUploadResult(null);
+            setUploadStatus("idle");
+          }}
+          onCreateProject={createLocalProject}
+        />
+        {persistenceWarning ? (
+          <div className="toast warning persistence-warning" role="alert">
+            <AlertTriangle aria-hidden="true" />
+            <span>{persistenceWarning.message}</span>
+            <button className="icon-button" type="button" onClick={() => setPersistenceWarning(null)} aria-label="Dismiss storage warning"><X aria-hidden="true" /></button>
+          </div>
+        ) : null}
+      </>
     );
   }
 
   if (project.projectKind === "none") {
     return (
-      <WelcomeScreen
-        onTrySample={loadSample}
-        onFiles={handleFiles}
-        isLoadingSample={isLoadingSample}
-        uploadStatus={uploadStatus}
-        uploadError={uploadError}
-      />
+      <>
+        <WelcomeScreen
+          onTrySample={loadSample}
+          onFiles={handleFiles}
+          isLoadingSample={isLoadingSample}
+          uploadStatus={uploadStatus}
+          uploadError={uploadError}
+        />
+        {persistenceWarning ? (
+          <div className="toast warning persistence-warning" role="alert">
+            <AlertTriangle aria-hidden="true" />
+            <span>{persistenceWarning.message}</span>
+            <button className="icon-button" type="button" onClick={() => setPersistenceWarning(null)} aria-label="Dismiss storage warning"><X aria-hidden="true" /></button>
+          </div>
+        ) : null}
+      </>
     );
   }
 
@@ -409,6 +634,7 @@ export function RubricTrailApp() {
         <UploadedDraftReviewView
           project={uploaded}
           reviews={project.uploadedCriterionReviews}
+          onChange={updateUploadedReview}
           onSave={saveUploadedReview}
           onNavigate={navigate}
         />
@@ -428,7 +654,7 @@ export function RubricTrailApp() {
   } else if (project.view === "overview") {
     activeView = <OverviewView analysis={SAMPLE_ASSIGNMENT} onOpenEvidence={setSelectedEvidenceId} onNavigate={navigate} />;
   } else if (project.view === "rubric") {
-    activeView = <RubricView analysis={SAMPLE_ASSIGNMENT} draftResult={project.draftResult} plan={plan} onOpenEvidence={setSelectedEvidenceId} />;
+    activeView = <RubricView analysis={SAMPLE_ASSIGNMENT} draftResult={currentDraftResult} plan={plan} onOpenEvidence={setSelectedEvidenceId} />;
   } else if (project.view === "plan") {
     activeView = <ActionPlanView plan={plan} onRebalance={rebalancePlan} onToggleTask={toggleTask} onNavigateDraft={() => navigate("draft")} />;
   } else if (project.view === "draft") {
@@ -441,8 +667,8 @@ export function RubricTrailApp() {
         checkedDraftText={project.checkedDraftText}
         isChecking={isChecking}
         checkingStage={checkingStage}
-        onDraftChange={(draftText) => setProject((current) => ({ ...current, draftText }))}
-        onSectionChange={(selectedSectionId) => setProject((current) => ({ ...current, selectedSectionId, draftResult: null, checkedDraftText: null }))}
+        onDraftChange={changeDraftText}
+        onSectionChange={changeDraftSection}
         onCheck={runDraftCheck}
         onOpenEvidence={setSelectedEvidenceId}
         onNavigateProgress={() => navigate("progress")}
@@ -453,7 +679,7 @@ export function RubricTrailApp() {
       <ProgressView
         analysis={SAMPLE_ASSIGNMENT}
         plan={plan}
-        draftResult={project.draftResult}
+        draftResult={currentDraftResult}
         readinessChecks={project.readinessChecks}
         onToggleReadiness={toggleReadiness}
         onContinue={navigate}
@@ -463,7 +689,7 @@ export function RubricTrailApp() {
 
   const stepStates = uploaded
     ? uploadedStepStates(project, plan.completionPercent)
-    : sampleStepStates(project, plan.completionPercent);
+    : sampleStepStates(project, plan.completionPercent, currentDraftResult !== null);
   const evidencePanel = uploaded
     ? <UploadedEvidencePanel project={uploaded} criterionId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />
     : <EvidencePanel analysis={SAMPLE_ASSIGNMENT} evidenceId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />;
@@ -481,9 +707,17 @@ export function RubricTrailApp() {
       >
         {activeView}
       </WorkspaceShell>
+      {persistenceWarning ? (
+        <div className="toast warning persistence-warning" role="alert">
+          <AlertTriangle aria-hidden="true" />
+          <span>{persistenceWarning.message}</span>
+          <button className="icon-button" type="button" onClick={() => setPersistenceWarning(null)} aria-label="Dismiss storage warning"><X aria-hidden="true" /></button>
+        </div>
+      ) : null}
       {notice ? (
         <div className={`toast ${notice.tone}`} role="status" data-testid="toast">
-          <Check aria-hidden="true" />{notice.message}
+          {notice.tone === "warning" ? <AlertTriangle aria-hidden="true" /> : notice.tone === "info" ? <Info aria-hidden="true" /> : <Check aria-hidden="true" />}
+          {notice.message}
         </div>
       ) : null}
     </>

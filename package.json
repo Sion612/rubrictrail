@@ -1,9 +1,17 @@
 {
   "name": "rubrictrail",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "A local-first, evidence-linked assignment planner that turns briefs and rubrics into an auditable plan.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sion612/rubrictrail.git"
+  },
+  "homepage": "https://github.com/Sion612/rubrictrail#readme",
+  "bugs": {
+    "url": "https://github.com/Sion612/rubrictrail/issues"
+  },
   "keywords": [
     "education",
     "rubric",

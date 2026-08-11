@@ -11,7 +11,7 @@ criterion can retain the exact source excerpt that supports it, and every plan
 task has a definition of done. RubricTrail does not write a submission, invent a
 criterion, or predict a grade.
 
-> Project status: early-stage open-source release candidate. There are no public
+> Project status: early-stage open-source project. There are no public
 > usage or adoption claims yet. The complete local workflow and fictional sample
 > are runnable without an account, API key or paid service.
 
@@ -24,7 +24,7 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ### Use your own files
 
-1. Upload TXT, DOCX or a text-based PDF.
+1. Upload up to 10 TXT, DOCX or text-based PDF files (10 MB each, 25 MB combined).
 2. Review fields found in the source and fill anything missing.
 3. Confirm rubric names and weights; they must total 100%.
 4. Create a compact project saved only in the current browser.
@@ -33,6 +33,7 @@ The production screenshot above and the mobile viewport are reviewed in
 The custom workflow includes:
 
 - deterministic browser-local file extraction;
+- bounded parsing with file-count, combined-size and extracted-text limits;
 - exact retained rubric excerpts with filename and PDF page when available;
 - a generic dependency-aware plan linked only to confirmed criteria;
 - capacity warnings based on deadline and weekly study time;
@@ -40,7 +41,8 @@ The custom workflow includes:
 - criterion-by-criterion self-checks for visible, explained and traceable
   evidence;
 - a final human submission checklist;
-- v2 local persistence with recovery from malformed or older state.
+- v2 local persistence with migration from the earlier sample-state format.
+- deep local-state validation, recovery messaging and visible storage failures.
 
 Original files and full extracted text are not written to `localStorage`.
 Confirmed fields, short source excerpts, pasted self-check text and progress are
@@ -86,9 +88,6 @@ pnpm dev
 
 Open <http://localhost:3000>. No `.env` file is required.
 
-The repository URL above is the intended public location. If the repository has
-not been created yet, download the source bundle and start from the `cd` step.
-
 ## Verification
 
 Run the non-browser gate:
@@ -110,10 +109,10 @@ Current local verification on 12 August 2026:
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 42/42 tests passed across 7 files |
+| Vitest | 68/68 tests passed across 12 files |
 | Next.js production build | Passed |
-| Playwright | 8/8 flows passed at 1440×900 and 390×844 |
-| Production dependency audit | No known vulnerabilities found |
+| Playwright | Last v0.2.0 baseline: 8/8 flows at 1440×900 and 390×844 |
+| Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, a complete real-file project, manual repair
 of a missing rubric, local persistence, evidence drawer focus, unsupported
@@ -158,7 +157,9 @@ boundaries.
 - PDF scripting and evaluation are disabled.
 - `.env*` files are ignored except for `.env.example`.
 - Dependency updates are monitored by Dependabot.
-- CI runs lint, type, unit, build, browser and production dependency gates.
+- Default responses disable framing, MIME sniffing and unused camera,
+  microphone and geolocation access.
+- CI runs lint, type, unit, build, browser and full dependency-audit gates.
 
 Experimental Live API adapters exist for future self-hosting, but the UI exposes
 no Live control. Routes are disabled by default and require a separate bearer

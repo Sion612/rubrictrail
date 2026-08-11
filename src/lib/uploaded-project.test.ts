@@ -5,6 +5,7 @@ import {
   buildUploadedPlanTemplates,
   createUploadedProject,
   draftFromUpload,
+  isConfirmedUploadedReview,
   normalizeDateForInput,
   validateUploadedProjectDraft,
 } from "@/lib/uploaded-project";
@@ -31,7 +32,9 @@ function completeUpload(): UploadFlowResult {
 describe("uploaded project workflow", () => {
   it("normalizes safe date formats and leaves ambiguous numeric dates blank", () => {
     expect(normalizeDateForInput("24 September 2026")).toBe("2026-09-24");
+    expect(normalizeDateForInput("September 24th, 2026")).toBe("2026-09-24");
     expect(normalizeDateForInput("2026/9/24")).toBe("2026-09-24");
+    expect(normalizeDateForInput("2026-02-31")).toBe("");
     expect(normalizeDateForInput("09/10/2026")).toBe("");
   });
 
@@ -42,6 +45,52 @@ describe("uploaded project workflow", () => {
     expect(validateUploadedProjectDraft(draft)).toContain(
       "Rubric weights must total 100%; they currently total 99%.",
     );
+  });
+
+  it("rejects calendar-invalid and resource-exhausting project inputs", () => {
+    const upload = completeUpload();
+    const invalidDate = draftFromUpload(upload);
+    invalidDate.dueDate = "2026-02-31";
+    expect(validateUploadedProjectDraft(invalidDate)).toContain(
+      "Add a real calendar deadline.",
+    );
+
+    const hugeProject = draftFromUpload(upload);
+    hugeProject.wordCount = "50001";
+    expect(validateUploadedProjectDraft(hugeProject)).toContain(
+      "Keep the word count at or below 50,000 words.",
+    );
+
+    const farFuture = draftFromUpload(upload);
+    farFuture.dueDate = `${Number(new Date().getFullYear()) + 5}-09-24`;
+    expect(validateUploadedProjectDraft(farFuture)).toContain(
+      "Choose a deadline within the next four years.",
+    );
+  });
+
+  it("counts a criterion review only after a meaningful confirmed save", () => {
+    const review = {
+      criterionId: "analysis-1",
+      draftText: "A traceable paragraph with enough detail.",
+      evidenceVisible: true,
+      linkExplained: true,
+      sourceTraceable: true,
+      updatedAt: null,
+    };
+    expect(isConfirmedUploadedReview(review)).toBe(false);
+    expect(
+      isConfirmedUploadedReview({
+        ...review,
+        updatedAt: "2026-08-12T00:00:00.000Z",
+      }),
+    ).toBe(true);
+    expect(
+      isConfirmedUploadedReview({
+        ...review,
+        draftText: "Too short",
+        updatedAt: "2026-08-12T00:00:00.000Z",
+      }),
+    ).toBe(false);
   });
 
   it("creates a compact project without retaining full uploaded text", () => {

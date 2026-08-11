@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
   ArrowRight,
   FileText,
@@ -36,10 +36,23 @@ export function WelcomeScreen({
 }: WelcomeScreenProps) {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadSubmissionLockRef = useRef(false);
+  const isUploadDisabled = uploadStatus === "parsing" || isLoadingSample;
+
+  useEffect(() => {
+    if (uploadStatus !== "parsing") uploadSubmissionLockRef.current = false;
+  }, [uploadStatus]);
 
   function submitFiles(fileList: FileList | null) {
-    if (!fileList?.length) return;
-    onFiles(Array.from(fileList));
+    if (isUploadDisabled || uploadSubmissionLockRef.current || !fileList?.length) return;
+    uploadSubmissionLockRef.current = true;
+
+    try {
+      onFiles(Array.from(fileList));
+    } catch (error) {
+      uploadSubmissionLockRef.current = false;
+      throw error;
+    }
   }
 
   function handleInput(event: ChangeEvent<HTMLInputElement>) {
@@ -51,6 +64,11 @@ export function WelcomeScreen({
     event.preventDefault();
     setIsDragging(false);
     submitFiles(event.dataTransfer.files);
+  }
+
+  function openFilePicker() {
+    if (isUploadDisabled || uploadSubmissionLockRef.current) return;
+    fileInputRef.current?.click();
   }
 
   return (
@@ -111,20 +129,27 @@ export function WelcomeScreen({
 
           <div
             className={`upload-zone${isDragging ? " is-dragging" : ""}${uploadError ? " has-error" : ""}`}
-            onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
+            role="group"
+            aria-labelledby="upload-zone-title"
+            aria-busy={uploadStatus === "parsing"}
+            aria-disabled={isUploadDisabled}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              if (!isUploadDisabled && !uploadSubmissionLockRef.current) setIsDragging(true);
+            }}
             onDragOver={(event) => event.preventDefault()}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             data-testid="upload-zone"
           >
             <UploadCloud aria-hidden="true" />
-            <h3>{isDragging ? "Drop files to preview" : "Drop brief and rubric here"}</h3>
-            <p>PDF, DOCX or TXT · up to 10 MB each</p>
+            <h3 id="upload-zone-title">{isDragging ? "Drop files to preview" : "Drop brief and rubric here"}</h3>
+            <p>PDF, DOCX or TXT · up to 10 files · 10 MB each · 25 MB combined</p>
             <button
               type="button"
               className="button button-secondary"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadStatus === "parsing" || isLoadingSample}
+              onClick={openFilePicker}
+              disabled={isUploadDisabled}
             >
               {uploadStatus === "parsing" ? "Parsing locally…" : "Choose files"}
             </button>
@@ -134,7 +159,8 @@ export function WelcomeScreen({
               type="file"
               accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
               multiple
-              aria-label="Choose assignment brief and rubric files"
+              aria-label="Upload assignment brief and rubric files"
+              disabled={isUploadDisabled}
               onChange={handleInput}
               data-testid="file-input"
             />

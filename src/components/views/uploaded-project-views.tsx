@@ -57,13 +57,13 @@ export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProp
         <div className="section-heading compact-heading">
           <div>
             <p className="eyebrow">Source register</p>
-            <h2 id="source-register-title">Files used for this project</h2>
+            <h2 id="source-register-title">Sources used for this project</h2>
           </div>
-          <span>{project.extractedWordCount.toLocaleString()} extracted words</span>
+          <span>{project.extractedWordCount.toLocaleString()} source words</span>
         </div>
         <ul>
           {project.fileNames.map((fileName) => (
-            <li key={fileName}><FileText aria-hidden="true" /><span><strong>{fileName}</strong><small>Original file not stored</small></span></li>
+            <li key={fileName}><FileText aria-hidden="true" /><span><strong>{fileName}</strong><small>Full source text not stored</small></span></li>
           ))}
         </ul>
       </section>

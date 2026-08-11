@@ -182,11 +182,11 @@ describe("RubricTrailApp reliability", () => {
     fireEvent.click(screen.getByTestId("try-sample"));
     await advance(450);
 
-    fireEvent.click(screen.getByRole("button", { name: "Use my files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use my assignment" }));
     await advance(16);
 
     expect(
-      screen.getByRole("heading", { name: "Preview, confirm, then plan" }),
+      screen.getByRole("heading", { name: "Add your assignment" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Choose files" })).toHaveFocus();
   });
@@ -197,13 +197,80 @@ describe("RubricTrailApp reliability", () => {
     await advance(0);
     fireEvent.click(screen.getByTestId("try-sample"));
     await advance(450);
-    const handoff = screen.getByRole("button", { name: "Use my files" });
+    const handoff = screen.getByRole("button", { name: "Use my assignment" });
     handoff.focus();
 
     fireEvent.click(handoff);
 
     expect(handoff).toBeInTheDocument();
     expect(handoff).toHaveFocus();
+  });
+
+  it("previews pasted sources, preserves them on Back, and never persists the full text", async () => {
+    const privateTail = "PRIVATE-TAIL-MUST-NOT-BE-PERSISTED-8F21";
+    render(<RubricTrailApp />);
+    await advance(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Paste text" }));
+    fireEvent.change(screen.getByTestId("pasted-assignment-brief"), {
+      target: {
+        value: [
+          "Assignment title: Pasted Strategy Report",
+          "Deadline: 24 September 2026",
+          "Word count: 2500 words",
+          "Use APA 7 referencing.",
+          privateTail,
+        ].join("\n"),
+      },
+    });
+    fireEvent.change(screen.getByTestId("pasted-assignment-rubric"), {
+      target: { value: "Rubric\nAnalysis | 60%\nCommunication | 40%" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review assignment details" }));
+    await advance(0);
+
+    expect(
+      screen.getByRole("heading", { name: "Confirm what the assignment says." }),
+    ).toHaveFocus();
+    expect(screen.getByText("Pasted assignment brief, Pasted rubric")).toBeInTheDocument();
+    expect(screen.getAllByText("Found in pasted text").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit pasted text" }));
+    await advance(16);
+    expect(screen.getByRole("heading", { name: "Paste your assignment text" })).toHaveFocus();
+    expect(
+      (screen.getByTestId("pasted-assignment-brief") as HTMLTextAreaElement).value,
+    ).toContain(privateTail);
+
+    fireEvent.click(screen.getByRole("button", { name: "Review assignment details" }));
+    await advance(0);
+    fireEvent.click(screen.getByTestId("create-project"));
+    await advance(250);
+
+    const stored = window.localStorage.getItem(STORAGE_KEY) ?? "";
+    expect(screen.getByRole("heading", { name: "Pasted Strategy Report" })).toBeInTheDocument();
+    expect(stored).not.toContain(privateTail);
+    expect(stored).toContain("Pasted assignment brief.txt");
+  });
+
+  it("keeps an empty pasted intake recoverable without changing local storage", async () => {
+    render(<RubricTrailApp />);
+    await advance(0);
+    fireEvent.click(screen.getByRole("button", { name: "Paste text" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review assignment details" }));
+    await advance(16);
+
+    expect(screen.getByTestId("pasted-assignment-brief")).toHaveFocus();
+    expect(screen.getByTestId("pasted-assignment-brief")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+
+    fireEvent.change(screen.getByTestId("pasted-assignment-brief"), {
+      target: { value: "Assignment title: Recoverable text" },
+    });
+    expect(screen.queryByTestId("pasted-text-error")).not.toBeInTheDocument();
   });
 
   it("restores a validated backup from the welcome screen and persists it first", async () => {
@@ -241,7 +308,7 @@ describe("RubricTrailApp reliability", () => {
       uploadedBackupState(),
     );
 
-    expect(screen.getByRole("button", { name: "Use my files" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use my assignment" })).toBeInTheDocument();
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe(before);
     expect(screen.getByLabelText("Project backup options")).toHaveFocus();
   });
@@ -275,7 +342,7 @@ describe("RubricTrailApp reliability", () => {
       uploadedBackupState(),
     );
 
-    expect(screen.getByRole("button", { name: "Use my files" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use my assignment" })).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(
       "backup was not restored",
     );

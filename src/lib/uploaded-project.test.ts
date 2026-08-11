@@ -23,6 +23,7 @@ function completeUpload(): UploadFlowResult {
     "Communication | 25%",
   ].join("\n");
   return {
+    intakeMethod: "files",
     fileNames: ["brief.txt", "rubric.txt"],
     totalWords: 24,
     summary: buildUploadedAssignmentSummary(text),

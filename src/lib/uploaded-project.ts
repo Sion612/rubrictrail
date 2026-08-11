@@ -221,7 +221,7 @@ export function buildUploadedPlanTemplates(project: UploadedProject): PlanTaskTe
       id: "confirm-brief",
       phase: "Confirm",
       title: "Confirm the brief and log open questions",
-      description: "Check the deadline, word count, citation style and rubric against the original files before planning the submission.",
+      description: "Check the deadline, word count, citation style and rubric against the authoritative source before planning the submission.",
       priority: "high",
       baseMinutes: 30,
       dependencies: [],

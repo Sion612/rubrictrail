@@ -1,12 +1,13 @@
 # Known limitations
 
-1. **Confirmation, not semantic extraction.** Custom uploads use conservative
-   local parsing. Users must compare all confirmed fields and criteria with the
-   original files.
+1. **Confirmation, not semantic extraction.** Custom uploads and pasted text use
+   conservative local parsing. Users must compare all confirmed fields and
+   criteria with the authoritative assignment source.
 2. **Manual draft judgment.** Custom-project self-checks record what a user
    selected; they do not verify argument quality, facts, citations or grades.
 3. **No OCR.** Text PDFs, DOCX and TXT are supported. Scanned, encrypted or
-   damaged documents receive a recovery message.
+   damaged documents receive a recovery path to another file or pasted text;
+   RubricTrail does not extract text from the image itself.
 4. **Simple rubric parser.** Explicit lines such as `Analysis | 30%` work best.
    Complex tables may require manual repair in the confirmation screen.
 5. **Manual portability only.** There is no account, automatic sync,

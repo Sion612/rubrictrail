@@ -28,6 +28,7 @@ function completeUpload(): UploadFlowResult {
     "Communication | 40%",
   ].join("\n");
   return {
+    intakeMethod: "files",
     fileNames: ["brief.txt"],
     totalWords: 18,
     summary: buildUploadedAssignmentSummary(text),
@@ -35,6 +36,26 @@ function completeUpload(): UploadFlowResult {
 }
 
 describe("UploadSummaryView provenance", () => {
+  it("labels pasted sources without claiming that a file was uploaded", () => {
+    const result = {
+      ...completeUpload(),
+      intakeMethod: "paste" as const,
+      fileNames: ["Pasted assignment brief.txt", "Pasted rubric.txt"],
+    };
+    render(
+      <UploadSummaryView
+        result={result}
+        onBack={vi.fn()}
+        onCreateProject={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Pasted text ready")).toBeInTheDocument();
+    expect(screen.getAllByText("Found in pasted text").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Edit pasted text" })).toBeInTheDocument();
+    expect(screen.queryByText("Found in the uploaded source")).not.toBeInTheDocument();
+  });
+
   it("marks edits as manual and restores source provenance after an exact revert", () => {
     const result = completeUpload();
     const initial = draftFromUpload(result);
@@ -47,7 +68,7 @@ describe("UploadSummaryView provenance", () => {
     );
 
     const heading = screen.getByRole("heading", {
-      name: "Confirm what the files actually say.",
+      name: "Confirm what the assignment says.",
     });
     expect(heading).toHaveFocus();
 
@@ -83,7 +104,7 @@ describe("UploadSummaryView provenance", () => {
     });
     criterionRow = screen.getByTestId("criterion-name-0").closest(".rubric-editor-row");
     expect(
-      within(criterionRow as HTMLElement).getByText(/Source: uploaded file/),
+      within(criterionRow as HTMLElement).getByText(/Source: source text/),
     ).toBeInTheDocument();
   });
 

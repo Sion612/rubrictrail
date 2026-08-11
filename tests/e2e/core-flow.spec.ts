@@ -107,7 +107,7 @@ test("sample users can hand off directly to their own files", async ({ page }) =
   ).toBeVisible();
 
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Use my files" }).click();
+  await page.getByRole("button", { name: "Use my assignment" }).click();
 
   await expect(
     page.getByRole("heading", { name: "Turn the brief into a plan you can prove." }),
@@ -122,7 +122,7 @@ test("real upload can create and persist a source-linked local project", async (
     buffer: Buffer.from(COMPLETE_BRIEF),
   });
 
-  await expect(page.getByRole("heading", { name: "Confirm what the files actually say." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Confirm what the assignment says." })).toBeVisible();
   await expect(page.getByTestId("confirm-title")).toHaveValue("Strategy Report");
   await expect(page.getByTestId("criterion-weight-0")).toHaveValue("40");
   await expect(page.getByText("100% total")).toBeVisible();
@@ -161,6 +161,55 @@ test("real upload can create and persist a source-linked local project", async (
   await page.reload();
   await expect(page.getByText("Strategy Report", { exact: true }).first()).toBeVisible();
   await expect(page.getByTestId("uploaded-review-text")).toHaveValue(/strategic constraint/);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("pasted brief and rubric can create a private source-linked project", async ({ page }, testInfo) => {
+  const privateTail = "PRIVATE-PASTE-TAIL-MUST-NOT-PERSIST-8F21";
+  await page.getByRole("button", { name: "Paste text" }).click();
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 320, height: 700 });
+  }
+  await expectNoHorizontalOverflow(page);
+  expect(
+    await page.getByTestId("pasted-assignment-brief").evaluate((element) =>
+      Number.parseFloat(window.getComputedStyle(element).fontSize),
+    ),
+  ).toBeGreaterThanOrEqual(16);
+  await page.getByTestId("pasted-assignment-brief").fill(
+    [
+      "Assignment title: Pasted Strategy Report",
+      "Deadline: 24 September 2026",
+      "Word count: 2500 words",
+      "Use APA 7 referencing.",
+      privateTail,
+    ].join("\n"),
+  );
+  await page.getByTestId("pasted-assignment-rubric").fill(
+    "Rubric\nStrategic analysis | 40%\nRecommendations | 35%\nCommunication | 25%",
+  );
+  await page.getByRole("button", { name: "Review assignment details" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Confirm what the assignment says." }),
+  ).toBeFocused();
+  await expect(page.getByText("Pasted assignment brief, Pasted rubric")).toBeVisible();
+  await expect(page.getByText("Found in pasted text").first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit pasted text" }).click();
+  await expect(page.getByRole("heading", { name: "Paste your assignment text" })).toBeFocused();
+  await expect(page.getByTestId("pasted-assignment-brief")).toHaveValue(
+    new RegExp(privateTail),
+  );
+
+  await page.getByRole("button", { name: "Review assignment details" }).click();
+  await page.getByTestId("create-project").click();
+  await expect(
+    page.getByRole("heading", { name: "Pasted Strategy Report", exact: true }),
+  ).toBeVisible();
+  await expect.poll(() =>
+    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2") ?? ""),
+  ).not.toContain(privateTail);
   await expectNoHorizontalOverflow(page);
 });
 
@@ -225,13 +274,19 @@ test("missing rubric can be repaired manually without fabricating weights", asyn
   await expectNoHorizontalOverflow(page);
 });
 
-test("unsupported files and empty sample drafts have actionable recovery states", async ({ page }) => {
+test("unsupported files and empty sample drafts have actionable recovery states", async ({ page }, testInfo) => {
+  if (testInfo.project.name === "mobile") {
+    await page.setViewportSize({ width: 320, height: 700 });
+  }
   await page.getByTestId("file-input").setInputFiles({
     name: "unsafe.exe",
     mimeType: "application/octet-stream",
     buffer: Buffer.from("not an assignment"),
   });
-  await expect(page.getByTestId("upload-error")).toContainText("Choose a PDF, DOCX, or TXT file");
+  await expect(page.getByTestId("upload-error")).toContainText("This file type is not supported yet");
+  await expectNoHorizontalOverflow(page);
+  await page.getByRole("button", { name: "Paste text instead" }).click();
+  await expect(page.getByRole("heading", { name: "Paste your assignment text" })).toBeFocused();
 
   await page.getByTestId("try-sample").click();
   await visibleWorkflowButton(page, "Check").click();

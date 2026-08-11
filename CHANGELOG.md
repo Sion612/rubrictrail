@@ -4,6 +4,31 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-12
+
+### Added
+
+- Added permanent upload and paste intake choices for assignment briefs and
+  optional rubric text, including pasted-source provenance in confirmation.
+- Added actionable recovery controls for unsupported, scanned, encrypted,
+  damaged, oversized and empty files.
+
+### Changed
+
+- Preserves unconfirmed pasted text in memory when returning from confirmation
+  while keeping file and paste copy source-neutral.
+- File failures now identify what happened, confirm that nothing changed and
+  route users to another file or pasted text without a dead end.
+- Renamed the sample handoff to **Use my assignment** because it now opens both
+  file and pasted-text intake.
+
+### Security
+
+- Bounds pasted input to 100,000 UTF-16 characters and 10,000 lines before it
+  enters the existing bounded plain-text parser.
+- Keeps full pasted text out of localStorage and project backups; only confirmed
+  fields, source labels, aggregate word count and short excerpts can persist.
+
 ## [0.3.0] - 2026-08-12
 
 ### Added

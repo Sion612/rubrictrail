@@ -2,9 +2,9 @@
 
 **Turn the brief into a plan you can prove.**
 
-RubricTrail is a local-first assignment planner that connects an uploaded brief
-and rubric to confirmed requirements, scheduled work, draft evidence and final
-human checks.
+RubricTrail is a local-first assignment planner that connects an uploaded or
+pasted brief and rubric to confirmed requirements, scheduled work, draft
+evidence and final human checks.
 
 It is designed for students who need more than a document summary. Every
 criterion can retain the exact source excerpt that supports it, and every plan
@@ -22,9 +22,10 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ## What works today
 
-### Use your own files
+### Use your own assignment
 
-1. Upload up to 10 TXT, DOCX or text-based PDF files (10 MB each, 25 MB combined).
+1. Upload up to 10 TXT, DOCX or text-based PDF files (10 MB each, 25 MB combined),
+   or paste the brief and optional rubric from a course page, email or scan.
 2. Review fields found in the source and fill anything missing.
 3. Confirm rubric names and weights; they must total 100%.
 4. Create a compact project saved only in the current browser.
@@ -32,7 +33,7 @@ The production screenshot above and the mobile viewport are reviewed in
 
 The custom workflow includes:
 
-- deterministic browser-local file extraction;
+- deterministic browser-local file extraction and plain-text paste intake;
 - bounded parsing with file-count, combined-size and extracted-text limits;
 - exact retained rubric excerpts with filename and PDF page when available;
 - a generic dependency-aware plan linked only to confirmed criteria;
@@ -45,9 +46,11 @@ The custom workflow includes:
 - deep local-state validation, recovery messaging and visible storage failures;
 - versioned project backups that can be restored without retaining original files.
 
-Original files and full extracted text are not written to `localStorage`.
-Confirmed fields, short source excerpts, pasted self-check text and progress are
-stored until the user resets the project.
+Original files and full uploaded or pasted source text are not written to
+`localStorage`. Pasted intake is limited to 100,000 characters and 10,000 lines
+before it enters the same bounded TXT parser. Confirmed fields, short source
+excerpts, pasted self-check text and progress are stored until the user resets
+the project.
 
 ### Back up or restore a project
 
@@ -57,10 +60,11 @@ or another device. RubricTrail previews the project name, export time and
 replacement scope before restoring it, validates both file and project versions,
 and writes the imported state before changing the open workspace.
 
-A backup contains the compact saved project: course details, original filenames,
-short source excerpts, pasted draft or self-check text, task progress and final
-checks. It does **not** contain the original uploaded documents or full extracted
-text, and it is not encrypted. Keep the downloaded file private.
+A backup contains the compact saved project: course details, source labels or
+original filenames, short source excerpts, pasted draft or self-check text, task
+progress and final checks. It does **not** contain the original uploaded
+documents or the full uploaded/pasted intake text, and it is not encrypted. Keep
+the downloaded file private.
 Derived sample Draft Check results are intentionally omitted and must be rerun
 after restore; user-authored draft text remains in the backup.
 
@@ -69,8 +73,8 @@ after restore; user-authored draft text remains in the backup.
 The included LumaLane operations assignment demonstrates deeper source mapping
 and deterministic coaching. Its Draft Check uses simple surface signals and is
 explicitly labelled as neither semantic evaluation nor a predicted grade.
-The sample workspace includes a direct **Use my files** handoff back to real file
-intake.
+The sample workspace includes a direct **Use my assignment** handoff back to real
+file or pasted-text intake.
 
 All files in [`samples/`](./samples/) are original fictional material:
 
@@ -127,20 +131,22 @@ Current verification on 12 August 2026:
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 89/89 tests passed across 13 files |
+| Vitest | 99/99 tests passed across 14 files |
 | Next.js production build | Passed |
-| Playwright | GitHub Actions: 12/12 flows passed at 1440×900 and 390×844, including a 320px backup-menu check |
+| Playwright | GitHub Actions: 14/14 flows passed at 1440×900 and 390×844, including 320px paste/error and backup-menu checks |
 | Full dependency audit | No known vulnerabilities found |
 
-Playwright covers the sample loop, a complete real-file project, manual repair
-of a missing rubric, local persistence, evidence drawer focus, unsupported
-files, empty drafts, console errors and horizontal overflow.
+Playwright covers the sample loop, a complete real-file project, pasted brief
+and rubric intake, manual repair of a missing rubric, local persistence, evidence
+drawer focus, recoverable unsupported files, empty drafts, console errors and
+horizontal overflow.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
   A["TXT / DOCX / text PDF"] --> B["Browser-local parser"]
+  P["Pasted brief + optional rubric"] --> B
   B --> C["User confirmation"]
   C --> D["Compact local project"]
   D --> E["Brief + rubric trail"]
@@ -189,7 +195,8 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
 
 ## Known limitations
 
-- Scanned and encrypted PDFs are not supported; there is no OCR.
+- Scanned and encrypted PDFs are not parsed directly; there is no OCR, but users
+  can paste the readable brief and rubric text instead.
 - Custom projects rely on user confirmation rather than semantic AI extraction.
 - The self-check records the user's judgment; it does not validate argument
   quality or source correctness.
@@ -203,7 +210,7 @@ More detail is in [docs/KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md).
 
 ## Roadmap
 
-- paste/manual intake and partial recovery when one file in a batch fails;
+- partial recovery when one file in a batch fails;
 - stronger table extraction for real-world rubrics;
 - more date and grading-system formats;
 - accessibility review with external users;

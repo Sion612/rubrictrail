@@ -146,10 +146,10 @@ export function WorkspaceShell({
               className="start-own-project-button"
               type="button"
               onClick={onStartOwnProject}
-              title="Leave the sample demo and use your own files"
+            title="Leave the sample demo and use your own assignment"
             >
               <UploadCloud aria-hidden="true" />
-              <span>Use my files</span>
+            <span>Use my assignment</span>
             </button>
           ) : (
             <div className="mode-indicator" title="Confirmed fields are saved only in this browser.">
@@ -162,7 +162,7 @@ export function WorkspaceShell({
             </summary>
             <div className="project-backup-popover">
               <strong>Project backup</strong>
-              <p>Contains saved project details, excerpts, draft text, self-checks and progress — never the original files.</p>
+            <p>Contains saved project details, excerpts, draft text, self-checks and progress — never original files or full intake text.</p>
               <button
                 className="backup-menu-action"
                 type="button"
@@ -272,7 +272,7 @@ export function WorkspaceShell({
           <span>Due {dateLabel(project.dueDate)}</span>
           <span>·</span>
           <span>{project.wordCount.toLocaleString()} words</span>
-          <small>{project.mode === "sample" ? "sample project" : "uploaded project"}</small>
+          <small>{project.mode === "sample" ? "sample project" : "local project"}</small>
         </div>
         {children}
       </main>

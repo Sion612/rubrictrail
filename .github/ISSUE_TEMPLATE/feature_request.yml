@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an integrity-aware improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Student or maintainer problem
+      description: What is hard today, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the result rather than only a proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Privacy and academic-integrity considerations
+    validations:
+      required: true

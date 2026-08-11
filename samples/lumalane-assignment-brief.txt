@@ -1,0 +1,67 @@
+OM302 Operations Management
+Individual Operations Improvement Report
+
+Case: LumaLane Market — Click-and-Collect Operations
+Deadline: 7 August 2026, 17:00 Europe/London
+Length: 2,000 words, ±10%
+Submission: One PDF
+Referencing: Harvard style
+
+LumaLane Market is a fictional eight-store convenience retailer serving university districts. Its click-and-collect service has experienced long collection waits, order errors, and rising overtime during the 17:00–19:00 peak.
+
+Write an individual operations improvement report that diagnoses one priority process problem and proposes a feasible response. Focus on one process problem; do not attempt to redesign the whole business.
+
+Your report must:
+
+1. Define the process boundary and the performance problem.
+2. Include a current-state process map.
+3. Use at least two relevant operations concepts to explain why the problem occurs, not merely to define terminology.
+4. Combine evidence from the case pack with relevant external academic or professional sources.
+5. Recommend two or three feasible changes and evaluate their trade-offs.
+6. Provide a one-page implementation roadmap covering owners, sequence, resources, risks, and measures of success.
+7. Distinguish case facts, external evidence, and your own assumptions.
+
+Use a professional structure: executive summary, problem scope, analysis, recommendations, implementation, conclusion, and references. The reference list and appendix are excluded from the word count; prose in tables is included.
+
+Case pack
+
+Current collection process:
+
+1. Same-day orders close at 15:00.
+2. Most orders are released to store staff together at 16:15.
+3. Pickers collect products and send packed orders to a shared staging area.
+4. At collection, a service colleague searches the staging area, verifies substitutions, and hands over the order.
+
+Observed across ten peak sessions:
+
+- Average incoming demand: 42 orders/hour
+- Picking capacity: 46 orders/hour
+- Staging and handover capacity: 34 orders/hour
+- Mean customer wait: 11.8 minutes
+- Customers waiting over 15 minutes: 31%
+- Wrong or missing item rate: 7.2%
+- Fresh-item substitution rate: 18%
+- Customers abandoning collection: 8.6%
+- Peak-related overtime: 26 staff-hours/week
+- Friday demand versus Tuesday: 1.6×
+
+Staff observations:
+
+- Store managers believe unpredictable demand is the main problem.
+- Pickers report congestion after the 16:15 batch release.
+- Collection colleagues say labels are difficult to see in the shared staging area.
+- Customers do not receive a message when an order is actually ready.
+- No budget ceiling or floor-space expansion has been approved.
+
+Learning outcomes
+
+- Analyse process performance using appropriate operations concepts and data.
+- Evaluate operational choices and performance trade-offs.
+- Develop a feasible, measurable improvement approach.
+- Communicate an evidence-based recommendation in clear academic English.
+
+Academic integrity
+
+Do not invent operational data, customer research, quotations, or references. Any estimate must be clearly labelled and its basis explained. Permitted AI support for planning or language feedback must be declared; generated analysis or report prose may not be submitted as the student’s own work.
+
+This brief and the LumaLane organisation are original fictional materials created for the RubricTrail demo.

@@ -1,0 +1,18 @@
+OM302 Individual Operations Improvement Report — Rubric
+
+Problem diagnosis — 20%
+High performance defines a defensible process boundary and priority performance gap, maps the current process, connects symptoms to causes, and recognises relevant performance trade-offs.
+
+Application of operations theory — 25%
+High performance selects concepts suited to the case, applies them accurately to process evidence, explains limitations, and uses theory to deepen or change the diagnosis rather than merely defining terms.
+
+Evidence and analysis — 20%
+High performance integrates quantitative and qualitative case evidence with credible external sources, distinguishes facts from interpretations and assumptions, and handles data limitations honestly.
+
+Quality of recommendations — 25%
+High performance compares root-cause-linked options, assesses impact, feasibility and trade-offs, and defines owners, sequence, risks, KPIs and a review point for the selected response.
+
+Structure and academic communication — 10%
+High performance uses the required report structure, concise academic English, precise terminology, logical signposting and consistent Harvard citations.
+
+This rubric is original fictional material created for the RubricTrail demo.

@@ -1,0 +1,163 @@
+"use client";
+
+import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import {
+  ArrowRight,
+  FileText,
+  LockKeyhole,
+  Route,
+  ShieldCheck,
+  UploadCloud,
+} from "lucide-react";
+import { BRAND } from "@/lib/brand";
+
+interface WelcomeScreenProps {
+  onTrySample: () => void;
+  onFiles: (files: File[]) => void;
+  isLoadingSample: boolean;
+  uploadStatus: "idle" | "parsing" | "error";
+  uploadError: string | null;
+}
+
+const FLOW = [
+  ["Brief", "Decode the real ask"],
+  ["Rubric", "See what earns marks"],
+  ["Plan", "Build evidence on time"],
+  ["Draft", "Check, don’t outsource"],
+  ["Progress", "Know what is still missing"],
+] as const;
+
+export function WelcomeScreen({
+  onTrySample,
+  onFiles,
+  isLoadingSample,
+  uploadStatus,
+  uploadError,
+}: WelcomeScreenProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function submitFiles(fileList: FileList | null) {
+    if (!fileList?.length) return;
+    onFiles(Array.from(fileList));
+  }
+
+  function handleInput(event: ChangeEvent<HTMLInputElement>) {
+    submitFiles(event.target.files);
+    event.target.value = "";
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    submitFiles(event.dataTransfer.files);
+  }
+
+  return (
+    <main className="welcome-shell" id="main-content">
+      <header className="welcome-header">
+        <a className="brand-lockup" href="#main-content" aria-label="RubricTrail home">
+          <span className="brand-mark" aria-hidden="true"><Route /></span>
+          <span>{BRAND.name}</span>
+        </a>
+        <div className="mode-indicator" title={BRAND.demoDescription}>
+          <span aria-hidden="true" />
+          Local demo · no credits
+        </div>
+      </header>
+
+      <section className="welcome-grid" aria-labelledby="welcome-title">
+        <div className="welcome-copy">
+          <h1 id="welcome-title">Turn the brief into a plan you can prove.</h1>
+          <p className="welcome-lede">
+            RubricTrail connects every requirement to the rubric, the work you need to do,
+            and the evidence you still need to build.
+          </p>
+
+          <button
+            className="button button-primary button-large"
+            type="button"
+            onClick={onTrySample}
+            disabled={isLoadingSample || uploadStatus === "parsing"}
+            data-testid="try-sample"
+          >
+            {isLoadingSample ? "Reading sample brief…" : "Explore the 2-minute demo"}
+            {isLoadingSample ? <span className="button-spinner" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
+          </button>
+
+          <ol className="welcome-flow" aria-label="RubricTrail workflow">
+            {FLOW.map(([title, detail], index) => (
+              <li key={title}>
+                <span className="flow-number">{String(index + 1).padStart(2, "0")}</span>
+                <span><strong>{title}</strong><small>{detail}</small></span>
+              </li>
+            ))}
+          </ol>
+
+          <div className="integrity-note compact">
+            <ShieldCheck aria-hidden="true" />
+            <p><strong>Support, not substitution.</strong> RubricTrail coaches the process. It never invents sources, data, or a submission.</p>
+          </div>
+        </div>
+
+        <div className="welcome-workbench">
+          <div className="workbench-heading">
+            <div>
+              <p className="eyebrow">Use your own files</p>
+              <h2>Preview, confirm, then plan</h2>
+            </div>
+            <FileText aria-hidden="true" />
+          </div>
+
+          <div
+            className={`upload-zone${isDragging ? " is-dragging" : ""}${uploadError ? " has-error" : ""}`}
+            onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
+            onDragOver={(event) => event.preventDefault()}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            data-testid="upload-zone"
+          >
+            <UploadCloud aria-hidden="true" />
+            <h3>{isDragging ? "Drop files to preview" : "Drop brief and rubric here"}</h3>
+            <p>PDF, DOCX or TXT · up to 10 MB each</p>
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadStatus === "parsing" || isLoadingSample}
+            >
+              {uploadStatus === "parsing" ? "Parsing locally…" : "Choose files"}
+            </button>
+            <input
+              ref={fileInputRef}
+              className="visually-hidden"
+              type="file"
+              accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+              multiple
+              aria-label="Choose assignment brief and rubric files"
+              onChange={handleInput}
+              data-testid="file-input"
+            />
+          </div>
+
+          {uploadError ? (
+            <div className="inline-alert danger" role="alert" data-testid="upload-error">
+              <strong>We couldn’t read that file.</strong>
+              <span>{uploadError}</span>
+            </div>
+          ) : null}
+
+          <div className="privacy-row">
+            <LockKeyhole aria-hidden="true" />
+            <p><strong>Private by default.</strong> Files are parsed in this browser. You confirm every field before a compact local project is saved.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer className="welcome-footer">
+        <span>Built for evidence-led coursework</span>
+        <span>Local-first · Traceable · Integrity-aware</span>
+      </footer>
+    </main>
+  );
+}

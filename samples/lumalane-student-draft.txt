@@ -1,0 +1,12 @@
+Selected section: Analysis and recommendations
+
+LumaLane has an operational problem because customers are waiting too long for their click-and-collect orders. The case pack reports an average wait of 11.8 minutes and says that 31% of customers wait longer than 15 minutes. This may also explain why 8.6% abandon their collection. The process therefore needs to become faster and more efficient.
+
+Capacity management and lean operations are useful for understanding the problem. Average demand is 42 orders per hour and picking capacity is 46, so the company appears to have enough pickers. However, staging and handover can process only 34 orders per hour. This suggests that staging may be the bottleneck. Releasing most orders together at 16:15 probably creates congestion as well. Lean identifies waiting as waste, and standardising the process would remove waste.
+
+The first recommendation is to hire more pickers during the evening peak. This would be easy to introduce and would reduce waiting. Second, LumaLane should use AI forecasting and send notifications when orders are ready. Digital systems are used by many retailers because they make operations more efficient. Third, the business should reorganise the staging area so employees can find orders more quickly.
+
+These solutions should reduce waiting by at least 50%, improve customer satisfaction and probably pay for themselves. Implementation could start next month. The store manager should monitor waiting time and make changes if performance does not improve. Overall, using technology and extra staff will make the process leaner and give LumaLane a competitive advantage.
+
+This deliberately imperfect draft is original fictional material created for rubric-feedback demonstration. It contains unsupported claims by design and is not a model answer.
+

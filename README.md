@@ -1,0 +1,207 @@
+# RubricTrail
+
+**Turn the brief into a plan you can prove.**
+
+RubricTrail is a local-first assignment planner that connects an uploaded brief
+and rubric to confirmed requirements, scheduled work, draft evidence and final
+human checks.
+
+It is designed for students who need more than a document summary. Every
+criterion can retain the exact source excerpt that supports it, and every plan
+task has a definition of done. RubricTrail does not write a submission, invent a
+criterion, or predict a grade.
+
+> Project status: early-stage open-source release candidate. There are no public
+> usage or adoption claims yet. The complete local workflow and fictional sample
+> are runnable without an account, API key or paid service.
+
+![RubricTrail rubric workspace](./docs/assets/rubrictrail-workspace.png)
+
+The production screenshot above and the mobile viewport are reviewed in
+[the visual QA report](./docs/VISUAL_QA_REPORT.md).
+
+## What works today
+
+### Use your own files
+
+1. Upload TXT, DOCX or a text-based PDF.
+2. Review fields found in the source and fill anything missing.
+3. Confirm rubric names and weights; they must total 100%.
+4. Create a compact project saved only in the current browser.
+5. Work through **Brief → Rubric → Plan → Check → Progress**.
+
+The custom workflow includes:
+
+- deterministic browser-local file extraction;
+- exact retained rubric excerpts with filename and PDF page when available;
+- a generic dependency-aware plan linked only to confirmed criteria;
+- capacity warnings based on deadline and weekly study time;
+- task completion that respects prerequisites;
+- criterion-by-criterion self-checks for visible, explained and traceable
+  evidence;
+- a final human submission checklist;
+- v2 local persistence with recovery from malformed or older state.
+
+Original files and full extracted text are not written to `localStorage`.
+Confirmed fields, short source excerpts, pasted self-check text and progress are
+stored until the user resets the project.
+
+### Explore the fictional sample
+
+The included LumaLane operations assignment demonstrates deeper source mapping
+and deterministic coaching. Its Draft Check uses simple surface signals and is
+explicitly labelled as neither semantic evaluation nor a predicted grade.
+
+All files in [`samples/`](./samples/) are original fictional material:
+
+- `lumalane-assignment-brief.txt`
+- `lumalane-rubric.txt`
+- `lumalane-student-draft.txt`
+
+## Product principles
+
+- **Traceable:** a criterion or requirement should point back to source text.
+- **Actionable:** rubric language should become work, dependencies and a clear
+  definition of done.
+- **Local-first:** the useful default should not need an account, cloud service
+  or API key.
+- **Integrity-aware:** prompts support student judgment and authorship; they do
+  not replace either.
+- **Honest states:** navigation, task completion, self-checks and readiness are
+  separate signals.
+
+## Quick start
+
+Requirements:
+
+- Node.js 24 or newer
+- pnpm 11
+
+```bash
+git clone https://github.com/Sion612/rubrictrail.git
+cd rubrictrail
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open <http://localhost:3000>. No `.env` file is required.
+
+The repository URL above is the intended public location. If the repository has
+not been created yet, download the source bundle and start from the `cd` step.
+
+## Verification
+
+Run the non-browser gate:
+
+```bash
+pnpm check
+```
+
+It runs ESLint, TypeScript, Vitest and a production build. Then run the desktop
+and mobile browser suite:
+
+```bash
+pnpm test:e2e --workers=1
+```
+
+Current local verification on 12 August 2026:
+
+| Gate | Result |
+| --- | --- |
+| ESLint | Passed with zero warnings |
+| TypeScript | Passed |
+| Vitest | 42/42 tests passed across 7 files |
+| Next.js production build | Passed |
+| Playwright | 8/8 flows passed at 1440×900 and 390×844 |
+| Production dependency audit | No known vulnerabilities found |
+
+Playwright covers the sample loop, a complete real-file project, manual repair
+of a missing rubric, local persistence, evidence drawer focus, unsupported
+files, empty drafts, console errors and horizontal overflow.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  A["TXT / DOCX / text PDF"] --> B["Browser-local parser"]
+  B --> C["User confirmation"]
+  C --> D["Compact local project"]
+  D --> E["Brief + rubric trail"]
+  D --> F["Deterministic plan engine"]
+  E --> G["Manual evidence self-check"]
+  F --> H["Progress + final gates"]
+  G --> H
+  S["Fictional sample"] --> I["Strict evidence schemas"]
+  I --> F
+  I --> J["Deterministic demo prompts"]
+```
+
+Core modules:
+
+| Area | Main files |
+| --- | --- |
+| App orchestration | `src/components/rubrictrail-app.tsx` |
+| Local file parsing | `src/lib/files/parse-assignment-files.ts` |
+| Uploaded project model and plan templates | `src/lib/uploaded-project.ts` |
+| Dependency-aware scheduling | `src/lib/plan.ts` |
+| Versioned browser state | `src/lib/local-state.ts` |
+| Strict sample and optional Live schemas | `src/lib/domain.ts`, `src/lib/ai/*` |
+| Desktop/mobile acceptance tests | `tests/e2e/core-flow.spec.ts` |
+
+See [the architecture notes](./docs/ARCHITECTURE.md) for data and trust
+boundaries.
+
+## Privacy and security
+
+- No analytics or telemetry are included.
+- Local mode makes no OpenAI request.
+- PDF scripting and evaluation are disabled.
+- `.env*` files are ignored except for `.env.example`.
+- Dependency updates are monitored by Dependabot.
+- CI runs lint, type, unit, build, browser and production dependency gates.
+
+Experimental Live API adapters exist for future self-hosting, but the UI exposes
+no Live control. Routes are disabled by default and require a separate bearer
+token before a bounded request body is read. Do not run a public Live service
+without per-user authentication, rate limits, budget caps, abuse monitoring and
+an explicit preview/consent flow.
+
+Read [SECURITY.md](./SECURITY.md) before deployment.
+
+## Known limitations
+
+- Scanned and encrypted PDFs are not supported; there is no OCR.
+- Custom projects rely on user confirmation rather than semantic AI extraction.
+- The self-check records the user's judgment; it does not validate argument
+  quality or source correctness.
+- Data belongs to one browser. There is no account, sync, collaboration or
+  multi-project dashboard.
+- The interface and parser are English-first.
+- RubricTrail is not a substitute for the actual rubric, university policy,
+  tutor advice or final human review.
+
+More detail is in [docs/KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md).
+
+## Roadmap
+
+- privacy-preserving export/import;
+- stronger table extraction for real-world rubrics;
+- more date and grading-system formats;
+- accessibility review with external users;
+- contributor-authored course templates;
+- opt-in, self-hosted Live support only after consent, cost and abuse controls.
+
+## Contributing
+
+Issues and pull requests are welcome. Start with
+[CONTRIBUTING.md](./CONTRIBUTING.md), follow the
+[code of conduct](./CODE_OF_CONDUCT.md), and never attach real student work to a
+public issue.
+
+The project is maintained by [Sion612](https://github.com/Sion612). See
+[MAINTAINERS.md](./MAINTAINERS.md).
+
+## License
+
+Licensed under [Apache-2.0](./LICENSE). See [NOTICE](./NOTICE) for the original
+fictional sample attribution.

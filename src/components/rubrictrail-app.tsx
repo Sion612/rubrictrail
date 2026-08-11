@@ -24,9 +24,11 @@ import { generateActionPlan } from "@/lib/plan";
 import { runMockDraftCheck } from "@/lib/mock-service";
 import { UPLOADED_READINESS } from "@/lib/readiness";
 import {
+  AssignmentFileBatchParseError,
   AssignmentFileParseError,
   buildUploadedAssignmentSummary,
   parseAssignmentFiles,
+  parseAssignmentFilesWithRecovery,
 } from "@/lib/files/parse-assignment-files";
 import {
   createPastedAssignmentFiles,
@@ -67,62 +69,96 @@ function wait(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
+const FILE_ERROR_RECOVERY: Record<
+  AssignmentFileParseError["code"],
+  Pick<AssignmentFileIntakeError, "title" | "message" | "preferredRecovery">
+> = {
+  UNSUPPORTED_FILE_TYPE: {
+    title: "This file type is not supported yet.",
+    message: "Choose a PDF, DOCX or TXT file, or paste the assignment text.",
+    preferredRecovery: "files",
+  },
+  INVALID_FILE_NAME: {
+    title: "A file needs a shorter, usable name.",
+    message: "Rename the file to 255 characters or fewer, then choose it again.",
+    preferredRecovery: "files",
+  },
+  FILE_TOO_LARGE: {
+    title: "There is too much to process at once.",
+    message: "Choose a file smaller than 10 MB, or paste only the assignment instructions.",
+    preferredRecovery: "files",
+  },
+  TOO_MANY_FILES: {
+    title: "There is too much to process at once.",
+    message: "Choose no more than 10 files, keeping only the brief and rubric.",
+    preferredRecovery: "files",
+  },
+  TOTAL_FILE_SIZE_TOO_LARGE: {
+    title: "There is too much to process at once.",
+    message: "Keep the combined upload at or below 25 MB, or paste only the relevant text.",
+    preferredRecovery: "files",
+  },
+  EXTRACTED_TEXT_TOO_LARGE: {
+    title: "There is too much text to process at once.",
+    message: "Remove unrelated material, split the source, or paste only the brief and rubric.",
+    preferredRecovery: "paste",
+  },
+  EMPTY_FILE: {
+    title: "This file has no readable text.",
+    message: "Open it, copy the assignment instructions, then paste them here.",
+    preferredRecovery: "paste",
+  },
+  SCANNED_NO_TEXT: {
+    title: "This file has no selectable text.",
+    message: "Open the scan, copy or transcribe the assignment instructions, then paste them here.",
+    preferredRecovery: "paste",
+  },
+  ENCRYPTED_PDF: {
+    title: "This PDF needs a password.",
+    message: "Open it with the password and save an unlocked copy, or paste the text.",
+    preferredRecovery: "paste",
+  },
+  PARSER_UNAVAILABLE: {
+    title: "The local document reader is unavailable.",
+    message: "Try again, choose a TXT file, or paste the assignment text.",
+    preferredRecovery: "paste",
+  },
+  CORRUPT_DOCUMENT: {
+    title: "We could not open this file.",
+    message: "Download or save a fresh copy, choose another file, or paste the text.",
+    preferredRecovery: "files",
+  },
+};
+
 function friendlyFileError(error: unknown): AssignmentFileIntakeError {
-  if (error instanceof AssignmentFileParseError) {
-    const recovery: Record<
-      AssignmentFileParseError["code"],
-      Pick<AssignmentFileIntakeError, "title" | "message" | "preferredRecovery">
-    > = {
-      UNSUPPORTED_FILE_TYPE: {
-        title: "This file type is not supported yet.",
-        message: "Choose a PDF, DOCX or TXT file, or paste the assignment text.",
-        preferredRecovery: "files",
-      },
-      FILE_TOO_LARGE: {
-        title: "There is too much to process at once.",
-        message: "Choose a file smaller than 10 MB, or paste only the assignment instructions.",
-        preferredRecovery: "files",
-      },
-      TOO_MANY_FILES: {
-        title: "There is too much to process at once.",
-        message: "Choose no more than 10 files, keeping only the brief and rubric.",
-        preferredRecovery: "files",
-      },
-      TOTAL_FILE_SIZE_TOO_LARGE: {
-        title: "There is too much to process at once.",
-        message: "Keep the combined upload at or below 25 MB, or paste only the relevant text.",
-        preferredRecovery: "files",
-      },
-      EXTRACTED_TEXT_TOO_LARGE: {
-        title: "There is too much text to process at once.",
-        message: "Remove unrelated material, split the source, or paste only the brief and rubric.",
-        preferredRecovery: "paste",
-      },
-      EMPTY_FILE: {
-        title: "This file has no readable text.",
-        message: "Open it, copy the assignment instructions, then paste them here.",
-        preferredRecovery: "paste",
-      },
-      SCANNED_NO_TEXT: {
-        title: "This file has no selectable text.",
-        message: "Open the scan, copy or transcribe the assignment instructions, then paste them here.",
-        preferredRecovery: "paste",
-      },
-      ENCRYPTED_PDF: {
-        title: "This PDF needs a password.",
-        message: "Open it with the password and save an unlocked copy, or paste the text.",
-        preferredRecovery: "paste",
-      },
-      CORRUPT_DOCUMENT: {
-        title: "We could not open this file.",
-        message: "Download or save a fresh copy, choose another file, or paste the text.",
-        preferredRecovery: "files",
-      },
+  if (error instanceof AssignmentFileBatchParseError) {
+    if (error.failures.length === 1) {
+      const failure = error.failures[0];
+      return {
+        code: failure.code,
+        fileName: failure.fileName,
+        ...FILE_ERROR_RECOVERY[failure.code],
+        fileIssues: [],
+      };
+    }
+    const preferPaste = error.failures.every(
+      (failure) => FILE_ERROR_RECOVERY[failure.code].preferredRecovery === "paste",
+    );
+    return {
+      code: "NO_READABLE_FILES",
+      fileName: null,
+      title: "None of these files could be read.",
+      message: "Review each file below, then choose replacements or paste the assignment text.",
+      preferredRecovery: preferPaste ? "paste" : "files",
+      fileIssues: [...error.failures],
     };
+  }
+  if (error instanceof AssignmentFileParseError) {
     return {
       code: error.code,
       fileName: error.fileName,
-      ...recovery[error.code],
+      ...FILE_ERROR_RECOVERY[error.code],
+      fileIssues: [],
     };
   }
   return {
@@ -131,6 +167,7 @@ function friendlyFileError(error: unknown): AssignmentFileIntakeError {
     title: "We could not prepare these files.",
     message: "Try a text-based PDF, DOCX or TXT file, or paste the assignment text.",
     preferredRecovery: "files",
+    fileIssues: [],
   };
 }
 
@@ -256,6 +293,8 @@ export function RubricTrailApp() {
   const [project, setProjectState] = useState<PersistedProjectState>(() => createDefaultProjectState());
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadFlowResult | null>(null);
+  const [partialUploadResult, setPartialUploadResult] =
+    useState<UploadFlowResult | null>(null);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "parsing" | "error">("idle");
   const [uploadError, setUploadError] = useState<AssignmentFileIntakeError | null>(null);
   const [intakeMode, setIntakeMode] = useState<AssignmentIntakeMode>("files");
@@ -463,6 +502,7 @@ export function RubricTrailApp() {
     draftCheckRunId.current += 1;
     draftCheckActive.current = false;
     setUploadResult(null);
+    setPartialUploadResult(null);
     setUploadError(null);
     setPastedTextError(null);
     setPastedBrief("");
@@ -490,19 +530,33 @@ export function RubricTrailApp() {
     const operationId = ++intakeRunId.current;
     setIntakeMode(intakeMethod);
     setUploadStatus("parsing");
+    setUploadResult(null);
+    setPartialUploadResult(null);
     setUploadError(null);
     setPastedTextError(null);
     setBackupError(null);
     try {
-      const parsed = await parseAssignmentFiles(files);
+      const recovered = intakeMethod === "files"
+        ? await parseAssignmentFilesWithRecovery(files)
+        : {
+            parsed: await parseAssignmentFiles(files),
+            skippedFiles: [],
+          };
       if (operationId !== intakeRunId.current) return;
+      const { parsed, skippedFiles } = recovered;
       const summary = buildUploadedAssignmentSummary(parsed);
-      setUploadResult({
+      const nextResult: UploadFlowResult = {
         intakeMethod,
         fileNames: parsed.sources.map((source) => source.fileName),
+        skippedFiles,
         totalWords: parsed.wordCount,
         summary,
-      });
+      };
+      if (skippedFiles.length > 0) {
+        setPartialUploadResult(nextResult);
+      } else {
+        setUploadResult(nextResult);
+      }
       setUploadStatus("idle");
     } catch (error) {
       if (operationId !== intakeRunId.current) return;
@@ -536,6 +590,7 @@ export function RubricTrailApp() {
       draftText: "",
     });
     setUploadResult(null);
+    setPartialUploadResult(null);
     setUploadStatus("idle");
     setUploadError(null);
     setPastedTextError(null);
@@ -563,6 +618,7 @@ export function RubricTrailApp() {
     updateProject(createDefaultProjectState());
     setSelectedEvidenceId(null);
     setUploadResult(null);
+    setPartialUploadResult(null);
     setUploadStatus("idle");
     setUploadError(null);
     setPastedTextError(null);
@@ -586,6 +642,7 @@ export function RubricTrailApp() {
     updateProject(createDefaultProjectState());
     setSelectedEvidenceId(null);
     setUploadResult(null);
+    setPartialUploadResult(null);
     setUploadStatus("idle");
     setUploadError(null);
     setPastedTextError(null);
@@ -630,6 +687,7 @@ export function RubricTrailApp() {
     setUploadError(null);
     setPastedTextError(null);
     setBackupError(null);
+    setPartialUploadResult(null);
 
     try {
       const backup = await readProjectBackupFile(file);
@@ -668,6 +726,7 @@ export function RubricTrailApp() {
       setProjectState(backup.state);
       setSelectedEvidenceId(null);
       setUploadResult(null);
+      setPartialUploadResult(null);
       setUploadStatus("idle");
       setUploadError(null);
       setPastedTextError(null);
@@ -866,7 +925,9 @@ export function RubricTrailApp() {
         <UploadSummaryView
           result={uploadResult}
           onBack={() => {
-            focusWelcomeIntake.current = uploadResult.intakeMethod;
+            focusWelcomeIntake.current = uploadResult.skippedFiles.length > 0
+              ? null
+              : uploadResult.intakeMethod;
             setIntakeMode(uploadResult.intakeMethod);
             setUploadResult(null);
             setUploadStatus("idle");
@@ -893,6 +954,12 @@ export function RubricTrailApp() {
           onPastedText={handlePastedText}
           intakeMode={intakeMode}
           onIntakeModeChange={setIntakeMode}
+          partialUploadResult={partialUploadResult}
+          onReviewPartialUpload={() => {
+            if (partialUploadResult) {
+              setUploadResult(partialUploadResult);
+            }
+          }}
           pastedBrief={pastedBrief}
           onPastedBriefChange={(value) => {
             setPastedBrief(value);

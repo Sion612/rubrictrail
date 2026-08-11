@@ -26,15 +26,18 @@ The production screenshot above and the mobile viewport are reviewed in
 
 1. Upload up to 10 TXT, DOCX or text-based PDF files (10 MB each, 25 MB combined),
    or paste the brief and optional rubric from a course page, email or scan.
-2. Review fields found in the source and fill anything missing.
-3. Confirm rubric names and weights; they must total 100%.
-4. Create a compact project saved only in the current browser.
-5. Work through **Brief → Rubric → Plan → Check → Progress**.
+2. If one file cannot be read, explicitly choose whether to continue with the
+   readable files, replace the complete selection or paste all text instead.
+3. Review fields found in the included sources and fill anything missing.
+4. Confirm rubric names and weights; they must total 100%.
+5. Create a compact project saved only in the current browser.
+6. Work through **Brief → Rubric → Plan → Check → Progress**.
 
 The custom workflow includes:
 
 - deterministic browser-local file extraction and plain-text paste intake;
 - bounded parsing with file-count, combined-size and extracted-text limits;
+- explicit mixed-batch recovery that never silently drops an unreadable file;
 - exact retained rubric excerpts with filename and PDF page when available;
 - a generic dependency-aware plan linked only to confirmed criteria;
 - capacity warnings based on deadline and weekly study time;
@@ -50,7 +53,8 @@ Original files and full uploaded or pasted source text are not written to
 `localStorage`. Pasted intake is limited to 100,000 characters and 10,000 lines
 before it enters the same bounded TXT parser. Confirmed fields, short source
 excerpts, pasted self-check text and progress are stored until the user resets
-the project.
+the project. Names and error details for files omitted from a partial batch stay
+only in the current intake flow and are not added to the saved project or backup.
 
 ### Back up or restore a project
 
@@ -145,9 +149,11 @@ horizontal overflow.
 
 ```mermaid
 flowchart LR
-  A["TXT / DOCX / text PDF"] --> B["Browser-local parser"]
-  P["Pasted brief + optional rubric"] --> B
-  B --> C["User confirmation"]
+  A["TXT / DOCX / text PDF"] --> B["Strict batch limits"]
+  B --> R["Readable + omitted review"]
+  P["Pasted brief + optional rubric"] --> T["Strict bounded TXT parser"]
+  R --> C["User confirmation"]
+  T --> C
   C --> D["Compact local project"]
   D --> E["Brief + rubric trail"]
   D --> F["Deterministic plan engine"]
@@ -197,6 +203,9 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
 
 - Scanned and encrypted PDFs are not parsed directly; there is no OCR, but users
   can paste the readable brief and rubric text instead.
+- Local byte and retained-text limits reduce accidental resource exhaustion but
+  do not provide a complete CPU or peak-memory sandbox for malicious compressed
+  DOCX/PDF files.
 - Custom projects rely on user confirmation rather than semantic AI extraction.
 - The self-check records the user's judgment; it does not validate argument
   quality or source correctness.
@@ -210,7 +219,7 @@ More detail is in [docs/KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md).
 
 ## Roadmap
 
-- partial recovery when one file in a batch fails;
+- cancellable worker-based document parsing with stronger peak-resource limits;
 - stronger table extraction for real-world rubrics;
 - more date and grading-system formats;
 - accessibility review with external users;

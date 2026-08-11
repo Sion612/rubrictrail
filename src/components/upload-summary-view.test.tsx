@@ -6,6 +6,10 @@ import { draftFromUpload } from "@/lib/uploaded-project";
 import type { UploadFlowResult } from "@/lib/ui-types";
 
 beforeEach(() => {
+  Object.defineProperty(window, "scrollTo", {
+    configurable: true,
+    value: vi.fn(),
+  });
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
     value: vi.fn(),
@@ -30,6 +34,7 @@ function completeUpload(): UploadFlowResult {
   return {
     intakeMethod: "files",
     fileNames: ["brief.txt"],
+    skippedFiles: [],
     totalWords: 18,
     summary: buildUploadedAssignmentSummary(text),
   };
@@ -71,6 +76,11 @@ describe("UploadSummaryView provenance", () => {
       name: "Confirm what the assignment says.",
     });
     expect(heading).toHaveFocus();
+    expect(window.scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      left: 0,
+      behavior: "auto",
+    });
 
     const title = screen.getByTestId("confirm-title");
     const titleField = title.closest("label") as HTMLElement;
@@ -136,5 +146,45 @@ describe("UploadSummaryView provenance", () => {
     expect(titleErrorLink).toHaveAttribute("href", "#confirm-title");
     fireEvent.click(titleErrorLink);
     expect(title).toHaveFocus();
+  });
+
+  it("keeps omitted files visible throughout a partial preview", () => {
+    const onBack = vi.fn();
+    const result: UploadFlowResult = {
+      ...completeUpload(),
+      skippedFiles: [
+        {
+          inputIndex: 1,
+          fileName: "<img onerror=alert(1)>.pdf",
+          code: "SCANNED_NO_TEXT",
+          message: "No selectable text was found.",
+        },
+      ],
+    };
+    const { container } = render(
+      <UploadSummaryView
+        result={result}
+        onBack={onBack}
+        onCreateProject={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Partial parse ready")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: "This preview uses 1 of the 2 selected files.",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("brief.txt")).toBeInTheDocument();
+    expect(screen.getByText("<img onerror=alert(1)>.pdf")).toBeInTheDocument();
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByText(/not included in any detected field/i)).toBeInTheDocument();
+
+    const reviewButtons = screen.getAllByRole("button", {
+      name: "Review file selection",
+    });
+    expect(reviewButtons).toHaveLength(2);
+    fireEvent.click(reviewButtons[0]);
+    expect(onBack).toHaveBeenCalledOnce();
   });
 });

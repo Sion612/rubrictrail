@@ -1,6 +1,7 @@
 import type { DraftCheckResult } from "@/lib/domain";
 import type {
   AssignmentFileErrorCode,
+  SkippedAssignmentFile,
   UploadedAssignmentSummary,
   UploadedSourceEvidence,
 } from "@/lib/files/parse-assignment-files";
@@ -11,11 +12,12 @@ export type WorkflowState = "complete" | "in_progress" | "needs_review" | "not_s
 export type AssignmentIntakeMode = "files" | "paste";
 
 export interface AssignmentFileIntakeError {
-  code: AssignmentFileErrorCode | "UNKNOWN";
+  code: AssignmentFileErrorCode | "NO_READABLE_FILES" | "UNKNOWN";
   fileName: string | null;
   title: string;
   message: string;
   preferredRecovery: AssignmentIntakeMode;
+  fileIssues: SkippedAssignmentFile[];
 }
 
 export interface PastedTextIntakeError {
@@ -72,6 +74,7 @@ export interface PersistedProjectState {
 export interface UploadFlowResult {
   intakeMethod: AssignmentIntakeMode;
   fileNames: string[];
+  skippedFiles: SkippedAssignmentFile[];
   totalWords: number;
   summary: UploadedAssignmentSummary;
 }

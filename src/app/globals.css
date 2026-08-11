@@ -308,6 +308,21 @@ svg { width: 1.15em; height: 1.15em; stroke-width: 1.8; }
 .intake-error-file { overflow-wrap: anywhere; color: var(--ink) !important; font-weight: 650; }
 .intake-error-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .intake-error-actions .button { min-height: 44px; }
+.partial-upload-card { margin-top: 12px; }
+.partial-upload-card > div, .partial-summary-warning > div { min-width: 0; flex: 1; }
+.partial-upload-card h3, .partial-summary-warning h2 { margin: 0; font-size: 0.86rem; }
+.partial-upload-card p, .partial-summary-warning p { margin: 5px 0 0; color: var(--muted); line-height: 1.5; }
+.partial-file-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.partial-file-groups section { min-width: 0; padding: 12px; border: 1px solid color-mix(in srgb, var(--amber) 48%, white); background: rgb(255 255 255 / 58%); }
+.partial-file-groups h4 { margin: 0 0 8px; font-size: 0.76rem; }
+.intake-file-list { margin: 0; padding: 0; list-style: none; }
+.intake-file-list li { min-width: 0; padding: 7px 0; overflow-wrap: anywhere; }
+.intake-file-list li + li { border-top: 1px solid var(--line-soft); }
+.intake-file-list li strong, .intake-file-list li span { overflow-wrap: anywhere; }
+.intake-file-list li span { font-size: 0.75rem; line-height: 1.45; }
+.ready-list li { color: var(--ink); font-weight: 650; }
+.partial-reselect-note { font-size: 0.75rem; }
+.partial-upload-actions .button { min-height: 44px; }
 
 .paste-intake {
   padding: 20px;
@@ -745,8 +760,13 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 .summary-intro p:last-child { margin: 0; color: var(--muted); }
 .source-strip { display: flex; align-items: center; gap: 12px; margin: 24px 0; padding: 15px; background: var(--teal-pale); }
 .source-strip svg { color: var(--teal); }
+.source-strip > div { min-width: 0; flex: 1; }
 .source-strip strong, .source-strip span { display: block; }
+.source-strip strong { overflow-wrap: anywhere; }
 .source-strip span { color: var(--muted); font-size: 0.72rem; }
+.partial-summary-warning { margin: 24px 0; }
+.partial-summary-warning .intake-file-list { margin-top: 10px; }
+.partial-summary-warning .button { min-height: 44px; margin-top: 12px; padding-inline: 0; color: var(--teal-dark); }
 .upload-fields { display: grid; grid-template-columns: repeat(4,1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .upload-field { padding: 18px; }
 .upload-field + .upload-field { border-left: 1px solid var(--line); }
@@ -1045,7 +1065,7 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .upload-fields { grid-template-columns: 1fr 1fr; }
   .upload-field:nth-child(3) { border-top: 1px solid var(--line); border-left: 0; }
   .upload-field:nth-child(4) { border-top: 1px solid var(--line); }
-  .summary-actions { flex-direction: column-reverse; }
+  .summary-actions { flex-direction: column; }
   .summary-actions .button { width: 100%; }
   .confirm-field-grid { grid-template-columns: 1fr; }
   .confirm-field-wide { grid-column: auto; }
@@ -1078,6 +1098,7 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .paste-intake textarea { min-height: 180px; }
   .paste-intake-actions, .intake-error-actions { flex-direction: column; }
   .paste-intake-actions .button, .intake-error-actions .button { width: 100%; justify-content: center; }
+  .partial-file-groups { grid-template-columns: 1fr; }
   .project-backup-popover { position: fixed; top: 64px; right: 12px; }
   .start-own-project-button { min-height: 44px; justify-content: center; padding: 0 9px; font-size: 0.68rem; }
   .header-actions .icon-button { width: 44px; height: 44px; }

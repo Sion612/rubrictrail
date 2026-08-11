@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WelcomeScreen } from "@/components/welcome-screen";
+import { buildUploadedAssignmentSummary } from "@/lib/files/parse-assignment-files";
 
 const defaultProps = {
   onTrySample: vi.fn(),
@@ -16,6 +17,8 @@ const defaultProps = {
   isLoadingSample: false,
   uploadStatus: "idle" as const,
   uploadError: null,
+  partialUploadResult: null,
+  onReviewPartialUpload: vi.fn(),
   onImportBackup: vi.fn(),
   isImportingBackup: false,
   backupError: null,
@@ -49,6 +52,7 @@ describe("WelcomeScreen upload controls", () => {
           title: "Try again",
           message: "Choose another source.",
           preferredRecovery: "files",
+          fileIssues: [],
         }}
       />,
     );
@@ -98,6 +102,7 @@ describe("WelcomeScreen upload controls", () => {
           title: "This file has no selectable text.",
           message: "Paste the assignment instructions.",
           preferredRecovery: "paste",
+          fileIssues: [],
         }}
       />,
     );
@@ -117,6 +122,7 @@ describe("WelcomeScreen upload controls", () => {
           title: "There is too much to process at once.",
           message: "Choose a smaller file.",
           preferredRecovery: "files",
+          fileIssues: [],
         }}
       />,
     );
@@ -194,5 +200,88 @@ describe("WelcomeScreen upload controls", () => {
     expect(screen.getByTestId("pasted-text-error")).toHaveTextContent(
       "Nothing was saved or changed.",
     );
+  });
+
+  it("focuses a partial result and keeps the decision order explicit", async () => {
+    const onReviewPartialUpload = vi.fn();
+    render(
+      <WelcomeScreen
+        {...defaultProps}
+        onReviewPartialUpload={onReviewPartialUpload}
+        partialUploadResult={{
+          intakeMethod: "files",
+          fileNames: ["brief.txt"],
+          skippedFiles: [
+            {
+              inputIndex: 1,
+              fileName: "rubric-scan.pdf",
+              code: "SCANNED_NO_TEXT",
+              message: "No selectable text was found.",
+            },
+          ],
+          totalWords: 40,
+          summary: buildUploadedAssignmentSummary(
+            "Assignment title: Service Report",
+          ),
+        }}
+      />,
+    );
+
+    const partial = screen.getByRole("region", {
+      name: "We read 1 of 2 files.",
+    });
+    await waitFor(() => expect(partial).toHaveFocus());
+    expect(partial).toHaveTextContent("Ready to review (1)");
+    expect(partial).toHaveTextContent("rubric-scan.pdf");
+    expect(partial).toHaveTextContent("No selectable text was found");
+    expect(
+      within(partial).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual([
+      "Review 1 ready file",
+      "Choose all files again",
+      "Paste all text instead",
+    ]);
+
+    fireEvent.click(
+      within(partial).getByRole("button", { name: "Review 1 ready file" }),
+    );
+    expect(onReviewPartialUpload).toHaveBeenCalledOnce();
+  });
+
+  it("lists every file when no selected source can be read", () => {
+    render(
+      <WelcomeScreen
+        {...defaultProps}
+        uploadStatus="error"
+        uploadError={{
+          code: "NO_READABLE_FILES",
+          fileName: null,
+          title: "None of these files could be read.",
+          message: "Review each file below.",
+          preferredRecovery: "files",
+          fileIssues: [
+            {
+              inputIndex: 0,
+              fileName: "old-brief.doc",
+              code: "UNSUPPORTED_FILE_TYPE",
+              message: "Unsupported file.",
+            },
+            {
+              inputIndex: 1,
+              fileName: "empty.txt",
+              code: "EMPTY_FILE",
+              message: "Empty file.",
+            },
+          ],
+        }}
+      />,
+    );
+
+    const error = screen.getByTestId("upload-error");
+    expect(error).toHaveTextContent("File 1: old-brief.doc");
+    expect(error).toHaveTextContent("File 2: empty.txt");
+    expect(
+      within(error).getByRole("button", { name: "Choose all files again" }),
+    ).toBeInTheDocument();
   });
 });

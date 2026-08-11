@@ -6,9 +6,11 @@ import {
   ASSIGNMENT_FILE_MAX_BYTES,
   ASSIGNMENT_FILE_MAX_COUNT,
   ASSIGNMENT_FILES_MAX_TOTAL_BYTES,
+  AssignmentFileBatchParseError,
   AssignmentFileParseError,
   buildUploadedAssignmentSummary,
   parseAssignmentFiles,
+  parseAssignmentFilesWithRecovery,
 } from "./parse-assignment-files";
 
 const parserMocks = vi.hoisted(() => ({
@@ -272,6 +274,186 @@ describe("parseAssignmentFiles", () => {
     await expect(parseAssignmentFiles([corruptFile])).rejects.toSatisfy(
       expectErrorCode("CORRUPT_DOCUMENT"),
     );
+  });
+});
+
+describe("parseAssignmentFilesWithRecovery", () => {
+  beforeEach(() => {
+    parserMocks.extractRawText.mockReset();
+    parserMocks.getDocument.mockReset();
+  });
+
+  it("retains readable files in selection order and reports an unsupported middle file", async () => {
+    const first = makeFile("Assignment title: Queue Improvement", "brief.txt");
+    const unsupported = makeFile("legacy", "rubric.doc", "application/msword");
+    const third = makeFile("Rubric\nAnalysis | 100%", "rubric.txt");
+
+    const result = await parseAssignmentFilesWithRecovery([
+      first,
+      unsupported,
+      third,
+    ]);
+
+    expect(result.selectedFileCount).toBe(3);
+    expect(result.parsed.sources.map((source) => source.id)).toEqual([
+      "source-1",
+      "source-3",
+    ]);
+    expect(result.parsed.sources.map((source) => source.fileName)).toEqual([
+      "brief.txt",
+      "rubric.txt",
+    ]);
+    expect(result.parsed.sources[1].startOffset).toBe(
+      result.parsed.sources[0].endOffset + 2,
+    );
+    expect(result.parsed.totalBytes).toBe(first.size + third.size);
+    expect(result.skippedFiles).toEqual([
+      expect.objectContaining({
+        inputIndex: 1,
+        fileName: "rubric.doc",
+        code: "UNSUPPORTED_FILE_TYPE",
+      }),
+    ]);
+  });
+
+  it("continues after a corrupt document and keeps later source identity", async () => {
+    parserMocks.extractRawText.mockRejectedValue(new Error("invalid zip"));
+    const files = [
+      makeFile("Assignment title: Service Report", "brief.txt"),
+      makeFile(
+        "broken",
+        "broken.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+      makeFile("Rubric\nAnalysis | 100%", "rubric.txt"),
+    ];
+
+    const result = await parseAssignmentFilesWithRecovery(files);
+
+    expect(result.parsed.sources.map((source) => source.id)).toEqual([
+      "source-1",
+      "source-3",
+    ]);
+    expect(result.skippedFiles).toEqual([
+      expect.objectContaining({ inputIndex: 1, code: "CORRUPT_DOCUMENT" }),
+    ]);
+  });
+
+  it("returns every per-file issue when the whole batch is unreadable", async () => {
+    const files = [
+      makeFile("legacy", "brief.doc", "application/msword"),
+      makeFile("", "empty.txt"),
+    ];
+
+    await expect(parseAssignmentFilesWithRecovery(files)).rejects.toSatisfy(
+      (error: unknown) => {
+        expect(error).toBeInstanceOf(AssignmentFileBatchParseError);
+        expect(
+          (error as AssignmentFileBatchParseError).failures.map((failure) => ({
+            inputIndex: failure.inputIndex,
+            code: failure.code,
+          })),
+        ).toEqual([
+          { inputIndex: 0, code: "UNSUPPORTED_FILE_TYPE" },
+          { inputIndex: 1, code: "EMPTY_FILE" },
+        ]);
+        return true;
+      },
+    );
+  });
+
+  it("keeps extracted-text exhaustion as a batch-level failure", async () => {
+    parserMocks.extractRawText.mockResolvedValue({
+      value: "x".repeat(ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS),
+    });
+    const trailing = makeFile("Rubric\nAnalysis | 100%", "rubric.txt");
+    const trailingRead = vi.spyOn(trailing, "arrayBuffer");
+    const files = [
+      makeFile("Readable brief", "brief.txt"),
+      makeFile(
+        "large-docx",
+        "large.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+      trailing,
+    ];
+
+    await expect(parseAssignmentFilesWithRecovery(files)).rejects.toSatisfy(
+      expectErrorCode("EXTRACTED_TEXT_TOO_LARGE"),
+    );
+    expect(trailingRead).not.toHaveBeenCalled();
+  });
+
+  it("rejects selection-wide file count and byte limits before reading files", async () => {
+    const tooMany = Array.from(
+      { length: ASSIGNMENT_FILE_MAX_COUNT + 1 },
+      (_, index) => makeFile(`Brief ${index + 1}`, `brief-${index + 1}.txt`),
+    );
+    const tooManyReads = tooMany.map((file) => vi.spyOn(file, "arrayBuffer"));
+
+    await expect(parseAssignmentFilesWithRecovery(tooMany)).rejects.toSatisfy(
+      expectErrorCode("TOO_MANY_FILES"),
+    );
+    expect(tooManyReads.every((read) => read.mock.calls.length === 0)).toBe(true);
+
+    const unsupported = makeFile("legacy", "brief.doc", "application/msword");
+    const readable = makeFile("Readable brief", "brief.txt");
+    Object.defineProperty(unsupported, "size", {
+      configurable: true,
+      value: ASSIGNMENT_FILES_MAX_TOTAL_BYTES,
+    });
+    Object.defineProperty(readable, "size", {
+      configurable: true,
+      value: 1,
+    });
+    const unsupportedRead = vi.spyOn(unsupported, "arrayBuffer");
+    const readableRead = vi.spyOn(readable, "arrayBuffer");
+
+    await expect(
+      parseAssignmentFilesWithRecovery([unsupported, readable]),
+    ).rejects.toSatisfy(expectErrorCode("TOTAL_FILE_SIZE_TOO_LARGE"));
+    expect(unsupportedRead).not.toHaveBeenCalled();
+    expect(readableRead).not.toHaveBeenCalled();
+  });
+
+  it("stops the batch when a local parser is unavailable", async () => {
+    parserMocks.extractRawText.mockRejectedValue(
+      new AssignmentFileParseError(
+        "PARSER_UNAVAILABLE",
+        "The local DOCX reader is unavailable.",
+        "brief.docx",
+      ),
+    );
+    const trailing = makeFile("Rubric\nAnalysis | 100%", "rubric.txt");
+    const trailingRead = vi.spyOn(trailing, "arrayBuffer");
+
+    await expect(
+      parseAssignmentFilesWithRecovery([
+        makeFile("Readable brief", "brief.txt"),
+        makeFile(
+          "docx",
+          "brief.docx",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+        trailing,
+      ]),
+    ).rejects.toSatisfy(expectErrorCode("PARSER_UNAVAILABLE"));
+    expect(trailingRead).not.toHaveBeenCalled();
+  });
+
+  it("bounds unsafe failure display names without retaining the full name", async () => {
+    const unsafeName = `${"<img onerror=alert(1)>".repeat(20)}.txt`;
+    const invalid = makeFile("unsafe name", unsafeName);
+    const readable = makeFile("Assignment title: Safe Brief", "brief.txt");
+
+    const result = await parseAssignmentFilesWithRecovery([invalid, readable]);
+
+    expect(result.skippedFiles[0]).toMatchObject({
+      inputIndex: 0,
+      code: "INVALID_FILE_NAME",
+    });
+    expect(result.skippedFiles[0].fileName.length).toBeLessThanOrEqual(255);
+    expect(result.skippedFiles[0].fileName).not.toBe(unsafeName);
   });
 });
 

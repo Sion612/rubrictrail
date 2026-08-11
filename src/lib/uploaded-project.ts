@@ -8,6 +8,7 @@ import type {
   UploadedCriterionReview,
   UploadedProject,
   UploadedProjectDraft,
+  RubricWeightingStatus,
 } from "@/lib/ui-types";
 
 export const UPLOADED_REVIEW_MAX_CHARACTERS = 40_000;
@@ -98,12 +99,18 @@ export function normalizeDateForInput(value: string | null): string {
 
 export function draftFromUpload(result: UploadFlowResult): UploadedProjectDraft {
   const { summary } = result;
+  const hasCompletePublishedWeights =
+    summary.rubric.criteria.length > 0 &&
+    summary.rubric.criteria.every((criterion) => criterion.weight !== null) &&
+    summary.rubric.totalWeight !== null &&
+    Math.abs(summary.rubric.totalWeight - 100) < 0.01;
   return {
     title: summary.title.value ?? "",
     course: "",
     dueDate: normalizeDateForInput(summary.dueDate.value),
     wordCount: summary.wordCount.value ? String(summary.wordCount.value) : "",
     citationStyle: summary.citationStyle.value ?? "",
+    weightingMode: hasCompletePublishedWeights ? "complete" : null,
     criteria: summary.rubric.criteria.map((criterion) => ({
       name: criterion.name,
       weight: criterion.weight === null ? "" : String(criterion.weight),
@@ -136,6 +143,12 @@ export function validateUploadedProjectDraftIssues(
   else if (draft.citationStyle.trim().length > 160) addIssue("confirm-citation-style", "Keep the citation style under 160 characters.");
   if (draft.criteria.length === 0) addIssue("add-criterion", "Add at least one rubric criterion.");
   else if (draft.criteria.length > 50) addIssue("rubric-detection-title", "Keep the rubric to 50 criteria or fewer.");
+  if (draft.weightingMode === null) {
+    addIssue(
+      "rubric-weighting-published",
+      "Choose whether the official rubric provides a complete percentage breakdown.",
+    );
+  }
   draft.criteria.forEach((criterion, index) => {
     if (!criterion.name.trim()) {
       addIssue(`criterion-name-${index}`, `Criterion ${index + 1}: add a name.`);
@@ -145,18 +158,31 @@ export function validateUploadedProjectDraftIssues(
         `Criterion ${index + 1}: keep the name under 300 characters.`,
       );
     }
-    const weight = Number(criterion.weight);
-    if (!Number.isFinite(weight) || weight <= 0 || weight > 100) {
-      addIssue(
-        `criterion-weight-${index}`,
-        `Criterion ${index + 1}: use a weight greater than 0 and no more than 100.`,
-      );
+    if (draft.weightingMode !== null) {
+      const weight = Number(criterion.weight);
+      if (draft.weightingMode === "complete" && !criterion.weight.trim()) {
+        addIssue(
+          `criterion-weight-${index}`,
+          `Criterion ${index + 1}: enter the published percentage shown in the official rubric.`,
+        );
+      } else if (
+        criterion.weight.trim() &&
+        (!Number.isFinite(weight) || weight <= 0 || weight > 100)
+      ) {
+        addIssue(
+          `criterion-weight-${index}`,
+          `Criterion ${index + 1}: use an official percentage greater than 0 and no more than 100, or leave it blank if none is published.`,
+        );
+      }
     }
   });
-  if (Math.abs(totalWeight - 100) > 0.01) {
+  if (
+    draft.weightingMode === "complete" &&
+    Math.abs(totalWeight - 100) > 0.01
+  ) {
     addIssue(
       draft.criteria.length ? "criterion-weight-0" : "add-criterion",
-      `Rubric weights must total 100%; they currently total ${totalWeight || 0}%.`,
+      `Published rubric weights must total 100%; they currently total ${totalWeight || 0}%. Check for a missing criterion or a mistyped percentage.`,
     );
   }
   return issues;
@@ -173,6 +199,16 @@ export function createUploadedProject(
   const errors = validateUploadedProjectDraft(draft);
   if (errors.length) throw new Error(errors.join(" "));
   const createdAt = new Date().toISOString();
+  const retainedWeights = draft.criteria.map((criterion) => {
+    const value = criterion.weight.trim();
+    return value ? Number(value) : null;
+  });
+  const weightingStatus: RubricWeightingStatus =
+    draft.weightingMode === "complete"
+      ? "complete"
+      : retainedWeights.some((weight) => weight !== null)
+        ? "incomplete"
+        : "none";
   return {
     id: `uploaded-${Date.now()}`,
     title: draft.title.trim(),
@@ -182,14 +218,25 @@ export function createUploadedProject(
     citationStyle: draft.citationStyle.trim(),
     fileNames: result.fileNames,
     extractedWordCount: result.totalWords,
+    weightingStatus,
     criteria: draft.criteria.map((criterion, index) => ({
       id: `${slug(criterion.name)}-${index + 1}`,
       name: criterion.name.trim(),
-      weight: Number(criterion.weight),
+      weight: retainedWeights[index],
       evidence: criterion.evidence,
     })),
     createdAt,
   };
+}
+
+export function hasPublishedRubricWeights(
+  project: UploadedProject,
+): boolean {
+  return (
+    project.weightingStatus === "complete" &&
+    project.criteria.length > 0 &&
+    project.criteria.every((criterion) => criterion.weight !== null)
+  );
 }
 
 function links(project: UploadedProject, contribution = 1) {
@@ -200,13 +247,28 @@ function links(project: UploadedProject, contribution = 1) {
 }
 
 export function buildUploadedPlanTemplates(project: UploadedProject): PlanTaskTemplate[] {
+  const hasPublishedWeights = hasPublishedRubricWeights(project);
+  const neutralCriterionMinutes = Math.max(
+    45,
+    Math.round((45 + 200 / project.criteria.length) / 15) * 15,
+  );
   const criterionTasks = project.criteria.map((criterion, index) => ({
     id: `criterion-${index + 1}`,
     phase: "Build evidence",
     title: `Build evidence for ${criterion.name}`,
     description: `Collect, analyse and explain the material that lets a reviewer see how you meet “${criterion.name}”.`,
-    priority: criterion.weight >= 25 ? "high" : criterion.weight >= 15 ? "medium" : "low",
-    baseMinutes: Math.max(45, Math.round((45 + criterion.weight * 2) / 15) * 15),
+    priority:
+      hasPublishedWeights && criterion.weight !== null
+        ? criterion.weight >= 25
+          ? "high"
+          : criterion.weight >= 15
+            ? "medium"
+            : "low"
+        : "high",
+    baseMinutes:
+      hasPublishedWeights && criterion.weight !== null
+        ? Math.max(45, Math.round((45 + criterion.weight * 2) / 15) * 15)
+        : neutralCriterionMinutes,
     dependencies: ["confirm-brief"],
     doneDefinition: [
       "At least one traceable source or worked example is recorded",
@@ -236,7 +298,9 @@ export function buildUploadedPlanTemplates(project: UploadedProject): PlanTaskTe
       id: "rubric-outline",
       phase: "Structure",
       title: "Create a rubric-led outline and word budget",
-      description: "Give higher-weight criteria enough space and make every section’s purpose explicit.",
+      description: hasPublishedWeights
+        ? "Give higher-weight criteria enough space and make every section’s purpose explicit."
+        : "Give every criterion the same planning baseline and make every section’s purpose explicit. This baseline is not a grade weighting.",
       priority: "high",
       baseMinutes: 45,
       dependencies: ["confirm-brief"],

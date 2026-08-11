@@ -116,7 +116,7 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
   await expect
     .poll(() =>
       page.evaluate(() => {
-        const raw = window.localStorage.getItem("rubrictrail.project.v2");
+        const raw = window.localStorage.getItem("rubrictrail.project.v3");
         if (!raw) return "";
         try {
           const state = JSON.parse(raw) as { projectKind?: string; view?: string };
@@ -141,7 +141,7 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
   await expect
     .poll(() =>
       pageA.evaluate(() => {
-        const raw = window.localStorage.getItem("rubrictrail.project.v2");
+        const raw = window.localStorage.getItem("rubrictrail.project.v3");
         if (!raw) return "";
         try {
           return (JSON.parse(raw) as { draftText?: string }).draftText ?? "";
@@ -152,7 +152,7 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
     )
     .toBe(savedDraft);
   const exactSavedValue = await pageA.evaluate(() =>
-    window.localStorage.getItem("rubrictrail.project.v2"),
+    window.localStorage.getItem("rubrictrail.project.v3"),
   );
   expect(exactSavedValue).not.toBeNull();
 
@@ -171,7 +171,7 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
   await pageB.evaluate(() => window.dispatchEvent(new Event("pagehide")));
   await pageB.waitForTimeout(350);
   expect(
-    await pageA.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2")),
+    await pageA.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3")),
   ).toBe(exactSavedValue);
 
   pageB.once("dialog", (dialog) => dialog.accept());
@@ -179,8 +179,79 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
   await expect(pageB.getByTestId("draft-text")).toHaveValue(savedDraft);
   await expect(conflictHeading).toHaveCount(0);
   expect(
-    await pageB.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2")),
+    await pageB.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3")),
   ).toBe(exactSavedValue);
+});
+
+test("an older v2 tab can be explicitly loaded without losing its draft", async ({ page, context }) => {
+  await page.getByTestId("try-sample").click();
+  await visibleWorkflowButton(page, "Check").click();
+  await expect(page.getByTestId("draft-text")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = window.localStorage.getItem("rubrictrail.project.v3");
+        if (!raw) return "";
+        try {
+          const state = JSON.parse(raw) as { projectKind?: string; view?: string };
+          return `${state.projectKind ?? ""}:${state.view ?? ""}`;
+        } catch {
+          return "";
+        }
+      }),
+    )
+    .toBe("sample:draft");
+
+  const olderDraft =
+    "V2-EXACT-DRAFT-71C4: this older-version save was explicitly selected.";
+  const legacyTab = await context.newPage();
+  await legacyTab.goto("/");
+  await legacyTab.evaluate((draftText) => {
+    const currentRaw = window.localStorage.getItem("rubrictrail.project.v3");
+    if (!currentRaw) throw new Error("Expected a v3 project before creating v2 state");
+    const previous = JSON.parse(currentRaw) as Record<string, unknown>;
+    delete previous.supersededV2Fingerprint;
+    previous.version = 2;
+    previous.draftText = draftText;
+    window.localStorage.setItem(
+      "rubrictrail.project.v2",
+      JSON.stringify(previous),
+    );
+  }, olderDraft);
+  await legacyTab.close();
+
+  const conflictHeading = page.getByRole("heading", {
+    name: "Project changed in another tab",
+  });
+  await expect(conflictHeading).toBeVisible();
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("older RubricTrail tab");
+    await dialog.accept();
+  });
+  await page.getByRole("button", { name: "Load saved version" }).click();
+
+  await expect(page.getByTestId("draft-text")).toHaveValue(olderDraft);
+  await expect(conflictHeading).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = window.localStorage.getItem("rubrictrail.project.v3");
+        if (!raw) return "";
+        const state = JSON.parse(raw) as {
+          draftText?: string;
+          supersededV2Fingerprint?: string | null;
+        };
+        return `${state.draftText}|${state.supersededV2Fingerprint ?? ""}`;
+      }),
+    )
+    .toMatch(/^V2-EXACT-DRAFT-71C4:.*\|v1:/);
+  expect(
+    await page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2")),
+  ).not.toBeNull();
+
+  await page.reload();
+  await expect(page.getByTestId("draft-text")).toHaveValue(olderDraft);
+  await expect(conflictHeading).toHaveCount(0);
 });
 
 test("sample users can hand off directly to their own files", async ({ page }) => {
@@ -208,7 +279,7 @@ test("real upload can create and persist a source-linked local project", async (
   await expect(page.getByRole("heading", { name: "Confirm what the assignment says." })).toBeVisible();
   await expect(page.getByTestId("confirm-title")).toHaveValue("Strategy Report");
   await expect(page.getByTestId("criterion-weight-0")).toHaveValue("40");
-  await expect(page.getByText("100% total")).toBeVisible();
+  await expect(page.getByText("Published total: 100%")).toBeVisible();
   await page.getByTestId("create-project").click();
 
   await expect(page.getByRole("heading", { name: "Strategy Report", exact: true })).toBeVisible();
@@ -307,10 +378,10 @@ test("a mixed file batch keeps readable sources only after explicit review", asy
     page.getByRole("heading", { name: "Strategy Report", exact: true }),
   ).toBeVisible();
   await expect.poll(() =>
-    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2") ?? ""),
+    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3") ?? ""),
   ).toContain("brief.txt");
   const storedProject = await page.evaluate(
-    () => window.localStorage.getItem("rubrictrail.project.v2") ?? "",
+    () => window.localStorage.getItem("rubrictrail.project.v3") ?? "",
   );
   expect(storedProject).toContain("brief.txt");
   expect(storedProject).not.toContain(longUnsupportedName);
@@ -360,9 +431,86 @@ test("pasted brief and rubric can create a private source-linked project", async
     page.getByRole("heading", { name: "Pasted Strategy Report", exact: true }),
   ).toBeVisible();
   await expect.poll(() =>
-    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2") ?? ""),
-  ).not.toContain(privateTail);
+    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3") ?? ""),
+  ).not.toBe("");
+  const storedProject = await page.evaluate(
+    () => window.localStorage.getItem("rubrictrail.project.v3") ?? "",
+  );
+  expect(storedProject).not.toContain(privateTail);
   await expectNoHorizontalOverflow(page);
+});
+
+test("partial published weights remain recorded without weighting the plan", async ({ page }, testInfo) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  await page.getByRole("button", { name: "Paste text" }).click();
+  await useNarrowMobileViewport(page, testInfo);
+  await page.getByTestId("pasted-assignment-brief").fill(
+    [
+      "Assignment title: Partial Weight Report",
+      "Deadline: 24 September 2026",
+      "Word count: 1800 words",
+      "Use APA 7 referencing.",
+    ].join("\n"),
+  );
+  await page.getByTestId("pasted-assignment-rubric").fill(
+    "Rubric\n- Analysis\n- Communication — 40%",
+  );
+  await page.getByRole("button", { name: "Review assignment details" }).click();
+
+  await expect(page.getByTestId("criterion-weight-0")).toHaveValue("");
+  await expect(page.getByTestId("criterion-weight-1")).toHaveValue("40");
+  await page
+    .getByRole("radio", {
+      name: /No — no complete percentage breakdown is published/,
+    })
+    .check();
+  await expect(page.getByText("Incomplete weights: 1 of 2 recorded")).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.getByTestId("create-project").click();
+
+  await expect(
+    page.getByRole("heading", { name: "Partial Weight Report", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = window.localStorage.getItem("rubrictrail.project.v3");
+        if (!raw) return null;
+        const state = JSON.parse(raw) as {
+          uploadedProject?: {
+            weightingStatus?: string;
+            criteria?: Array<{ weight?: number | null }>;
+          };
+        };
+        return {
+          weightingStatus: state.uploadedProject?.weightingStatus,
+          weights: state.uploadedProject?.criteria?.map((criterion) => criterion.weight),
+        };
+      }),
+    )
+    .toEqual({ weightingStatus: "incomplete", weights: [null, 40] });
+
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Partial Weight Report", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Review rubric" }).click();
+  await expect(page.getByText("Not recorded")).toHaveCount(1);
+  await expect(page.getByText("40%", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/Known official percentages are retained and missing values remain blank/),
+  ).toBeVisible();
+  await visibleWorkflowButton(page, "Plan").click();
+  await expect(
+    page.getByText(/Give every criterion the same planning baseline/),
+  ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  expect(browserErrors).toEqual([]);
 });
 
 test("a versioned project backup can leave and safely restore the browser", async ({ page }) => {
@@ -400,7 +548,14 @@ test("a versioned project backup can leave and safely restore the browser", asyn
   await expectNoHorizontalOverflow(page);
 });
 
-test("missing rubric can be repaired manually without fabricating weights", async ({ page }) => {
+test("missing rubric can be repaired without fabricating weights", async ({ page }, testInfo) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  await useNarrowMobileViewport(page, testInfo);
+
   await page.getByTestId("file-input").setInputFiles({
     name: "brief-without-rubric.txt",
     mimeType: "text/plain",
@@ -409,21 +564,59 @@ test("missing rubric can be repaired manually without fabricating weights", asyn
     ),
   });
 
-  await expect(page.getByText("0% total")).toBeVisible();
+  await expect(page.getByText("Weighting choice needed")).toBeVisible();
   await page.getByTestId("create-project").click();
   await expect(page.getByTestId("confirm-errors")).toContainText("Add at least one rubric criterion");
+  await expect(page.getByTestId("confirm-errors")).toContainText(
+    "Choose whether the official rubric provides a complete percentage breakdown",
+  );
+
+  await page
+    .getByRole("radio", {
+      name: /No — no complete percentage breakdown is published/,
+    })
+    .check();
+  await expect(page.getByText("No published weights recorded")).toBeVisible();
 
   await page.getByRole("button", { name: "Add missing criterion" }).click();
   await page.getByTestId("criterion-name-0").fill("Analysis");
-  await page.getByTestId("criterion-weight-0").fill("60");
   await page.getByRole("button", { name: "Add missing criterion" }).click();
   await page.getByTestId("criterion-name-1").fill("Communication");
-  await page.getByTestId("criterion-weight-1").fill("40");
+  await expect(page.locator('[data-testid^="criterion-weight-"]')).toHaveCount(2);
+  await expect(page.getByTestId("criterion-weight-0")).toHaveValue("");
+  await expect(page.getByTestId("criterion-weight-1")).toHaveValue("");
+  await expectNoHorizontalOverflow(page);
   await page.getByTestId("create-project").click();
 
   await expect(page.getByRole("heading", { name: "Service Report", exact: true })).toBeVisible();
-  await expect(page.getByText("2 confirmed criteria")).toBeVisible();
+  await expect(page.getByText(/2 confirmed criteria .* no published percentages recorded/)).toBeVisible();
+  await expect.poll(() =>
+    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3") ?? ""),
+  ).toContain('"weight":null');
+  const saved = await page.evaluate(
+    () => window.localStorage.getItem("rubrictrail.project.v3") ?? "",
+  );
+  expect(saved).toContain('"weight":null');
+  expect(saved).toContain('"weightingStatus":"none"');
+  expect(saved).not.toContain('"weight":50');
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Service Report", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Review rubric" }).click();
+  await expect(page.getByText("Not recorded")).toHaveCount(2);
+  await expect(page.getByText(/No grading percentages were recorded/)).toBeVisible();
   await expectNoHorizontalOverflow(page);
+
+  await visibleWorkflowButton(page, "Plan").click();
+  await expect(page.getByText(/Give every criterion the same planning baseline/)).toBeVisible();
+  await visibleWorkflowButton(page, "Check").click();
+  await expect(page.getByRole("option", { name: "Analysis" })).toBeAttached();
+  await expect(page.getByRole("option", { name: "Communication" })).toBeAttached();
+  await visibleWorkflowButton(page, "Progress").click();
+  await expect(page.getByText("No published weight recorded")).toHaveCount(2);
+  await expect(page.getByText(/\d+% of rubric/)).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+  expect(browserErrors).toEqual([]);
 });
 
 test("unsupported files and empty sample drafts have actionable recovery states", async ({ page }, testInfo) => {

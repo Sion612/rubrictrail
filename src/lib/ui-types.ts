@@ -10,6 +10,8 @@ export type WorkspaceView = "overview" | "rubric" | "plan" | "draft" | "progress
 export type ProjectKind = "none" | "sample" | "uploaded";
 export type WorkflowState = "complete" | "in_progress" | "needs_review" | "not_started";
 export type AssignmentIntakeMode = "files" | "paste";
+export type RubricWeightingMode = "complete" | "not_complete";
+export type RubricWeightingStatus = "complete" | "incomplete" | "none";
 
 export interface AssignmentFileIntakeError {
   code: AssignmentFileErrorCode | "NO_READABLE_FILES" | "UNKNOWN";
@@ -28,7 +30,8 @@ export interface PastedTextIntakeError {
 export interface UploadedProjectCriterion {
   id: string;
   name: string;
-  weight: number;
+  /** A percentage explicitly confirmed from the rubric; never an inferred equal share. */
+  weight: number | null;
   evidence: UploadedSourceEvidence | null;
 }
 
@@ -41,6 +44,8 @@ export interface UploadedProject {
   citationStyle: string;
   fileNames: string[];
   extractedWordCount: number;
+  /** Whether the retained official percentages form a complete 100% breakdown. */
+  weightingStatus: RubricWeightingStatus;
   criteria: UploadedProjectCriterion[];
   createdAt: string;
 }
@@ -55,7 +60,9 @@ export interface UploadedCriterionReview {
 }
 
 export interface PersistedProjectState {
-  version: 2;
+  version: 3;
+  /** Fingerprint of the v2 bytes this v3 state superseded, when migrated locally. */
+  supersededV2Fingerprint: string | null;
   projectKind: ProjectKind;
   uploadedProject: UploadedProject | null;
   view: WorkspaceView;
@@ -85,6 +92,7 @@ export interface UploadedProjectDraft {
   dueDate: string;
   wordCount: string;
   citationStyle: string;
+  weightingMode: RubricWeightingMode | null;
   criteria: Array<{
     name: string;
     weight: string;

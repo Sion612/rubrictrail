@@ -16,18 +16,30 @@
    retained-text limits reduce resource risk, but DOCX decompression and PDF page
    extraction can consume CPU and peak memory before the retained-text limit is
    applied. Do not open deliberately malicious documents.
-6. **Simple rubric parser.** Explicit lines such as `Analysis | 30%` work best.
+6. **Weight availability needs human confirmation.** A parser `null` means that
+   RubricTrail did not confidently extract a weight; it does not prove that the
+   school published no weights. Users must check the authoritative source and
+   explicitly choose whether it contains a complete percentage breakdown. A
+   published rubric must provide a positive weight for every criterion and total
+   100% to weight the plan. An incomplete rubric retains known percentages and
+   stores unknown values as `null`, but none of those values weights the plan;
+   incomplete and unweighted rubrics use the same neutral planning starting
+   point. Missing percentages are never guessed or automatically completed.
+7. **Simple rubric parser.** Explicit lines such as `Analysis | 30%` work best.
    Complex tables may require manual repair in the confirmation screen.
-7. **Manual portability only.** There is no account, automatic sync,
+8. **Manual portability only.** There is no account, automatic sync,
    collaboration or multi-project dashboard. Simultaneous tabs are detected and
    autosave is paused, but edits are not merged; download either version before
    choosing which one to keep. A versioned JSON backup can move one project
-   between browsers, but it is not encrypted and must be kept private.
-8. **English-first.** Date parsing intentionally leaves ambiguous numeric dates
+   between browsers, but it is not encrypted and must be kept private. The v3/v2
+   lineage fingerprint, value comparisons and readback checks are best effort:
+   `localStorage` has no transaction or atomic compare-and-swap across both keys,
+   so a narrow race remains possible between separate operations.
+9. **English-first.** Date parsing intentionally leaves ambiguous numeric dates
    blank; language, grading and citation conventions are not universal yet.
-9. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal
+10. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal
    demo, not semantic evaluation or a predicted grade.
-10. **No public Live service.** The optional server adapter lacks the full rate,
+11. **No public Live service.** The optional server adapter lacks the full rate,
    budget, abuse and consent controls required for a public deployment.
 
 These boundaries are shown in the product and should not be hidden by downstream

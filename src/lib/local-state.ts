@@ -15,7 +15,8 @@ import type {
   UploadedProjectCriterion,
 } from "@/lib/ui-types";
 
-export const STORAGE_KEY = "rubrictrail.project.v2";
+export const STORAGE_KEY = "rubrictrail.project.v3";
+export const PREVIOUS_STORAGE_KEY = "rubrictrail.project.v2";
 const LEGACY_STORAGE_KEY = "proofline.project.v1";
 
 export const MAX_STORED_CHARACTERS = 2_500_000;
@@ -25,6 +26,7 @@ const MAX_CRITERIA = 50;
 const MAX_FILES = 25;
 const MAX_TASK_IDS = 200;
 const MAX_READINESS_IDS = 32;
+const V2_FINGERPRINT_PATTERN = /^v1:\d+:[0-9a-f]{8}:[0-9a-f]{8}$/;
 
 const VIEWS = ["overview", "rubric", "plan", "draft", "progress"] as const;
 const viewSchema = z.enum(VIEWS);
@@ -62,7 +64,7 @@ const uploadedProjectCriterionSchema: z.ZodType<UploadedProjectCriterion> = z
   .object({
     id: idSchema,
     name: nonBlankString(300),
-    weight: z.number().finite().positive().max(100),
+    weight: z.number().finite().positive().max(100).nullable(),
     evidence: uploadedSourceEvidenceSchema.nullable(),
   })
   .strict();
@@ -77,6 +79,7 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
     citationStyle: nonBlankString(160),
     fileNames: z.array(nonBlankString(255)).min(1).max(MAX_FILES),
     extractedWordCount: z.number().int().nonnegative().max(5_000_000),
+    weightingStatus: z.enum(["complete", "incomplete", "none"]),
     criteria: z.array(uploadedProjectCriterionSchema).min(1).max(MAX_CRITERIA),
     createdAt: z.string().datetime({ offset: true }),
   })
@@ -94,15 +97,27 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
       criterionIds.add(criterion.id);
     });
 
-    const totalWeight = project.criteria.reduce(
+    const numericWeights = project.criteria.filter(
+      (criterion): criterion is UploadedProjectCriterion & { weight: number } =>
+        criterion.weight !== null,
+    );
+    const totalWeight = numericWeights.reduce(
       (total, criterion) => total + criterion.weight,
       0,
     );
-    if (Math.abs(totalWeight - 100) > 0.01) {
+    const hasCompleteWeights =
+      numericWeights.length === project.criteria.length &&
+      Math.abs(totalWeight - 100) <= 0.01;
+    const weightingStatusMatches =
+      (project.weightingStatus === "complete" && hasCompleteWeights) ||
+      (project.weightingStatus === "none" && numericWeights.length === 0) ||
+      (project.weightingStatus === "incomplete" && numericWeights.length > 0);
+    if (!weightingStatusMatches) {
       context.addIssue({
         code: "custom",
-        message: "Uploaded criterion weights must total 100",
-        path: ["criteria"],
+        message:
+          "Uploaded rubric weights do not match the confirmed weighting status",
+        path: ["weightingStatus"],
       });
     }
 
@@ -135,7 +150,12 @@ const uploadedCriterionReviewSchema: z.ZodType<UploadedCriterionReview> = z
 
 const persistedProjectStateSchema: z.ZodType<PersistedProjectState> = z
   .object({
-    version: z.literal(2),
+    version: z.literal(3),
+    supersededV2Fingerprint: z
+      .string()
+      .max(40)
+      .regex(V2_FINGERPRINT_PATTERN)
+      .nullable(),
     projectKind: z.enum(["none", "sample", "uploaded"]),
     uploadedProject: uploadedProjectSchema.nullable(),
     view: viewSchema,
@@ -170,13 +190,15 @@ const persistedProjectStateSchema: z.ZodType<PersistedProjectState> = z
     }
   });
 
-export type ProjectStateReadSource = "v2" | "legacy" | "default";
+export type ProjectStateReadSource = "v3" | "v2" | "legacy" | "default";
 
 export interface ProjectStateReadResult {
   state: PersistedProjectState;
   source: ProjectStateReadSource;
   recovered: boolean;
   storedValue: string | null;
+  previousStoredValue: string | null;
+  crossVersionConflict: boolean;
   storageAvailable: boolean;
 }
 
@@ -219,7 +241,8 @@ export type ProjectStateSerializationResult =
 
 export function createDefaultProjectState(): PersistedProjectState {
   return {
-    version: 2,
+    version: 3,
+    supersededV2Fingerprint: null,
     projectKind: "none",
     uploadedProject: null,
     view: "overview",
@@ -386,11 +409,48 @@ function hasBoundedProjectCollections(value: unknown): boolean {
   );
 }
 
+function fingerprintStoredValue(raw: string): string {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < raw.length; index += 1) {
+    const codeUnit = raw.charCodeAt(index);
+    first = Math.imul(first ^ codeUnit, 0x01000193);
+    second = Math.imul(second ^ codeUnit, 0x85ebca6b);
+    second ^= second >>> 13;
+  }
+  const hex = (value: number) => (value >>> 0).toString(16).padStart(8, "0");
+  return `v1:${raw.length}:${hex(first)}:${hex(second)}`;
+}
+
+function migrateV2ProjectStateValue(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const state = { ...value };
+  delete state.supersededV2Fingerprint;
+  const uploadedProject = state.uploadedProject;
+  delete state.uploadedProject;
+  let migratedUploadedProject = uploadedProject;
+  if (isRecord(uploadedProject)) {
+    const project = { ...uploadedProject };
+    delete project.weightingStatus;
+    migratedUploadedProject = {
+      ...project,
+      weightingStatus: "complete",
+    };
+  }
+  return {
+    ...state,
+    version: 3,
+    supersededV2Fingerprint: null,
+    uploadedProject: migratedUploadedProject,
+  };
+}
+
 export function parsePersistedProjectStateValue(
   value: unknown,
 ): ProjectStateParseResult {
   if (!isRecord(value)) return { ok: false, reason: "invalid-state" };
-  if (value.version !== 2) {
+  if (value.version !== 2 && value.version !== 3) {
     return {
       ok: false,
       reason: typeof value.version === "number" ? "unsupported-version" : "invalid-state",
@@ -400,9 +460,41 @@ export function parsePersistedProjectStateValue(
     return { ok: false, reason: "invalid-state" };
   }
 
-  const parsed = persistedProjectStateSchema.safeParse(value);
+  const parsed = persistedProjectStateSchema.safeParse(
+    value.version === 2 ? migrateV2ProjectStateValue(value) : value,
+  );
   if (!parsed.success) return { ok: false, reason: "invalid-state" };
-  return { ok: true, ...normalizeValidatedState(parsed.data) };
+
+  const normalized = normalizeValidatedState(parsed.data);
+  return {
+    ok: true,
+    state: normalized.state,
+    recovered: value.version === 2 || normalized.recovered,
+  };
+}
+
+export function parsePreviousProjectStateValue(
+  raw: string,
+): ProjectStateParseResult {
+  if (raw.length > MAX_STORED_CHARACTERS) {
+    return { ok: false, reason: "invalid-state" };
+  }
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!isRecord(value)) return { ok: false, reason: "invalid-state" };
+    if (value.version !== 2) {
+      return {
+        ok: false,
+        reason:
+          typeof value.version === "number"
+            ? "unsupported-version"
+            : "invalid-state",
+      };
+    }
+    return parsePersistedProjectStateValue(value);
+  } catch {
+    return { ok: false, reason: "invalid-state" };
+  }
 }
 
 export function serializePersistedProjectStateValue(
@@ -417,10 +509,15 @@ export function serializePersistedProjectStateValue(
   return { ...parsed, serialized };
 }
 
-function parseV2(raw: string): ReturnType<typeof normalizeValidatedState> | null {
+function parseStoredVersion(
+  raw: string,
+  expectedVersion: 2 | 3,
+): ReturnType<typeof normalizeValidatedState> | null {
   if (raw.length > MAX_STORED_CHARACTERS) return null;
   try {
-    const parsed = parsePersistedProjectStateValue(JSON.parse(raw));
+    const value = JSON.parse(raw) as unknown;
+    if (!isRecord(value) || value.version !== expectedVersion) return null;
+    const parsed = parsePersistedProjectStateValue(value);
     return parsed.ok
       ? { state: parsed.state, recovered: parsed.recovered }
       : null;
@@ -500,34 +597,89 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
       source: "default",
       recovered: false,
       storedValue: null,
+      previousStoredValue: null,
+      crossVersionConflict: false,
       storageAvailable: false,
     };
   }
 
-  let v2Raw: string | null;
+  let v3Raw: string | null;
   try {
-    v2Raw = window.localStorage.getItem(STORAGE_KEY);
+    v3Raw = window.localStorage.getItem(STORAGE_KEY);
   } catch {
     return {
       state: fallback,
       source: "default",
       recovered: true,
       storedValue: null,
+      previousStoredValue: null,
+      crossVersionConflict: false,
       storageAvailable: false,
     };
   }
 
-  if (v2Raw !== null) {
-    const parsed = parseV2(v2Raw);
-    if (parsed) {
+  let v2Raw: string | null;
+  try {
+    v2Raw = window.localStorage.getItem(PREVIOUS_STORAGE_KEY);
+  } catch {
+    const parsed = v3Raw === null ? null : parseStoredVersion(v3Raw, 3);
+    return {
+      state: parsed?.state ?? fallback,
+      source: parsed ? "v3" : "default",
+      recovered: parsed?.recovered ?? true,
+      storedValue: v3Raw,
+      previousStoredValue: null,
+      crossVersionConflict: false,
+      storageAvailable: false,
+    };
+  }
+
+  const parsedV3 = v3Raw === null ? null : parseStoredVersion(v3Raw, 3);
+  const parsedV2 = v2Raw === null ? null : parseStoredVersion(v2Raw, 2);
+  const crossVersionConflict =
+    v3Raw !== null &&
+    v2Raw !== null &&
+    !(
+      parsedV3?.state.supersededV2Fingerprint === fingerprintStoredValue(v2Raw) ||
+      (parsedV3 !== null &&
+        parsedV2 !== null &&
+        canonicalStatesEquivalent(parsedV3.state, parsedV2.state))
+    );
+
+  if (v3Raw !== null) {
+    if (parsedV3) {
       return {
-        state: parsed.state,
-        source: "v2",
-        recovered: parsed.recovered,
-        storedValue: v2Raw,
+        state: parsedV3.state,
+        source: "v3",
+        recovered: parsedV3.recovered,
+        storedValue: v3Raw,
+        previousStoredValue: v2Raw,
+        crossVersionConflict,
         storageAvailable: true,
       };
     }
+
+    return {
+      state: fallback,
+      source: "default",
+      recovered: true,
+      storedValue: v3Raw,
+      previousStoredValue: v2Raw,
+      crossVersionConflict,
+      storageAvailable: true,
+    };
+  }
+
+  if (parsedV2) {
+    return {
+      state: parsedV2.state,
+      source: "v2",
+      recovered: true,
+      storedValue: v3Raw,
+      previousStoredValue: v2Raw,
+      crossVersionConflict: false,
+      storageAvailable: true,
+    };
   }
 
   let legacyRaw: string | null;
@@ -538,7 +690,9 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
       state: fallback,
       source: "default",
       recovered: true,
-      storedValue: v2Raw,
+      storedValue: v3Raw,
+      previousStoredValue: v2Raw,
+      crossVersionConflict: false,
       storageAvailable: false,
     };
   }
@@ -550,7 +704,9 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
         state: migrated,
         source: "legacy",
         recovered: true,
-        storedValue: v2Raw,
+        storedValue: v3Raw,
+        previousStoredValue: v2Raw,
+        crossVersionConflict: false,
         storageAvailable: true,
       };
     }
@@ -560,7 +716,9 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
     state: fallback,
     source: "default",
     recovered: v2Raw !== null || legacyRaw !== null,
-    storedValue: v2Raw,
+    storedValue: v3Raw,
+    previousStoredValue: v2Raw,
+    crossVersionConflict: false,
     storageAvailable: true,
   };
 }
@@ -572,41 +730,163 @@ export function readProjectState(): PersistedProjectState {
 export function writeProjectState(
   state: PersistedProjectState,
   expectedStoredValue?: string | null,
+  expectedPreviousStoredValue?: string | null,
 ): ProjectStateWriteResult {
   if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
 
-  const parsed = serializePersistedProjectStateValue(state);
-  if (!parsed.ok) return { ok: false, reason: "invalid-state" };
-
+  let currentStoredValue: string | null;
+  let currentPreviousStoredValue: string | null;
   try {
+    currentStoredValue = window.localStorage.getItem(STORAGE_KEY);
+    currentPreviousStoredValue = window.localStorage.getItem(
+      PREVIOUS_STORAGE_KEY,
+    );
     if (
       expectedStoredValue !== undefined &&
-      window.localStorage.getItem(STORAGE_KEY) !== expectedStoredValue
+      currentStoredValue !== expectedStoredValue
     ) {
       return { ok: false, reason: "conflict" };
     }
-
-    window.localStorage.setItem(STORAGE_KEY, parsed.serialized);
-    return { ok: true, serialized: parsed.serialized };
+    if (
+      expectedPreviousStoredValue !== undefined &&
+      currentPreviousStoredValue !== expectedPreviousStoredValue
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+    if (currentPreviousStoredValue !== null && expectedPreviousStoredValue === undefined) {
+      return { ok: false, reason: "conflict" };
+    }
   } catch {
     return { ok: false, reason: "storage-error" };
   }
+
+  const parsed = serializePersistedProjectStateValue({
+    ...state,
+    supersededV2Fingerprint:
+      currentPreviousStoredValue === null
+        ? null
+        : fingerprintStoredValue(currentPreviousStoredValue),
+  });
+  if (!parsed.ok) return { ok: false, reason: "invalid-state" };
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, parsed.serialized);
+  } catch {
+    return { ok: false, reason: "storage-error" };
+  }
+
+  try {
+    const verifiedStoredValue = window.localStorage.getItem(STORAGE_KEY);
+    const verifiedPreviousStoredValue = window.localStorage.getItem(
+      PREVIOUS_STORAGE_KEY,
+    );
+    if (
+      verifiedStoredValue !== parsed.serialized ||
+      verifiedPreviousStoredValue !== currentPreviousStoredValue
+    ) {
+      if (verifiedStoredValue === parsed.serialized) {
+        try {
+          // localStorage has no atomic compare-and-swap. Re-check immediately and
+          // restore only while our exact bytes are still present; a later read also
+          // detects any surviving v2 divergence through the embedded fingerprint.
+          if (window.localStorage.getItem(STORAGE_KEY) === parsed.serialized) {
+            if (currentStoredValue === null) {
+              window.localStorage.removeItem(STORAGE_KEY);
+            } else {
+              window.localStorage.setItem(STORAGE_KEY, currentStoredValue);
+            }
+          }
+        } catch {
+          // Rollback is best effort. The lineage mismatch keeps both versions visible.
+        }
+      }
+      return { ok: false, reason: "conflict" };
+    }
+  } catch {
+    return { ok: false, reason: "storage-error" };
+  }
+
+  // Keep the v2 bytes as the recoverable cross-version candidate. The v3 record
+  // fingerprints the exact revision it intentionally superseded, so an older tab
+  // can write a new v2 revision without a check-then-delete race losing that work.
+  try {
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    // The v3 write has already succeeded. Legacy-key cleanup is best effort.
+  }
+  return { ok: true, serialized: parsed.serialized };
+}
+
+function canonicalStatesEquivalent(
+  current: PersistedProjectState,
+  previous: PersistedProjectState,
+): boolean {
+  return JSON.stringify({ ...current, supersededV2Fingerprint: null }) ===
+    JSON.stringify({ ...previous, supersededV2Fingerprint: null });
 }
 
 export function clearProjectState(
   expectedStoredValue?: string | null,
+  expectedPreviousStoredValue?: string | null,
 ): ProjectStateClearResult {
   if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
+  let currentStoredValue: string | null;
+  let currentPreviousStoredValue: string | null;
   try {
+    currentStoredValue = window.localStorage.getItem(STORAGE_KEY);
+    currentPreviousStoredValue = window.localStorage.getItem(
+      PREVIOUS_STORAGE_KEY,
+    );
     if (
       expectedStoredValue !== undefined &&
-      window.localStorage.getItem(STORAGE_KEY) !== expectedStoredValue
+      currentStoredValue !== expectedStoredValue
     ) {
+      return { ok: false, reason: "conflict" };
+    }
+    if (
+      expectedPreviousStoredValue !== undefined &&
+      currentPreviousStoredValue !== expectedPreviousStoredValue
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+    if (currentPreviousStoredValue !== null && expectedPreviousStoredValue === undefined) {
       return { ok: false, reason: "conflict" };
     }
 
     window.localStorage.removeItem(STORAGE_KEY);
+    const verifiedStoredValue = window.localStorage.getItem(STORAGE_KEY);
+    const verifiedPreviousStoredValue = window.localStorage.getItem(
+      PREVIOUS_STORAGE_KEY,
+    );
+    if (
+      verifiedStoredValue !== null ||
+      verifiedPreviousStoredValue !== currentPreviousStoredValue
+    ) {
+      if (verifiedStoredValue === null && currentStoredValue !== null) {
+        try {
+          // Best-effort rollback after detecting a concurrent write. localStorage
+          // cannot make the following restore an atomic compare-and-set.
+          if (window.localStorage.getItem(STORAGE_KEY) === null) {
+            window.localStorage.setItem(STORAGE_KEY, currentStoredValue);
+          }
+        } catch {
+          // Preserve the concurrently written bytes and report the conflict.
+        }
+      }
+      return { ok: false, reason: "conflict" };
+    }
+
+    // A write can still race between this verification and removeItem because
+    // localStorage exposes no atomic compare-and-delete. The second verification
+    // below prevents a later write from being reported as a successful clear.
+    window.localStorage.removeItem(PREVIOUS_STORAGE_KEY);
     window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    if (
+      window.localStorage.getItem(STORAGE_KEY) !== null ||
+      window.localStorage.getItem(PREVIOUS_STORAGE_KEY) !== null
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
     return { ok: true };
   } catch {
     return { ok: false, reason: "storage-error" };

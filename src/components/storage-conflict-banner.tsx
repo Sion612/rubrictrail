@@ -39,7 +39,7 @@ export function StorageConflictBanner({
         <p className="storage-conflict-banner__warning" id={warningId}>
           {isIntake
             ? "File or pasted-text intake is not part of a saved project yet. Finish creating it below, or discard the intake and load the saved version."
-            : "Keep this tab replaces the newer saved version in this browser. Download this tab first if you may need these changes."}
+            : "Keep this tab makes its contents the active saved project. Download this tab first if you may need either version."}
         </p>
       </div>
       <div className="storage-conflict-banner__actions">

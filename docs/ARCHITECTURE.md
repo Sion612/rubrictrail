@@ -36,21 +36,27 @@ flowchart LR
 | --- | --- | --- |
 | Product shell | Project type, navigation, real step states, notices | `src/components/rubrictrail-app.tsx`, `workspace-shell.tsx` |
 | Source intake | Browser-local TXT, DOCX and text-PDF parsing plus bounded pasted plain text | `src/lib/files/parse-assignment-files.ts`, `src/lib/pasted-text-intake.ts` |
-| Confirmation | Editable fields, criteria and 100% weight gate | `src/components/upload-summary-view.tsx` |
+| Confirmation | Editable criteria, an explicit complete/not-complete choice and a 100% gate only for complete weighting | `src/components/upload-summary-view.tsx` |
 | Uploaded project | Compact persisted model and generic task templates | `src/lib/uploaded-project.ts` |
 | Planning | Deterministic dependency and capacity scheduling | `src/lib/plan.ts` |
 | Uploaded checks | Human evidence-trail checklist, no automatic score | `uploaded-project-views.tsx` |
 | Sample contract | Strict source, evidence, rubric and feedback schemas | `src/lib/domain.ts`, `src/lib/sample-data.ts` |
-| Persistence | v2 localStorage, v1 migration, strict validation and conditional multi-tab writes | `src/lib/local-state.ts` |
-| Data portability | Versioned UTF-8 JSON export/import with atomic restore | `src/lib/project-backup.ts` |
+| Persistence | v3 localStorage, validated v2 and legacy migration, retained-v2 lineage checks and post-write verification | `src/lib/local-state.ts` |
+| Data portability | Versioned UTF-8 JSON export/import with conflict-aware restore | `src/lib/project-backup.ts` |
 | Optional Live boundary | Authenticated, bounded, disabled-by-default routes | `src/lib/ai/*`, `src/app/api/live/*` |
 
 ## Trust boundary for user sources
 
 Parsing and extraction do not turn an arbitrary upload or paste into a trusted analysis.
 The parser reports only conservative fields and explicit rubric lines. The user
-must confirm or edit every planning input. Rubric weights must total 100% before
-a project can be created.
+must confirm or edit every planning input, including whether the authoritative
+rubric provides a complete percentage breakdown. A parser `null` means that no
+weight was confidently extracted; it does not prove that the institution did
+not publish one. The persisted `weightingStatus` makes the user's decision
+explicit: `complete` requires a positive numeric weight for every criterion and
+a 100% total; `incomplete` retains one or more official numbers while allowing
+other values to remain `null`; and `none` requires every value to be `null`.
+Missing values are never completed or equalized automatically.
 
 Real file selections and pasted text intentionally use different failure
 contracts. A real selection is rejected before reading when it exceeds 10 files
@@ -66,7 +72,8 @@ The persisted uploaded project includes:
 
 - confirmed title, course label, deadline, word count and citation style;
 - source-label or filename list and aggregate extracted word count;
-- criterion names, weights and short retained source excerpts;
+- criterion names, `weightingStatus`, per-criterion published percentages or
+  `null`, and short retained source excerpts;
 - task completion, self-check text and checklist state.
 
 It excludes original files and full uploaded or pasted source text. Pasted
@@ -88,12 +95,19 @@ limits, strict UTF-8, JSON shape, both versions and the same deep project schema
 used by localStorage. Collection counts are shallow-checked before deep Zod
 validation to bound work on untrusted files.
 
-Restore is atomic from the user's point of view: RubricTrail validates and
-previews the backup, obtains replacement confirmation, conditionally writes it
-against the exact localStorage value observed by this tab, then changes React
-state. A failed read, validation, storage write or other-tab conflict leaves the
-current project unchanged. Backups are portable local files, not encrypted
-archives or automatic synchronization.
+Current exports contain state v3. Valid state-v2 browser data and backup payloads
+are migrated through the same validator to state v3; because v2 allowed only a
+complete numeric 100% rubric, migrated custom projects receive
+`weightingStatus: "complete"`.
+The original `proofline.project.v1` sample-state migration is also retained.
+Unsupported newer state versions are rejected explicitly rather than coerced.
+
+Restore validates and previews the backup, obtains replacement confirmation,
+then conditionally writes it against the values observed by this tab before
+changing React state. Detected read, validation, write or other-tab failures do
+not switch the open project. This is conflict-aware rather than transactional;
+the same narrow `localStorage` race described below still applies. Backups are
+portable local files, not encrypted archives or automatic synchronization.
 
 Deterministic sample Draft Check output is derived rather than authoritative, so
 it is omitted on export and stripped from imported files. The user's draft text
@@ -102,16 +116,32 @@ self-check text is user-authored state and remains portable.
 
 ## Multi-tab data integrity
 
-Each tab retains the exact raw localStorage value it observed at hydration and
-after every successful save. Autosave, page-close flushing, backup restore and
-reset compare the current value with that baseline before changing storage. A
-mismatch fails closed and a `storage` event pauses pending writes immediately.
+Each tab retains the exact raw `localStorage` values it observed at hydration and
+after a successful save. State v3 uses `rubrictrail.project.v3`; the v2 value at
+`rubrictrail.project.v2` is deliberately retained as a recoverable
+cross-version candidate. A v3 save embeds a non-cryptographic fingerprint of the
+exact v2 bytes it superseded. If an older tab later writes different v2 bytes,
+and the resulting project is not canonically equivalent, the lineage mismatch
+becomes an explicit conflict rather than being guessed away.
+
+Autosave, page-close flushing, backup restore and reset compare both current
+values with their observed baselines. Normal writes then read both keys back;
+detected divergence fails the operation, with rollback attempted only when the
+writer's exact v3 bytes are still present. Storage events from either key also
+pause pending writes.
+
+These checks are best effort, not a true compare-and-swap: Web Storage offers no
+transaction spanning two keys and no atomic conditional write or delete. A
+concurrent write can land in the narrow interval between separate reads and
+writes, and rollback is likewise non-atomic. Fingerprint checks and later reads
+make surviving cross-version divergence visible, but cannot prove that every
+possible overwrite race was prevented.
 
 The persistent conflict banner offers three explicit paths: download this tab,
-load the latest saved version, or deliberately replace it with this tab after a
+load the other saved version, or deliberately make this tab active after a
 warning. RubricTrail does not claim automatic synchronization or merge concurrent
-edits. The guard prevents ordinary stale-tab overwrites; the JSON backup remains
-the recovery path when both versions matter.
+edits. The guard is intended to prevent ordinary stale-tab overwrites; the JSON
+backup remains the recovery path when both versions matter.
 
 ## Plan generation
 
@@ -123,6 +153,13 @@ the recovery path when both versions matter.
 4. draft with source markers;
 5. audit each criterion;
 6. complete submission QA.
+
+Only `weightingStatus: "complete"` lets published percentages influence the
+starting time and priority of criterion tasks. Both `incomplete` and `none` use
+the same neutral time baseline for every criterion, even when an incomplete
+rubric retains some known percentages. That equal planning share exists only
+inside the generated schedule: it is never persisted as a synthetic rubric
+weight, displayed as a percentage or described as equal marks.
 
 The plan engine schedules that graph from the real current date, deadline,
 weekly capacity and target band. UI checkboxes and the state update handler both

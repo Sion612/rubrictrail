@@ -497,14 +497,14 @@ export function WelcomeScreen({
                 id="pasted-assignment-rubric"
                 value={pastedRubric}
                 onChange={(event) => onPastedRubricChange(event.target.value)}
-                placeholder="Paste criterion names and percentages if you have them. You can add them later."
+                placeholder="Paste criterion names and any published percentages. You can add criteria later."
                 maxLength={PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS}
                 aria-invalid={pastedTextError?.target === "combined" || undefined}
                 aria-describedby={`pasted-rubric-hint${rubricErrorId ? ` ${rubricErrorId}` : ""}`}
                 disabled={isWelcomeBusy}
                 data-testid="pasted-assignment-rubric"
               />
-              <small id="pasted-rubric-hint">Paste the criteria and percentages if available. You can add them later.</small>
+              <small id="pasted-rubric-hint">Paste criterion names and any percentages explicitly published in the rubric. RubricTrail will not estimate missing weights.</small>
 
               <div className="paste-intake-meta">
                 <span className={combinedPastedCharacters > PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS ? "is-over-limit" : ""}>

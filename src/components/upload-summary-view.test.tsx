@@ -5,12 +5,34 @@ import { buildUploadedAssignmentSummary } from "@/lib/files/parse-assignment-fil
 import { draftFromUpload } from "@/lib/uploaded-project";
 import type { UploadFlowResult } from "@/lib/ui-types";
 
+function uploadWithRubric(rubricLines: string[]): UploadFlowResult {
+  const text = [
+    "Assignment title: Strategy Report",
+    "Deadline: 24 September 2026",
+    "Word count: 2500 words",
+    "Use APA 7 referencing.",
+    "Rubric",
+    ...rubricLines,
+  ].join("\n");
+  return {
+    intakeMethod: "files",
+    fileNames: ["brief.txt"],
+    skippedFiles: [],
+    totalWords: 24,
+    summary: buildUploadedAssignmentSummary(text),
+  };
+}
+
+function completeUpload(): UploadFlowResult {
+  return uploadWithRubric(["Analysis | 60%", "Communication | 40%"]);
+}
+
 beforeEach(() => {
   Object.defineProperty(window, "scrollTo", {
     configurable: true,
     value: vi.fn(),
   });
-  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
     configurable: true,
     value: vi.fn(),
   });
@@ -21,26 +43,104 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function completeUpload(): UploadFlowResult {
-  const text = [
-    "Assignment title: Strategy Report",
-    "Deadline: 24 September 2026",
-    "Word count: 2500 words",
-    "Use APA 7 referencing.",
-    "Rubric",
-    "Analysis | 60%",
-    "Communication | 40%",
-  ].join("\n");
-  return {
-    intakeMethod: "files",
-    fileNames: ["brief.txt"],
-    skippedFiles: [],
-    totalWords: 18,
-    summary: buildUploadedAssignmentSummary(text),
-  };
-}
+describe("UploadSummaryView rubric weighting", () => {
+  it("defaults to published only for a complete official 100% breakdown", () => {
+    render(
+      <UploadSummaryView
+        result={uploadWithRubric(["Analysis | 60%", "Communication | 40%"])}
+        onBack={vi.fn()}
+        onCreateProject={vi.fn()}
+      />,
+    );
 
-describe("UploadSummaryView provenance", () => {
+    expect(
+      screen.getByRole("radio", { name: /Yes — use the published percentages/ }),
+    ).toBeChecked();
+    expect(screen.getByText("Published total: 100%")).toBeInTheDocument();
+    expect(screen.getByTestId("criterion-weight-0")).toHaveValue(60);
+  });
+
+  it("requires a choice, then retains a known partial 40% without inventing the missing value", () => {
+    const onCreateProject = vi.fn();
+    render(
+      <UploadSummaryView
+        result={uploadWithRubric(["- Analysis", "- Communication — 40%"])}
+        onBack={vi.fn()}
+        onCreateProject={onCreateProject}
+      />,
+    );
+
+    const published = screen.getByRole("radio", {
+      name: /Yes — use the published percentages/,
+    });
+    const notPublished = screen.getByRole("radio", {
+      name: /No — no complete percentage breakdown is published/,
+    });
+    expect(published).not.toBeChecked();
+    expect(notPublished).not.toBeChecked();
+
+    fireEvent.click(screen.getByTestId("create-project"));
+    const errorLink = screen.getByRole("link", {
+      name: "Choose whether the official rubric provides a complete percentage breakdown.",
+    });
+    fireEvent.click(errorLink);
+    expect(published).toHaveFocus();
+
+    fireEvent.click(notPublished);
+    expect(screen.getByTestId("criterion-weight-0")).toHaveValue(null);
+    expect(screen.getByTestId("criterion-weight-1")).toHaveValue(40);
+    expect(screen.getByTestId("criterion-weight-1")).not.toBeDisabled();
+    expect(
+      screen.getByText("Incomplete weights: 1 of 2 recorded"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("create-project"));
+
+    expect(onCreateProject).toHaveBeenCalledTimes(1);
+    expect(onCreateProject.mock.calls[0][0].weightingStatus).toBe("incomplete");
+    expect(
+      onCreateProject.mock.calls[0][0].criteria.map(
+        (criterion: { weight: number | null }) => criterion.weight,
+      ),
+    ).toEqual([null, 40]);
+  });
+
+  it("keeps criterion provenance when only a published weight is edited", () => {
+    render(
+      <UploadSummaryView
+        result={uploadWithRubric(["Analysis | 60%", "Communication | 40%"])}
+        onBack={vi.fn()}
+        onCreateProject={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText("Source-linked criterion")).toHaveLength(2);
+    fireEvent.change(screen.getByTestId("criterion-weight-0"), {
+      target: { value: "55" },
+    });
+    expect(screen.getAllByText("Source-linked criterion")).toHaveLength(2);
+    expect(screen.getByText("Entered manually — verify")).toBeInTheDocument();
+  });
+
+  it("keeps the weight source label aligned after an earlier criterion is removed", () => {
+    render(
+      <UploadSummaryView
+        result={uploadWithRubric(["Analysis | 60%", "Communication | 40%"])}
+        onBack={vi.fn()}
+        onCreateProject={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove criterion 1" }));
+
+    const remainingWeight = screen.getByTestId("criterion-weight-0");
+    expect(remainingWeight).toHaveValue(40);
+    const weightField = remainingWeight.closest(".weight-field");
+    expect(weightField).not.toBeNull();
+    expect(within(weightField as HTMLElement).getByText("Found in source")).toBeInTheDocument();
+  });
+});
+
+describe("UploadSummaryView provenance and recovery", () => {
   it("labels pasted sources without claiming that a file was uploaded", () => {
     const result = {
       ...completeUpload(),
@@ -99,7 +199,9 @@ describe("UploadSummaryView provenance", () => {
     const originalCriterionRow = criterionInput.closest(".rubric-editor-row");
     criterionInput.focus();
     fireEvent.change(criterionInput, { target: { value: "Edited analysis" } });
-    let criterionRow = screen.getByTestId("criterion-name-0").closest(".rubric-editor-row");
+    let criterionRow = screen
+      .getByTestId("criterion-name-0")
+      .closest(".rubric-editor-row");
     expect(criterionRow).not.toBeNull();
     expect(criterionRow).toBe(originalCriterionRow);
     expect(screen.getByTestId("criterion-name-0")).toHaveFocus();
@@ -112,7 +214,9 @@ describe("UploadSummaryView provenance", () => {
     fireEvent.change(screen.getByTestId("criterion-name-0"), {
       target: { value: initial.criteria[0].name },
     });
-    criterionRow = screen.getByTestId("criterion-name-0").closest(".rubric-editor-row");
+    criterionRow = screen
+      .getByTestId("criterion-name-0")
+      .closest(".rubric-editor-row");
     expect(
       within(criterionRow as HTMLElement).getByText(/Source: source text/),
     ).toBeInTheDocument();

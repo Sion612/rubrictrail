@@ -28,10 +28,22 @@ seen and will coordinate disclosure after a fix is available.
   backup.
 - Full source text is temporary and is not written to `localStorage`; confirmed
   fields, source labels, short excerpts, draft snippets and progress can remain
-  until reset and can appear in an unencrypted project backup.
-- Browser tabs compare the exact saved project value before autosave, page-close
-  flushing, restore or reset. An external change pauses writes and requires an
-  explicit choice, rather than silently overwriting newer browser-local work.
+  until reset and can appear in an unencrypted project backup. Compact custom
+  rubric state stores `weightingStatus` as `complete`, `incomplete` or `none`,
+  with each criterion percentage represented as a number or `null`. Only a
+  complete 100% breakdown weights the plan; missing values are not synthesized.
+- State-v3 tabs compare the observed v3 and retained v2 values before changing
+  storage, read both keys back after normal writes, and store a
+  non-cryptographic fingerprint of the v2 lineage in v3. A later divergent v2
+  write from an older tab therefore surfaces as a conflict. Valid v2 uploaded
+  custom projects and backups migrate with their complete numeric weights;
+  sample and empty state have no uploaded-rubric status. Unsupported future
+  versions are not coerced.
+- Multi-tab protection is best effort. `localStorage` does not provide a
+  transaction or atomic compare-and-swap across the two keys, so a narrow race
+  can occur between separate reads and writes; readback, lineage checks and
+  storage events detect ordinary divergence but cannot guarantee that every
+  overwrite is impossible.
 - File byte limits and the 2,000,000-character retained-text ceiling reduce
   accidental resource exhaustion. They do not fully sandbox peak CPU or memory
   use while a compressed DOCX or PDF is being decoded; do not treat local parsing

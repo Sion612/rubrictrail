@@ -847,10 +847,26 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 .source-evidence-note summary { width: fit-content; color: var(--teal-dark); cursor: pointer; }
 .source-evidence-note blockquote { margin: 8px 0 0; padding: 10px 12px; border-left: 3px solid var(--teal); background: white; color: var(--muted); line-height: 1.5; }
 .rubric-editor { margin-top: 34px; }
+.weighting-mode-fieldset { min-width: 0; margin: 18px 0 0; padding: 0; border: 0; }
+.weighting-mode-fieldset legend { padding: 0; color: var(--ink); font-size: 0.9rem; font-weight: 750; }
+.weighting-mode-fieldset > p { margin: 5px 0 0; color: var(--muted); font-size: 0.76rem; }
+.weighting-mode-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin-top: 12px; }
+.weighting-mode-options label { min-height: 86px; display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 10px; align-items: start; padding: 14px; border: 1px solid #a9b8b1; border-radius: 8px; background: white; cursor: pointer; }
+.weighting-mode-options label:has(input:checked) { border-color: var(--teal); box-shadow: inset 3px 0 0 var(--teal); background: var(--teal-pale); }
+.weighting-mode-options label:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+.weighting-mode-options input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--teal); }
+.weighting-mode-options strong, .weighting-mode-options small { display: block; }
+.weighting-mode-options strong { font-size: 0.8rem; }
+.weighting-mode-options small { margin-top: 4px; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
+.weighting-mode-fieldset > .field-message { margin-top: 8px; }
+.compact-alert { margin-top: 12px; padding-block: 11px; }
+.compact-alert p { margin: 0; font-size: 0.74rem; }
 .rubric-editor-list { margin-top: 14px; border-top: 1px solid var(--line); }
 .rubric-editor-row { display: grid; grid-template-columns: 32px minmax(0,1fr) 130px 40px; gap: 12px; align-items: end; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.rubric-editor-row.without-weight { grid-template-columns: 32px minmax(0,1fr) 40px; }
 .rubric-editor-row .criterion-index { width: 28px; height: 28px; display: grid; place-items: center; align-self: center; border: 1px solid var(--line); border-radius: 50%; color: var(--teal-dark); font-size: 0.76rem; font-weight: 750; }
 .rubric-editor-row label { display: flex; flex-direction: column; gap: 6px; }
+.rubric-editor-row label > small { color: var(--muted); font-size: 0.68rem; }
 .rubric-editor-row .source-evidence-note { grid-column: 2 / -1; }
 .input-with-suffix { position: relative; display: block; }
 .input-with-suffix input { padding-right: 30px; }
@@ -893,6 +909,7 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 .criterion-title strong, .criterion-title small { display: block; }
 .criterion-title small { margin-top: 3px; color: var(--muted); }
 .criterion-weight { color: var(--teal-dark); font-family: var(--font-display); font-size: 1.3rem; }
+.criterion-weight.not-published { overflow-wrap: anywhere; font-family: inherit; font-size: 0.72rem; line-height: 1.25; }
 .verified-state, .manual-state { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; font-weight: 700; }
 .verified-state { color: var(--teal-dark); }
 .manual-state { color: var(--amber); }
@@ -1115,9 +1132,11 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .summary-actions .button { width: 100%; }
   .confirm-field-grid { grid-template-columns: 1fr; }
   .confirm-field-wide { grid-column: auto; }
+  .weighting-mode-options { grid-template-columns: 1fr; }
   .rubric-editor-row { grid-template-columns: 30px minmax(0,1fr) 38px; align-items: end; }
   .rubric-editor-row .weight-field { grid-column: 2 / 3; }
   .rubric-editor-row > .icon-button { grid-column: 3 / 4; grid-row: 2 / 3; }
+  .rubric-editor-row.without-weight > .icon-button { grid-row: 1 / 2; }
   .rubric-editor-row .source-evidence-note { grid-column: 2 / -1; }
   .project-fact-grid { grid-template-columns: 1fr 1fr; }
   .project-fact-grid > div:nth-child(3) { border-top: 1px solid var(--line); border-left: 0; }

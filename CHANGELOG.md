@@ -4,6 +4,32 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-08-12
+
+### Added
+
+- Added an explicit complete/not-complete weighting choice during rubric
+  confirmation. State records `complete`, `incomplete` or `none`; partial
+  official percentages remain attached to their criteria and missing values
+  remain `null`.
+- Added state v3 on the new `rubrictrail.project.v3` key, including validated
+  migration from v2 browser state and v2 project backups. Migrated v2 rubrics
+  receive `weightingStatus: "complete"`.
+- Added a non-cryptographic fingerprint of the retained v2 lineage so a later
+  divergent write from an older tab becomes an explicit cross-version conflict.
+
+### Changed
+
+- Never synthesizes or completes missing grading percentages. Only a confirmed
+  complete 100% breakdown weights the plan; incomplete and unweighted rubrics
+  use the same neutral per-criterion planning baseline.
+- Keeps the v2 storage value as a recoverable cross-version candidate. Writes
+  compare both observed values and read them back afterward; detected divergence
+  pauses the workflow instead of selecting a winner automatically.
+- Makes the recovery-page reset compare all observed project keys before
+  deletion and verify the cleared state, refusing to delete when another tab
+  changed browser storage after the page opened.
+
 ## [0.3.3] - 2026-08-12
 
 ### Added

@@ -45,9 +45,12 @@ It waits for the local-save toast to leave before capturing.
 
 ## Interaction and layout checks
 
-- 22/22 Playwright executions passed in the [v0.3.4 exact-main GitHub Actions run 31543389199](https://github.com/Sion612/rubrictrail/actions/runs/31543389199): 11 scenarios at desktop and narrow responsive Chromium sizes,
-  including multi-tab and v2/v3 recovery plus targeted 320×700 mixed-batch,
-  paste, rubric-weighting and error states. These are viewport checks, not
+- 22/22 Playwright executions passed in the [v0.3.5 runtime and test-code run
+  for commit `e381b6c`](https://github.com/Sion612/rubrictrail/actions/runs/31545829172):
+  11 scenarios at desktop and narrow responsive Chromium sizes, including
+  planning-depth persistence, multi-tab and v2/v3 recovery plus targeted
+  320×700 mixed-batch, paste, rubric-weighting and error states. These are
+  viewport checks, not
   mobile-UA, touch or physical-device emulation.
 - Navigation and local-project creation reset the workspace to the top.
 - The active mobile workflow step scrolls into view.
@@ -56,7 +59,8 @@ It waits for the local-save toast to leave before capturing.
 - The production screenshots contain no Next.js development badge.
 
 The screenshots predate the v0.3.1 paste form, v0.3.2 mixed-batch review,
-v0.3.3 multi-tab conflict banner and v0.3.4 complete/not-complete rubric choice.
+v0.3.3 multi-tab conflict banner, v0.3.4 complete/not-complete rubric choice and
+v0.3.5 planning-depth control.
 Those flows have browser assertions for focus, text size, explicit recovery,
 privacy and overflow, but no new local screenshot comparison because Playwright
 permission was not granted in this task. The saved screenshots are product

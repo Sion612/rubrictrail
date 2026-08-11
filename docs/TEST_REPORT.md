@@ -3,7 +3,8 @@
 Date: 12 August 2026  
 Runtime: Node.js 24.14.0, pnpm 11.16.0  
 Browser method: GitHub Actions Playwright projects at desktop and mobile sizes;
-see the [v0.3.1 verification run](https://github.com/Sion612/rubrictrail/actions/runs/31530109157)
+see the [v0.3.2 feature verification run](https://github.com/Sion612/rubrictrail/actions/runs/31533801988)
+and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
 
@@ -11,16 +12,19 @@ see the [v0.3.1 verification run](https://github.com/Sion612/rubrictrail/actions
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 14 files, 99/99 tests passed |
+| `pnpm test` | 14 files, 110/110 tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed |
-| `pnpm test:e2e --workers=1` | GitHub Actions: 14/14 desktop/mobile flows passed |
+| `pnpm test:e2e --workers=1` | GitHub Actions: 16/16 desktop/mobile flows passed |
 | `pnpm audit --audit-level high` | No known vulnerabilities found |
 
-The browser suite runs each scenario at 1440×900 and 390×844:
+The browser suite runs each scenario at 1440×900 and 390×844, with targeted
+mobile checks narrowed to 320×700:
 
 - sample evidence-to-progress flow and honest demo-signal language;
 - direct sample-to-own-assignment handoff with focus restoration;
 - complete TXT upload, editable confirmation and local project creation;
+- mixed valid/unsupported file intake, explicit omission review, Back
+  restoration and localStorage privacy;
 - pasted brief and rubric intake, Back preservation and raw-text privacy;
 - 320px paste and recoverable-error states with 16px textarea text;
 - portable project backup download, reset and restore;
@@ -50,8 +54,9 @@ The browser suite runs each scenario at 1440×900 and 390×844:
 - `docs/assets/rubrictrail-mobile.png`: 390×844 production viewport with the
   active workflow state, project context, confirmed weight and rubric summary.
 - The existing production captures have no development badge, stale toast,
-  preserved old scroll position or document-level horizontal overflow. The new
-  paste flow is functionally covered in CI but was not recaptured locally.
+  preserved old scroll position or document-level horizontal overflow. The
+  paste and mixed-batch flows are functionally covered in CI but were not
+  recaptured locally.
 
 See `docs/VISUAL_QA_REPORT.md` for the concept-to-implementation comparison and
 intentional responsive deviations.

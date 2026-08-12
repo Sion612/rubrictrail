@@ -5,8 +5,8 @@ Runtime: Node.js 24 in CI, pnpm 11.9.0
 Browser method: GitHub Actions Playwright projects at desktop and narrow
 responsive Chromium sizes against a fresh production build served by
 `next start`, plus the generated static demo served at `/rubrictrail`; see the
-[v0.5.0 release-candidate verification run for commit
-`4bcf77c`](https://github.com/Sion612/rubrictrail/actions/runs/31590279114)
+[v0.5.0 exact-main verification run for commit
+`46fdd64`](https://github.com/Sion612/rubrictrail/actions/runs/31592217190)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
@@ -22,6 +22,25 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 | `pnpm audit:demo` | Passed for all 29 exported files; no Live API path, OpenAI endpoint or Live credential/configuration marker found |
 | `pnpm test:e2e:demo --workers=1` | GitHub Actions: 28/28 executions passed against the static `/rubrictrail` artifact (14 scenarios × 2 Chromium projects) |
 | `pnpm audit --audit-level high` | No known vulnerabilities found |
+
+## Deployment evidence
+
+[Deploy Pages run 31592403754](https://github.com/Sion612/rubrictrail/actions/runs/31592403754)
+checked out, rebuilt and audited the same exact-main SHA `46fdd64`, then completed
+both its build and `github-pages` deployment jobs. The generated artifact, rather
+than the live host, is what passed the 28/28 static CI browser executions.
+
+A separate live HTTP smoke check observed:
+
+- `https://sion612.github.io/rubrictrail/` at 200 over HTTPS;
+- all 11 static resources linked by the exported HTML at 200;
+- the same-origin `/rubrictrail/_next/static/media/pdf.worker*.mjs` at 200 with a
+  JavaScript content type;
+- both absent `/rubrictrail/api/live/*` routes at 404 for GET and 405 for POST.
+
+GitHub Pages controls the live HTTPS, caching and response-header policy. The
+live smoke check does not claim that Pages ran the complete browser suite or
+inherits the Node runtime's configured headers.
 
 Thirteen UI scenarios run at 1440×900 and a narrow responsive 390×844 Chromium
 viewport, with targeted responsive checks narrowed to 320×700. One request-only

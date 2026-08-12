@@ -13,6 +13,9 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 - Added CI coverage that builds the static demo for the `/rubrictrail` Pages
   subpath, audits the exported artifact and runs the complete browser-local UI
   suite against the generated files.
+- Added an exact-revision GitHub Pages deployment workflow that publishes
+  <https://sion612.github.io/rubrictrail/> only after the same-repository `main`
+  CI run succeeds.
 
 ### Security
 

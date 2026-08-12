@@ -6,6 +6,11 @@ RubricTrail is a local-first assignment planner that connects an uploaded or
 pasted brief and rubric to confirmed requirements, scheduled work, draft
 evidence and final human checks.
 
+**[Try the public browser demo](https://sion612.github.io/rubrictrail/)** — no
+account, API key or paid service is required. Selected file contents, filenames
+and project state stay in the browser; GitHub Pages still receives ordinary page
+and asset request metadata. Use trusted documents only.
+
 It is designed for students who need more than a document summary. Every
 criterion can retain a short source excerpt recorded during intake, and every plan
 task has a definition of done. RubricTrail does not write a submission, invent a
@@ -13,8 +18,8 @@ criterion, or predict a grade.
 
 > Project status: early-stage open-source project. There are no public
 > usage or adoption claims yet. The complete local workflow and fictional sample
-> are runnable without an account, API key or paid service. A separately built
-> static demo has passed its CI export checks but has not yet been deployed.
+> are runnable without an account, API key or paid service. The public demo is a
+> separately built static export with no Live API routes.
 
 ![RubricTrail rubric workspace](./docs/assets/rubrictrail-workspace.png)
 
@@ -194,8 +199,10 @@ PAGES_BASE_PATH=/rubrictrail pnpm build:demo
 pnpm audit:demo
 ```
 
-The output is written to `demo/out`. It excludes the Node-only Live API routes
-and has not yet been published as a hosted demo.
+The output is written to `demo/out`. It excludes the Node-only Live API routes;
+the same boundary is published at
+<https://sion612.github.io/rubrictrail/> after the exact `main` revision passes
+all required CI checks.
 
 ## Verification
 
@@ -217,9 +224,9 @@ browser job creates a separate production build and sets
 `PLAYWRIGHT_PRODUCTION=true`, causing Playwright to exercise that artifact
 through `next start`.
 
-Current v0.5.0 release-candidate runtime, static-export and test-code verification
-on 12 August 2026 ([commit `4bcf77c`, GitHub Actions run
-31590279114](https://github.com/Sion612/rubrictrail/actions/runs/31590279114)):
+Current v0.5.0 runtime, static-export and test-code verification on 12 August
+2026 ([exact-main commit `46fdd64`, GitHub Actions run
+31592217190](https://github.com/Sion612/rubrictrail/actions/runs/31592217190)):
 
 | Gate | Result |
 | --- | --- |
@@ -231,6 +238,14 @@ on 12 August 2026 ([commit `4bcf77c`, GitHub Actions run
 | Static demo | `/rubrictrail` export built successfully; its 29-file artifact passed the Live/OpenAI-marker audit and 28/28 browser executions (14 scenarios × 2 Chromium projects) |
 | Full dependency audit | No known vulnerabilities found |
 
+The same exact-main SHA was rebuilt, audited and published by [Deploy Pages run
+31592403754](https://github.com/Sion612/rubrictrail/actions/runs/31592403754).
+A live HTTP smoke check observed the public page and all 11 HTML-linked static
+assets at 200, including the exported PDF worker at its same-origin
+`/rubrictrail` path. The absent Live routes returned 404 for GET and were rejected
+by GitHub Pages with 405 for POST. This smoke check is not a claim that the live
+host ran the complete CI browser suite.
+
 Playwright covers the sample loop, complete and mixed real-file projects,
 explicit omitted-file review, pasted brief and rubric intake, manual repair of a
 missing rubric without fabricated weights, partial published weights, local
@@ -241,8 +256,8 @@ Chromium viewports; they are not mobile-device, touch or mobile-UA emulation.
 The HTTP contract checks are production-runtime smoke tests, not a deployment,
 penetration test or claim of complete security-header coverage.
 The static checks exercise generated files at the intended repository subpath;
-they do not prove that a public deployment exists or that its host adds any
-particular response header.
+the separate deployment evidence above proves publication, but not that GitHub
+Pages adds any particular response header.
 
 ## Architecture
 
@@ -332,10 +347,10 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
   page or browser is terminated before its asynchronous save completes.
 - Local-first describes where assignment content is processed and persisted; it
   is not a promise that the site can be loaded or reopened completely offline.
-- The CI-verified static demo is an undeployed build artifact. It omits the Live
-  API and Node response headers, while its host would still observe normal page
-  and asset requests. Browser storage is shared at origin scope, not isolated by
-  the `/rubrictrail` path.
+- The public static demo omits the Live API and Node response headers. GitHub
+  Pages observes normal page and asset requests and controls the live response
+  policy. Browser storage is shared at origin scope, not isolated by the
+  `/rubrictrail` path.
 - Backup files are unencrypted and unsigned; keep them private and import only
   files from a source you trust.
 - The interface and parser are English-first.

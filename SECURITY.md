@@ -87,8 +87,8 @@ seen and will coordinate disclosure after a fix is available.
 - The separate static demo export contains no Live API routes or Node runtime
   response-header configuration. Its artifact audit rejects Live paths, OpenAI
   endpoints and Live credential/configuration markers. This verifies the built
-  files, not the policy of a future host: a host still receives ordinary page
-  and asset request metadata and controls HTTPS and response headers.
+  files, not the policy of GitHub Pages: the host still receives ordinary page
+  and asset request metadata and controls HTTPS, caching and response headers.
 - Downloaded project backups are plain JSON. They are neither encrypted nor
   signed; schema and version validation does not authenticate their author.
 - A public Live deployment also needs rate limits, per-user authorization, budget

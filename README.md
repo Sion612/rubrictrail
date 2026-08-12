@@ -13,7 +13,8 @@ criterion, or predict a grade.
 
 > Project status: early-stage open-source project. There are no public
 > usage or adoption claims yet. The complete local workflow and fictional sample
-> are runnable without an account, API key or paid service.
+> are runnable without an account, API key or paid service. A separately built
+> static demo has passed its CI export checks but has not yet been deployed.
 
 ![RubricTrail rubric workspace](./docs/assets/rubrictrail-workspace.png)
 
@@ -185,6 +186,17 @@ pnpm dev
 
 Open <http://localhost:3000>. No `.env` file is required.
 
+To produce the browser-only static demo at the same `/rubrictrail` subpath used
+by its CI checks:
+
+```bash
+PAGES_BASE_PATH=/rubrictrail pnpm build:demo
+pnpm audit:demo
+```
+
+The output is written to `demo/out`. It excludes the Node-only Live API routes
+and has not yet been published as a hosted demo.
+
 ## Verification
 
 Run the non-browser gate:
@@ -205,16 +217,18 @@ browser job creates a separate production build and sets
 `PLAYWRIGHT_PRODUCTION=true`, causing Playwright to exercise that artifact
 through `next start`.
 
-Current v0.4.1 release-candidate runtime and test-code verification on 12 August 2026
-([commit `de147fd`, GitHub Actions run 31587275622](https://github.com/Sion612/rubrictrail/actions/runs/31587275622)):
+Current v0.5.0 release-candidate runtime, static-export and test-code verification
+on 12 August 2026 ([commit `4bcf77c`, GitHub Actions run
+31590279114](https://github.com/Sion612/rubrictrail/actions/runs/31590279114)):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 257/257 tests passed across 19 files |
+| Vitest | 261/261 tests passed across 19 files |
 | Next.js production build | Passed independently in the quality and browser jobs |
-| Playwright | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 1440×900 and 390×844 Chromium projects), including the configured HTTP security headers, suppressed `X-Powered-By`, disabled Live routes, strict UTF-8 rejection, recorded-evidence trust copy, lock-serialized same-revision writes, confirmed self-check persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
+| Node-runtime Playwright | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 1440×900 and 390×844 Chromium projects), including the configured HTTP security headers, suppressed `X-Powered-By`, disabled Live routes, strict UTF-8 rejection, recorded-evidence trust copy, lock-serialized same-revision writes, confirmed self-check persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
+| Static demo | `/rubrictrail` export built successfully; its 29-file artifact passed the Live/OpenAI-marker audit and 28/28 browser executions (14 scenarios × 2 Chromium projects) |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,
@@ -226,6 +240,9 @@ explicit v2-to-v3 recovery, console errors and horizontal overflow. The narrow p
 Chromium viewports; they are not mobile-device, touch or mobile-UA emulation.
 The HTTP contract checks are production-runtime smoke tests, not a deployment,
 penetration test or claim of complete security-header coverage.
+The static checks exercise generated files at the intended repository subpath;
+they do not prove that a public deployment exists or that its host adds any
+particular response header.
 
 ## Architecture
 
@@ -245,6 +262,7 @@ flowchart LR
   S["Fictional sample"] --> I["Strict evidence schemas"]
   I --> F
   I --> J["Deterministic demo prompts"]
+  D --> K["Static browser-only export"]
 ```
 
 Core modules:
@@ -258,6 +276,7 @@ Core modules:
 | Versioned browser state | `src/lib/local-state.ts` |
 | Strict sample and optional Live schemas | `src/lib/domain.ts`, `src/lib/ai/*` |
 | Desktop/responsive acceptance tests | `tests/e2e/core-flow.spec.ts` |
+| Static demo boundary | `demo/`, `scripts/audit-static-demo.mjs`, `playwright.demo.config.ts` |
 
 See [the architecture notes](./docs/ARCHITECTURE.md) for data and trust
 boundaries.
@@ -266,6 +285,10 @@ boundaries.
 
 - No analytics or telemetry are included.
 - Local mode makes no OpenAI request.
+- The static demo contains no Live API routes or OpenAI runtime markers. It also
+  does not include the Node runtime's configured response headers; a static host
+  controls its own HTTP response policy and receives ordinary page and asset
+  request metadata.
 - PDF scripting and evaluation are disabled.
 - `.env*` files are ignored except for `.env.example`.
 - Dependency updates are monitored by Dependabot.
@@ -278,6 +301,12 @@ no Live control. Routes are disabled by default and require a separate bearer
 token before a bounded request body is read. Do not run a public Live service
 without per-user authentication, rate limits, budget caps, abuse monitoring and
 an explicit preview/consent flow.
+
+Browser project data uses `localStorage`, which is shared by pages on the same
+origin rather than isolated to one URL path. A host that serves unrelated or
+untrusted scripts on the same origin would therefore be outside the intended
+deployment boundary. Downloaded backups are portable JSON and are neither
+encrypted nor signed; import validation checks their structure, not authorship.
 
 Read [SECURITY.md](./SECURITY.md) before deployment.
 
@@ -303,6 +332,12 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
   page or browser is terminated before its asynchronous save completes.
 - Local-first describes where assignment content is processed and persisted; it
   is not a promise that the site can be loaded or reopened completely offline.
+- The CI-verified static demo is an undeployed build artifact. It omits the Live
+  API and Node response headers, while its host would still observe normal page
+  and asset requests. Browser storage is shared at origin scope, not isolated by
+  the `/rubrictrail` path.
+- Backup files are unencrypted and unsigned; keep them private and import only
+  files from a source you trust.
 - The interface and parser are English-first.
 - RubricTrail is not a substitute for the actual rubric, university policy,
   tutor advice or final human review.

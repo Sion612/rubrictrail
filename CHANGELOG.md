@@ -4,6 +4,25 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-12
+
+### Added
+
+- Added a separate static-export entry point for an account-free, API-key-free
+  demo that preserves the default Node runtime and its optional Live routes.
+- Added CI coverage that builds the static demo for the `/rubrictrail` Pages
+  subpath, audits the exported artifact and runs the complete browser-local UI
+  suite against the generated files.
+
+### Security
+
+- Fails the static-artifact audit if the export contains a Live API path,
+  OpenAI endpoint or Live credential/configuration marker.
+- Documents the static-hosting boundary: the demo contains no Live API or Node
+  response headers, its host still receives ordinary page and asset request
+  metadata, and project storage is shared at browser-origin scope.
+- Clarifies that downloaded project backups are neither encrypted nor signed.
+
 ## [0.4.1] - 2026-08-12
 
 ### Changed

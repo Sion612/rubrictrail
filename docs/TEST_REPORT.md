@@ -4,8 +4,9 @@ Date: 12 August 2026
 Runtime: Node.js 24 in CI, pnpm 11.9.0
 Browser method: GitHub Actions Playwright projects at desktop and narrow
 responsive Chromium sizes against a fresh production build served by
-`next start`; see the [v0.4.1 release-candidate runtime and test-code verification
-run for commit `de147fd`](https://github.com/Sion612/rubrictrail/actions/runs/31587275622)
+`next start`, plus the generated static demo served at `/rubrictrail`; see the
+[v0.5.0 release-candidate verification run for commit
+`4bcf77c`](https://github.com/Sion612/rubrictrail/actions/runs/31590279114)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
@@ -14,9 +15,12 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 19 files, 257/257 tests passed |
+| `pnpm test` | 19 files, 261/261 tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed independently in both CI jobs |
 | `pnpm test:e2e --workers=1` | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 2 Chromium projects) |
+| `pnpm build:demo` | Static export for `/rubrictrail` completed successfully |
+| `pnpm audit:demo` | Passed for all 29 exported files; no Live API path, OpenAI endpoint or Live credential/configuration marker found |
+| `pnpm test:e2e:demo --workers=1` | GitHub Actions: 28/28 executions passed against the static `/rubrictrail` artifact (14 scenarios × 2 Chromium projects) |
 | `pnpm audit --audit-level high` | No known vulnerabilities found |
 
 Thirteen UI scenarios run at 1440×900 and a narrow responsive 390×844 Chromium
@@ -49,6 +53,15 @@ The narrow project does not emulate a mobile user agent or touch device:
 - production HTTP response headers, suppressed `X-Powered-By` and uncached
   `LIVE_DISABLED` responses from both optional Live routes;
 - console/page errors and document-level horizontal overflow.
+
+The static suite repeats the 13 browser-local product scenarios above and adds
+one static-export boundary scenario per viewport. It verifies that the app and
+PDF worker load under `/rubrictrail`, that representative local workflows do
+not request an API route or cross-origin resource, and that the exported
+artifact can be served as files. It does not verify a public deployment. Static
+hosting omits the Live endpoints and the Node runtime's configured response
+headers; a future host controls those headers and receives ordinary page and
+asset request metadata.
 
 ## Security checks
 

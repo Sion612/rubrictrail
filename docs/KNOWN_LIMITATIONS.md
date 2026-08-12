@@ -53,7 +53,8 @@
     collaboration or multi-project dashboard. Simultaneous tabs are detected and
     autosave is paused, but edits are not merged; download either version before
     choosing which one to keep. A versioned JSON backup can move one project
-    between browsers, but it is not encrypted and must be kept private. Current
+    between browsers, but it is neither encrypted nor signed and must be kept
+    private. Import validation checks format and structure, not authorship. Current
     mutations use an exclusive Web Lock and monotonic authoritative-record
     revision, so two writes or a write and clear from one baseline cannot both
     win. This remains an application protocol, not a `localStorage` transaction
@@ -77,6 +78,15 @@
     demo, not semantic evaluation or a predicted grade.
 15. **No public Live service.** The optional server adapter lacks the full rate,
     budget, abuse and consent controls required for a public deployment.
+16. **The static demo is verified but not deployed.** CI builds and tests the
+    browser-only artifact at `/rubrictrail`, but that does not establish a public
+    URL. The export omits the Live API and Node response headers. A future host
+    will still receive ordinary page and asset request metadata and will control
+    its own HTTPS and header policy.
+17. **Browser storage is origin-scoped.** `localStorage` is shared by scripts on
+    the same origin; the `/rubrictrail` path is not an isolation boundary. Do not
+    colocate the demo with unrelated or untrusted scripts when project content is
+    sensitive.
 
 These boundaries are shown in the product and should not be hidden by downstream
 deployments.

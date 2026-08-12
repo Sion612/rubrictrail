@@ -4,6 +4,40 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-08-12
+
+### Added
+
+- Added the authoritative `rubrictrail.project.store.v1` browser record with a
+  monotonic revision and explicit active-project or cleared-tombstone value.
+- Added exclusive Web Locks coordination for project writes, backup restore and
+  reset. Concurrent writes, or a write and clear from the same observed
+  revision, serialize so only the first mutation can succeed.
+
+### Changed
+
+- Keeps state and backup payloads at v3 while wrapping browser persistence in a
+  separate record format. During normal saves, the legacy v3, v2 and v1 keys
+  remain intact; each new record fingerprints their exact values so a parseable
+  older-tab change can be offered as an explicit recovery candidate.
+- Makes explicit reset perform a verified privacy purge: it serializes under the
+  project lock, removes the v3, v2 and v1 project values and leaves only a
+  content-free revisioned tombstone. Conflict, invalid-record, coordination and
+  storage failures leave the recovery page open with a specific explanation.
+- Clarifies conflict actions as downloading this tab, loading the saved version
+  or explicitly replacing it, with a named recovery region and non-focus-stealing
+  announcement.
+
+### Security
+
+- Fails closed when Web Locks coordination is unavailable: saved state remains
+  readable, but changes stay only in the current tab and the interface recommends
+  keeping one tab open and downloading a backup before closing.
+- Documents that the 250 ms autosave debounce plus `visibilitychange` and
+  `pagehide` flush attempts are best effort. Closing or force-killing the browser
+  can still lose the final uncommitted edit, and local-first operation is not a
+  claim of storage-level atomic compare-and-swap or complete offline startup.
+
 ## [0.3.6] - 2026-08-12
 
 ### Added

@@ -7,53 +7,49 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import {
+  purgeProjectState,
+  readProjectStateWithStatus,
+  type ProjectStatePurgeResult,
+} from "@/lib/local-state";
 
-const LOCAL_PROJECT_KEYS = [
-  "rubrictrail.project.v3",
-  "rubrictrail.project.v2",
-  "proofline.project.v1",
-] as const;
+type ClearFailureReason = Extract<
+  ProjectStatePurgeResult,
+  { ok: false }
+>["reason"];
 
-interface LocalProjectSnapshot {
-  available: boolean;
-  values: Array<string | null>;
-}
-
-function readLocalProjectSnapshot(): LocalProjectSnapshot {
-  if (typeof window === "undefined") {
-    return { available: false, values: LOCAL_PROJECT_KEYS.map(() => null) };
-  }
-  try {
-    return {
-      available: true,
-      values: LOCAL_PROJECT_KEYS.map((key) => window.localStorage.getItem(key)),
-    };
-  } catch {
-    return { available: false, values: LOCAL_PROJECT_KEYS.map(() => null) };
-  }
-}
-
-function snapshotsMatch(
-  observed: LocalProjectSnapshot,
-  current: LocalProjectSnapshot,
-): boolean {
-  return (
-    observed.available &&
-    current.available &&
-    observed.values.every((value, index) => value === current.values[index])
-  );
-}
+const CLEAR_FAILURE_MESSAGES: Record<ClearFailureReason, string> = {
+  unavailable:
+    "Browser storage is unavailable, so RubricTrail could not reset the local project.",
+  "coordination-unavailable":
+    "This browser cannot coordinate a safe reset across tabs, so RubricTrail did not delete the project. Try again in a current browser with Web Locks support.",
+  "invalid-record":
+    "The local project record cannot accept another safe revision, so RubricTrail refused to delete it.",
+  "storage-error":
+    "Browser storage failed during reset, so RubricTrail could not confirm complete deletion. Some browser data may remain; reload before trying again.",
+  conflict:
+    "The saved project changed after this recovery page opened, so RubricTrail could not confirm complete deletion. Reload before deciding whether to reset the current saved version.",
+};
 
 interface ErrorPageProps {
   error: Error & { digest?: string };
   reset: () => void;
+  reloadPage?: () => void;
 }
 
-export default function ErrorPage({ reset }: ErrorPageProps) {
-  const [observedStorage] = useState(readLocalProjectSnapshot);
+export default function ErrorPage({
+  reset,
+  reloadPage = () => window.location.reload(),
+}: ErrorPageProps) {
+  const [observedBaseline] = useState(
+    () => readProjectStateWithStatus().baseline,
+  );
+  const [isResetting, setIsResetting] = useState(false);
+  const resetActive = useRef(false);
 
-  function handleResetLocalProject() {
+  async function handleResetLocalProject() {
+    if (resetActive.current) return;
     if (
       !window.confirm(
         "Permanently reset this browser’s RubricTrail project? This removes saved draft excerpts, self-checks and task progress and cannot be undone.",
@@ -62,39 +58,24 @@ export default function ErrorPage({ reset }: ErrorPageProps) {
       return;
     }
 
-    const currentStorage = readLocalProjectSnapshot();
-    if (
-      !snapshotsMatch(observedStorage, currentStorage)
-    ) {
-      window.alert(
-        "The saved project changed after this recovery page opened, so nothing was deleted. Reload before deciding whether to reset the latest saved version.",
-      );
-      return;
-    }
-
-    for (const key of LOCAL_PROJECT_KEYS) {
-      try {
-        window.localStorage.removeItem(key);
-      } catch {
-        window.alert(
-          "Browser storage could not be cleared, so this recovery page was left open.",
-        );
-        return;
+    resetActive.current = true;
+    setIsResetting(true);
+    let shouldReload = false;
+    try {
+      const result = await purgeProjectState(observedBaseline);
+      if (result.ok) {
+        shouldReload = true;
+      } else {
+        window.alert(CLEAR_FAILURE_MESSAGES[result.reason]);
       }
+    } catch {
+      window.alert(CLEAR_FAILURE_MESSAGES["storage-error"]);
+    } finally {
+      resetActive.current = false;
+      setIsResetting(false);
     }
 
-    const clearedStorage = readLocalProjectSnapshot();
-    if (
-      !clearedStorage.available ||
-      clearedStorage.values.some((value) => value !== null)
-    ) {
-      window.alert(
-        "The saved project changed while reset was running, so RubricTrail could not confirm a clean reset. Reload and review the latest saved version.",
-      );
-      return;
-    }
-
-    window.location.reload();
+    if (shouldReload) reloadPage();
   }
 
   return (
@@ -150,19 +131,22 @@ export default function ErrorPage({ reset }: ErrorPageProps) {
             </p>
           </div>
 
-          <div className="summary-actions">
+          <div className="summary-actions" aria-busy={isResetting}>
             <button
               className="button button-secondary button-large"
               type="button"
               onClick={handleResetLocalProject}
+              disabled={isResetting}
+              aria-busy={isResetting}
             >
               <Trash2 aria-hidden="true" />
-              Reset local project
+              {isResetting ? "Resetting local project…" : "Reset local project"}
             </button>
             <button
               className="button button-primary button-large"
               type="button"
               onClick={reset}
+              disabled={isResetting}
             >
               <RefreshCw aria-hidden="true" />
               Try again

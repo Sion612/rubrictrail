@@ -17,7 +17,9 @@ import type {
 
 export const STORAGE_KEY = "rubrictrail.project.v3";
 export const PREVIOUS_STORAGE_KEY = "rubrictrail.project.v2";
-const LEGACY_STORAGE_KEY = "proofline.project.v1";
+export const LEGACY_STORAGE_KEY = "proofline.project.v1";
+export const PROJECT_RECORD_KEY = "rubrictrail.project.store.v1";
+export const PROJECT_LOCK_NAME = "rubrictrail.project.store.v1";
 
 export const MAX_STORED_CHARACTERS = 2_500_000;
 const MAX_ID_LENGTH = 160;
@@ -27,6 +29,7 @@ const MAX_FILES = 25;
 const MAX_TASK_IDS = 200;
 const MAX_READINESS_IDS = 32;
 const V2_FINGERPRINT_PATTERN = /^v1:\d+:[0-9a-f]{8}:[0-9a-f]{8}$/;
+const MAX_PROJECT_RECORD_CHARACTERS = MAX_STORED_CHARACTERS + 1_024;
 
 const VIEWS = ["overview", "rubric", "plan", "draft", "progress"] as const;
 const viewSchema = z.enum(VIEWS);
@@ -190,7 +193,72 @@ const persistedProjectStateSchema: z.ZodType<PersistedProjectState> = z
     }
   });
 
-export type ProjectStateReadSource = "v3" | "v2" | "legacy" | "default";
+export type ProjectStorageRecordValue =
+  | { kind: "project"; state: PersistedProjectState }
+  | { kind: "cleared" };
+
+export interface ProjectStorageRecordV1 {
+  formatVersion: 1;
+  revision: number;
+  value: ProjectStorageRecordValue;
+  legacyFingerprints: {
+    v3: string | null;
+    v2: string | null;
+    v1: string | null;
+  };
+}
+
+const storageFingerprintSchema = z
+  .string()
+  .max(40)
+  .regex(V2_FINGERPRINT_PATTERN)
+  .nullable();
+
+const projectStorageRecordSchema = z
+  .object({
+    formatVersion: z.literal(1),
+    revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    value: z.discriminatedUnion("kind", [
+      z
+        .object({
+          kind: z.literal("project"),
+          state: z.unknown(),
+        })
+        .strict(),
+      z.object({ kind: z.literal("cleared") }).strict(),
+    ]),
+    legacyFingerprints: z
+      .object({
+        v3: storageFingerprintSchema,
+        v2: storageFingerprintSchema,
+        v1: storageFingerprintSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
+export type ProjectRecordStatus = "missing" | "active" | "cleared" | "invalid";
+
+export interface ProjectStorageBaseline {
+  recordStatus: ProjectRecordStatus;
+  recordValue: string | null;
+  revision: number | null;
+  legacyV3Value: string | null;
+  legacyV2Value: string | null;
+  legacyV1Value: string | null;
+}
+
+export interface LegacyConflictCandidate {
+  source: "v3" | "v2" | "legacy";
+  state: PersistedProjectState;
+}
+
+export type ProjectStateReadSource =
+  | "record"
+  | "v3"
+  | "v2"
+  | "legacy"
+  | "default";
 
 export interface ProjectStateReadResult {
   state: PersistedProjectState;
@@ -200,20 +268,61 @@ export interface ProjectStateReadResult {
   previousStoredValue: string | null;
   crossVersionConflict: boolean;
   storageAvailable: boolean;
+  mutationAvailable: boolean;
+  baseline: ProjectStorageBaseline;
+  legacyConflictCandidate: LegacyConflictCandidate | null;
 }
 
 export type ProjectStateWriteResult =
-  | { ok: true; serialized: string }
+  | {
+      ok: true;
+      recordValue: string;
+      revision: number;
+      baseline: ProjectStorageBaseline;
+    }
   | {
       ok: false;
-      reason: "unavailable" | "invalid-state" | "storage-error" | "conflict";
+      reason:
+        | "unavailable"
+        | "coordination-unavailable"
+        | "invalid-state"
+        | "invalid-record"
+        | "storage-error"
+        | "conflict";
     };
 
 export type ProjectStateClearResult =
-  | { ok: true }
+  | {
+      ok: true;
+      recordValue: string;
+      revision: number;
+      baseline: ProjectStorageBaseline;
+    }
   | {
       ok: false;
-      reason: "unavailable" | "storage-error" | "conflict";
+      reason:
+        | "unavailable"
+        | "coordination-unavailable"
+        | "invalid-record"
+        | "storage-error"
+        | "conflict";
+    };
+
+export type ProjectStatePurgeResult =
+  | {
+      ok: true;
+      recordValue: string;
+      revision: number;
+      baseline: ProjectStorageBaseline;
+    }
+  | {
+      ok: false;
+      reason:
+        | "unavailable"
+        | "coordination-unavailable"
+        | "invalid-record"
+        | "storage-error"
+        | "conflict";
     };
 
 export type ProjectStateParseResult =
@@ -589,6 +698,196 @@ function migrateLegacy(raw: string): PersistedProjectState | null {
   }
 }
 
+interface ParsedProjectStorageRecord {
+  record: ProjectStorageRecordV1;
+  status: "active" | "cleared";
+  state: PersistedProjectState | null;
+  recovered: boolean;
+}
+
+interface LocalProjectStorageSnapshot {
+  recordValue: string | null;
+  legacyV3Value: string | null;
+  legacyV2Value: string | null;
+  legacyV1Value: string | null;
+}
+
+function fingerprintOptionalStoredValue(raw: string | null): string | null {
+  return raw === null ? null : fingerprintStoredValue(raw);
+}
+
+function parseProjectStorageRecord(
+  raw: string,
+): ParsedProjectStorageRecord | null {
+  if (raw.length > MAX_PROJECT_RECORD_CHARACTERS) return null;
+  try {
+    const parsedRecord = projectStorageRecordSchema.safeParse(JSON.parse(raw) as unknown);
+    if (!parsedRecord.success) return null;
+
+    const { formatVersion, revision, legacyFingerprints } = parsedRecord.data;
+    if (parsedRecord.data.value.kind === "cleared") {
+      return {
+        record: {
+          formatVersion,
+          revision,
+          value: { kind: "cleared" },
+          legacyFingerprints,
+        },
+        status: "cleared",
+        state: null,
+        recovered: false,
+      };
+    }
+
+    const rawState = parsedRecord.data.value.state;
+    if (!isRecord(rawState) || rawState.version !== 3) return null;
+    const parsedState = parsePersistedProjectStateValue(rawState);
+    if (!parsedState.ok) return null;
+    return {
+      record: {
+        formatVersion,
+        revision,
+        value: { kind: "project", state: parsedState.state },
+        legacyFingerprints,
+      },
+      status: "active",
+      state: parsedState.state,
+      recovered: parsedState.recovered,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readLocalProjectStorageSnapshot(): LocalProjectStorageSnapshot | null {
+  try {
+    return {
+      recordValue: window.localStorage.getItem(PROJECT_RECORD_KEY),
+      legacyV3Value: window.localStorage.getItem(STORAGE_KEY),
+      legacyV2Value: window.localStorage.getItem(PREVIOUS_STORAGE_KEY),
+      legacyV1Value: window.localStorage.getItem(LEGACY_STORAGE_KEY),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function baselineFromSnapshot(
+  snapshot: LocalProjectStorageSnapshot,
+  parsedRecord: ParsedProjectStorageRecord | null =
+    snapshot.recordValue === null
+      ? null
+      : parseProjectStorageRecord(snapshot.recordValue),
+): ProjectStorageBaseline {
+  return {
+    recordStatus:
+      snapshot.recordValue === null
+        ? "missing"
+        : parsedRecord?.status ?? "invalid",
+    recordValue: snapshot.recordValue,
+    revision: parsedRecord?.record.revision ?? null,
+    legacyV3Value: snapshot.legacyV3Value,
+    legacyV2Value: snapshot.legacyV2Value,
+    legacyV1Value: snapshot.legacyV1Value,
+  };
+}
+
+function emptyStorageBaseline(): ProjectStorageBaseline {
+  return {
+    recordStatus: "missing",
+    recordValue: null,
+    revision: null,
+    legacyV3Value: null,
+    legacyV2Value: null,
+    legacyV1Value: null,
+  };
+}
+
+function getProjectLockManager(): LockManager | null {
+  if (typeof navigator === "undefined") return null;
+  const locks = (navigator as Navigator & { locks?: LockManager }).locks;
+  return locks && typeof locks.request === "function" ? locks : null;
+}
+
+function legacyFingerprintMismatches(
+  record: ProjectStorageRecordV1,
+  snapshot: LocalProjectStorageSnapshot,
+): Array<"v3" | "v2" | "legacy"> {
+  const mismatches: Array<"v3" | "v2" | "legacy"> = [];
+  if (
+    record.legacyFingerprints.v3 !==
+    fingerprintOptionalStoredValue(snapshot.legacyV3Value)
+  ) {
+    mismatches.push("v3");
+  }
+  if (
+    record.legacyFingerprints.v2 !==
+    fingerprintOptionalStoredValue(snapshot.legacyV2Value)
+  ) {
+    mismatches.push("v2");
+  }
+  if (
+    record.legacyFingerprints.v1 !==
+    fingerprintOptionalStoredValue(snapshot.legacyV1Value)
+  ) {
+    mismatches.push("legacy");
+  }
+  return mismatches;
+}
+
+function legacyConflictCandidate(
+  mismatches: Array<"v3" | "v2" | "legacy">,
+  snapshot: LocalProjectStorageSnapshot,
+): LegacyConflictCandidate | null {
+  if (mismatches.length !== 1) return null;
+  const source = mismatches[0];
+  if (source === "v3") {
+    const raw = snapshot.legacyV3Value;
+    const parsed = raw === null ? null : parseStoredVersion(raw, 3);
+    return parsed ? { source, state: parsed.state } : null;
+  }
+  if (source === "v2") {
+    const raw = snapshot.legacyV2Value;
+    const parsed = raw === null ? null : parseStoredVersion(raw, 2);
+    return parsed ? { source, state: parsed.state } : null;
+  }
+  const raw = snapshot.legacyV1Value;
+  const state = raw === null ? null : migrateLegacy(raw);
+  return state ? { source, state } : null;
+}
+
+interface ColdStartAlternative {
+  source: LegacyConflictCandidate["source"];
+  raw: string | null;
+  state: PersistedProjectState | null;
+  superseded?: boolean;
+}
+
+function analyzeColdStartAlternatives(
+  primaryState: PersistedProjectState | null,
+  alternatives: ColdStartAlternative[],
+): {
+  crossVersionConflict: boolean;
+  legacyConflictCandidate: LegacyConflictCandidate | null;
+} {
+  const differences = alternatives.filter((alternative) => {
+    if (alternative.raw === null || alternative.superseded === true) return false;
+    return !(
+      primaryState !== null &&
+      alternative.state !== null &&
+      canonicalStatesEquivalent(primaryState, alternative.state)
+    );
+  });
+  const onlyDifference = differences.length === 1 ? differences[0] : null;
+  return {
+    crossVersionConflict: differences.length > 0,
+    legacyConflictCandidate:
+      onlyDifference?.state === null || onlyDifference === null
+        ? null
+        : { source: onlyDifference.source, state: onlyDifference.state },
+  };
+}
+
 export function readProjectStateWithStatus(): ProjectStateReadResult {
   const fallback = createDefaultProjectState();
   if (typeof window === "undefined") {
@@ -600,13 +899,14 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
       previousStoredValue: null,
       crossVersionConflict: false,
       storageAvailable: false,
+      mutationAvailable: false,
+      baseline: emptyStorageBaseline(),
+      legacyConflictCandidate: null,
     };
   }
 
-  let v3Raw: string | null;
-  try {
-    v3Raw = window.localStorage.getItem(STORAGE_KEY);
-  } catch {
+  const snapshot = readLocalProjectStorageSnapshot();
+  if (snapshot === null) {
     return {
       state: fallback,
       source: "default",
@@ -615,38 +915,74 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
       previousStoredValue: null,
       crossVersionConflict: false,
       storageAvailable: false,
+      mutationAvailable: false,
+      baseline: emptyStorageBaseline(),
+      legacyConflictCandidate: null,
     };
   }
 
-  let v2Raw: string | null;
-  try {
-    v2Raw = window.localStorage.getItem(PREVIOUS_STORAGE_KEY);
-  } catch {
-    const parsed = v3Raw === null ? null : parseStoredVersion(v3Raw, 3);
+  const lockManager = getProjectLockManager();
+  const parsedRecord =
+    snapshot.recordValue === null
+      ? null
+      : parseProjectStorageRecord(snapshot.recordValue);
+  const baseline = baselineFromSnapshot(snapshot, parsedRecord);
+
+  if (snapshot.recordValue !== null) {
+    if (parsedRecord === null) {
+      return {
+        state: fallback,
+        source: "default",
+        recovered: true,
+        storedValue: snapshot.recordValue,
+        previousStoredValue: snapshot.legacyV2Value,
+        crossVersionConflict: true,
+        storageAvailable: true,
+        mutationAvailable: lockManager !== null,
+        baseline,
+        legacyConflictCandidate: null,
+      };
+    }
+
+    const mismatches = legacyFingerprintMismatches(parsedRecord.record, snapshot);
     return {
-      state: parsed?.state ?? fallback,
-      source: parsed ? "v3" : "default",
-      recovered: parsed?.recovered ?? true,
-      storedValue: v3Raw,
-      previousStoredValue: null,
-      crossVersionConflict: false,
-      storageAvailable: false,
+      state: parsedRecord.state ?? fallback,
+      source: "record",
+      recovered: parsedRecord.recovered,
+      storedValue: snapshot.recordValue,
+      previousStoredValue: snapshot.legacyV2Value,
+      crossVersionConflict: mismatches.length > 0,
+      storageAvailable: true,
+      mutationAvailable: lockManager !== null,
+      baseline,
+      legacyConflictCandidate: legacyConflictCandidate(mismatches, snapshot),
     };
   }
 
+  const v3Raw = snapshot.legacyV3Value;
+  const v2Raw = snapshot.legacyV2Value;
+  const legacyRaw = snapshot.legacyV1Value;
   const parsedV3 = v3Raw === null ? null : parseStoredVersion(v3Raw, 3);
   const parsedV2 = v2Raw === null ? null : parseStoredVersion(v2Raw, 2);
-  const crossVersionConflict =
-    v3Raw !== null &&
-    v2Raw !== null &&
-    !(
-      parsedV3?.state.supersededV2Fingerprint === fingerprintStoredValue(v2Raw) ||
-      (parsedV3 !== null &&
-        parsedV2 !== null &&
-        canonicalStatesEquivalent(parsedV3.state, parsedV2.state))
-    );
+  const parsedLegacy = legacyRaw === null ? null : migrateLegacy(legacyRaw);
 
   if (v3Raw !== null) {
+    const alternatives = analyzeColdStartAlternatives(
+      parsedV3?.state ?? null,
+      [
+        {
+          source: "v2",
+          raw: v2Raw,
+          state: parsedV2?.state ?? null,
+          superseded:
+            parsedV3 !== null &&
+            v2Raw !== null &&
+            parsedV3.state.supersededV2Fingerprint ===
+              fingerprintStoredValue(v2Raw),
+        },
+        { source: "legacy", raw: legacyRaw, state: parsedLegacy },
+      ],
+    );
     if (parsedV3) {
       return {
         state: parsedV3.state,
@@ -654,8 +990,11 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
         recovered: parsedV3.recovered,
         storedValue: v3Raw,
         previousStoredValue: v2Raw,
-        crossVersionConflict,
+        crossVersionConflict: alternatives.crossVersionConflict,
         storageAvailable: true,
+        mutationAvailable: lockManager !== null,
+        baseline,
+        legacyConflictCandidate: alternatives.legacyConflictCandidate,
       };
     }
 
@@ -665,51 +1004,45 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
       recovered: true,
       storedValue: v3Raw,
       previousStoredValue: v2Raw,
-      crossVersionConflict,
+      crossVersionConflict: alternatives.crossVersionConflict,
       storageAvailable: true,
+      mutationAvailable: lockManager !== null,
+      baseline,
+      legacyConflictCandidate: alternatives.legacyConflictCandidate,
     };
   }
 
   if (parsedV2) {
+    const alternatives = analyzeColdStartAlternatives(parsedV2.state, [
+      { source: "legacy", raw: legacyRaw, state: parsedLegacy },
+    ]);
     return {
       state: parsedV2.state,
       source: "v2",
       recovered: true,
       storedValue: v3Raw,
       previousStoredValue: v2Raw,
-      crossVersionConflict: false,
+      crossVersionConflict: alternatives.crossVersionConflict,
       storageAvailable: true,
+      mutationAvailable: lockManager !== null,
+      baseline,
+      legacyConflictCandidate: alternatives.legacyConflictCandidate,
     };
   }
 
-  let legacyRaw: string | null;
-  try {
-    legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-  } catch {
+  if (parsedLegacy !== null) {
     return {
-      state: fallback,
-      source: "default",
+      state: parsedLegacy,
+      source: "legacy",
       recovered: true,
       storedValue: v3Raw,
       previousStoredValue: v2Raw,
       crossVersionConflict: false,
-      storageAvailable: false,
+      storageAvailable: true,
+      mutationAvailable: lockManager !== null,
+      baseline,
+      legacyConflictCandidate: null,
     };
-  }
-
-  if (legacyRaw !== null) {
-    const migrated = migrateLegacy(legacyRaw);
-    if (migrated) {
-      return {
-        state: migrated,
-        source: "legacy",
-        recovered: true,
-        storedValue: v3Raw,
-        previousStoredValue: v2Raw,
-        crossVersionConflict: false,
-        storageAvailable: true,
-      };
-    }
   }
 
   return {
@@ -720,6 +1053,9 @@ export function readProjectStateWithStatus(): ProjectStateReadResult {
     previousStoredValue: v2Raw,
     crossVersionConflict: false,
     storageAvailable: true,
+    mutationAvailable: lockManager !== null,
+    baseline,
+    legacyConflictCandidate: null,
   };
 }
 
@@ -727,94 +1063,178 @@ export function readProjectState(): PersistedProjectState {
   return readProjectStateWithStatus().state;
 }
 
-export function writeProjectState(
+function storageBaselineMatches(
+  expected: ProjectStorageBaseline,
+  snapshot: LocalProjectStorageSnapshot,
+  actual: ProjectStorageBaseline,
+): boolean {
+  return (
+    expected.recordStatus === actual.recordStatus &&
+    expected.recordValue === snapshot.recordValue &&
+    expected.revision === actual.revision &&
+    expected.legacyV3Value === snapshot.legacyV3Value &&
+    expected.legacyV2Value === snapshot.legacyV2Value &&
+    expected.legacyV1Value === snapshot.legacyV1Value
+  );
+}
+
+function legacyFingerprintsFromSnapshot(
+  snapshot: LocalProjectStorageSnapshot,
+): ProjectStorageRecordV1["legacyFingerprints"] {
+  return {
+    v3: fingerprintOptionalStoredValue(snapshot.legacyV3Value),
+    v2: fingerprintOptionalStoredValue(snapshot.legacyV2Value),
+    v1: fingerprintOptionalStoredValue(snapshot.legacyV1Value),
+  };
+}
+
+function serializeProjectStorageRecord(
+  record: ProjectStorageRecordV1,
+): string | null {
+  const parsed = projectStorageRecordSchema.safeParse(record);
+  if (!parsed.success) return null;
+  const serialized = JSON.stringify(record);
+  return serialized.length <= MAX_PROJECT_RECORD_CHARACTERS ? serialized : null;
+}
+
+function successfulMutationBaseline(
+  recordValue: string,
+  revision: number,
+  status: "active" | "cleared",
+  snapshot: LocalProjectStorageSnapshot,
+): ProjectStorageBaseline {
+  return {
+    recordStatus: status,
+    recordValue,
+    revision,
+    legacyV3Value: snapshot.legacyV3Value,
+    legacyV2Value: snapshot.legacyV2Value,
+    legacyV1Value: snapshot.legacyV1Value,
+  };
+}
+
+function legacyValuesMatch(
+  before: LocalProjectStorageSnapshot,
+  after: LocalProjectStorageSnapshot,
+): boolean {
+  return (
+    before.legacyV3Value === after.legacyV3Value &&
+    before.legacyV2Value === after.legacyV2Value &&
+    before.legacyV1Value === after.legacyV1Value
+  );
+}
+
+function storageSnapshotsMatch(
+  expected: LocalProjectStorageSnapshot,
+  actual: LocalProjectStorageSnapshot,
+): boolean {
+  return (
+    expected.recordValue === actual.recordValue &&
+    expected.legacyV3Value === actual.legacyV3Value &&
+    expected.legacyV2Value === actual.legacyV2Value &&
+    expected.legacyV1Value === actual.legacyV1Value
+  );
+}
+
+async function requestExclusiveProjectLock<T>(
+  operation: () => T,
+): Promise<{ ok: true; value: T } | { ok: false }> {
+  const lockManager = getProjectLockManager();
+  if (lockManager === null) return { ok: false };
+  try {
+    const value = await lockManager.request(
+      PROJECT_LOCK_NAME,
+      { mode: "exclusive" },
+      () => operation(),
+    );
+    return { ok: true, value };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export async function writeProjectState(
   state: PersistedProjectState,
-  expectedStoredValue?: string | null,
-  expectedPreviousStoredValue?: string | null,
-): ProjectStateWriteResult {
+  expected: ProjectStorageBaseline,
+): Promise<ProjectStateWriteResult> {
   if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
-
-  let currentStoredValue: string | null;
-  let currentPreviousStoredValue: string | null;
-  try {
-    currentStoredValue = window.localStorage.getItem(STORAGE_KEY);
-    currentPreviousStoredValue = window.localStorage.getItem(
-      PREVIOUS_STORAGE_KEY,
-    );
-    if (
-      expectedStoredValue !== undefined &&
-      currentStoredValue !== expectedStoredValue
-    ) {
-      return { ok: false, reason: "conflict" };
-    }
-    if (
-      expectedPreviousStoredValue !== undefined &&
-      currentPreviousStoredValue !== expectedPreviousStoredValue
-    ) {
-      return { ok: false, reason: "conflict" };
-    }
-    if (currentPreviousStoredValue !== null && expectedPreviousStoredValue === undefined) {
-      return { ok: false, reason: "conflict" };
-    }
-  } catch {
-    return { ok: false, reason: "storage-error" };
+  if (getProjectLockManager() === null) {
+    return { ok: false, reason: "coordination-unavailable" };
   }
 
-  const parsed = serializePersistedProjectStateValue({
-    ...state,
-    supersededV2Fingerprint:
-      currentPreviousStoredValue === null
+  const preparedState = serializePersistedProjectStateValue(state);
+  if (!preparedState.ok) return { ok: false, reason: "invalid-state" };
+
+  const locked = await requestExclusiveProjectLock<ProjectStateWriteResult>(() => {
+    const snapshot = readLocalProjectStorageSnapshot();
+    if (snapshot === null) return { ok: false, reason: "storage-error" };
+    const parsedRecord =
+      snapshot.recordValue === null
         ? null
-        : fingerprintStoredValue(currentPreviousStoredValue),
-  });
-  if (!parsed.ok) return { ok: false, reason: "invalid-state" };
-
-  try {
-    window.localStorage.setItem(STORAGE_KEY, parsed.serialized);
-  } catch {
-    return { ok: false, reason: "storage-error" };
-  }
-
-  try {
-    const verifiedStoredValue = window.localStorage.getItem(STORAGE_KEY);
-    const verifiedPreviousStoredValue = window.localStorage.getItem(
-      PREVIOUS_STORAGE_KEY,
-    );
-    if (
-      verifiedStoredValue !== parsed.serialized ||
-      verifiedPreviousStoredValue !== currentPreviousStoredValue
-    ) {
-      if (verifiedStoredValue === parsed.serialized) {
-        try {
-          // localStorage has no atomic compare-and-swap. Re-check immediately and
-          // restore only while our exact bytes are still present; a later read also
-          // detects any surviving v2 divergence through the embedded fingerprint.
-          if (window.localStorage.getItem(STORAGE_KEY) === parsed.serialized) {
-            if (currentStoredValue === null) {
-              window.localStorage.removeItem(STORAGE_KEY);
-            } else {
-              window.localStorage.setItem(STORAGE_KEY, currentStoredValue);
-            }
-          }
-        } catch {
-          // Rollback is best effort. The lineage mismatch keeps both versions visible.
-        }
-      }
+        : parseProjectStorageRecord(snapshot.recordValue);
+    const actual = baselineFromSnapshot(snapshot, parsedRecord);
+    if (!storageBaselineMatches(expected, snapshot, actual)) {
       return { ok: false, reason: "conflict" };
     }
-  } catch {
-    return { ok: false, reason: "storage-error" };
-  }
+    if (actual.recordStatus === "invalid") {
+      return { ok: false, reason: "invalid-record" };
+    }
 
-  // Keep the v2 bytes as the recoverable cross-version candidate. The v3 record
-  // fingerprints the exact revision it intentionally superseded, so an older tab
-  // can write a new v2 revision without a check-then-delete race losing that work.
-  try {
-    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-  } catch {
-    // The v3 write has already succeeded. Legacy-key cleanup is best effort.
-  }
-  return { ok: true, serialized: parsed.serialized };
+    const currentRevision = parsedRecord?.record.revision ?? 0;
+    if (currentRevision >= Number.MAX_SAFE_INTEGER) {
+      return { ok: false, reason: "invalid-record" };
+    }
+    const revision = currentRevision + 1;
+    const finalState = serializePersistedProjectStateValue({
+      ...preparedState.state,
+      supersededV2Fingerprint: fingerprintOptionalStoredValue(
+        snapshot.legacyV2Value,
+      ),
+    });
+    if (!finalState.ok) return { ok: false, reason: "invalid-state" };
+
+    const record: ProjectStorageRecordV1 = {
+      formatVersion: 1,
+      revision,
+      value: { kind: "project", state: finalState.state },
+      legacyFingerprints: legacyFingerprintsFromSnapshot(snapshot),
+    };
+    const recordValue = serializeProjectStorageRecord(record);
+    if (recordValue === null) return { ok: false, reason: "invalid-state" };
+
+    try {
+      window.localStorage.setItem(PROJECT_RECORD_KEY, recordValue);
+    } catch {
+      return { ok: false, reason: "storage-error" };
+    }
+
+    const verified = readLocalProjectStorageSnapshot();
+    if (verified === null) return { ok: false, reason: "storage-error" };
+    if (
+      verified.recordValue !== recordValue ||
+      !legacyValuesMatch(snapshot, verified)
+    ) {
+      // Do not attempt a non-atomic rollback. The committed record and changed
+      // legacy value remain separate, recoverable conflict candidates.
+      return { ok: false, reason: "conflict" };
+    }
+
+    return {
+      ok: true,
+      recordValue,
+      revision,
+      baseline: successfulMutationBaseline(
+        recordValue,
+        revision,
+        "active",
+        verified,
+      ),
+    };
+  });
+
+  return locked.ok
+    ? locked.value
+    : { ok: false, reason: "coordination-unavailable" };
 }
 
 function canonicalStatesEquivalent(
@@ -825,70 +1245,231 @@ function canonicalStatesEquivalent(
     JSON.stringify({ ...previous, supersededV2Fingerprint: null });
 }
 
-export function clearProjectState(
-  expectedStoredValue?: string | null,
-  expectedPreviousStoredValue?: string | null,
-): ProjectStateClearResult {
+export async function clearProjectState(
+  expected: ProjectStorageBaseline,
+): Promise<ProjectStateClearResult> {
   if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
-  let currentStoredValue: string | null;
-  let currentPreviousStoredValue: string | null;
-  try {
-    currentStoredValue = window.localStorage.getItem(STORAGE_KEY);
-    currentPreviousStoredValue = window.localStorage.getItem(
-      PREVIOUS_STORAGE_KEY,
-    );
-    if (
-      expectedStoredValue !== undefined &&
-      currentStoredValue !== expectedStoredValue
-    ) {
-      return { ok: false, reason: "conflict" };
-    }
-    if (
-      expectedPreviousStoredValue !== undefined &&
-      currentPreviousStoredValue !== expectedPreviousStoredValue
-    ) {
-      return { ok: false, reason: "conflict" };
-    }
-    if (currentPreviousStoredValue !== null && expectedPreviousStoredValue === undefined) {
-      return { ok: false, reason: "conflict" };
-    }
-
-    window.localStorage.removeItem(STORAGE_KEY);
-    const verifiedStoredValue = window.localStorage.getItem(STORAGE_KEY);
-    const verifiedPreviousStoredValue = window.localStorage.getItem(
-      PREVIOUS_STORAGE_KEY,
-    );
-    if (
-      verifiedStoredValue !== null ||
-      verifiedPreviousStoredValue !== currentPreviousStoredValue
-    ) {
-      if (verifiedStoredValue === null && currentStoredValue !== null) {
-        try {
-          // Best-effort rollback after detecting a concurrent write. localStorage
-          // cannot make the following restore an atomic compare-and-set.
-          if (window.localStorage.getItem(STORAGE_KEY) === null) {
-            window.localStorage.setItem(STORAGE_KEY, currentStoredValue);
-          }
-        } catch {
-          // Preserve the concurrently written bytes and report the conflict.
-        }
-      }
-      return { ok: false, reason: "conflict" };
-    }
-
-    // A write can still race between this verification and removeItem because
-    // localStorage exposes no atomic compare-and-delete. The second verification
-    // below prevents a later write from being reported as a successful clear.
-    window.localStorage.removeItem(PREVIOUS_STORAGE_KEY);
-    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-    if (
-      window.localStorage.getItem(STORAGE_KEY) !== null ||
-      window.localStorage.getItem(PREVIOUS_STORAGE_KEY) !== null
-    ) {
-      return { ok: false, reason: "conflict" };
-    }
-    return { ok: true };
-  } catch {
-    return { ok: false, reason: "storage-error" };
+  if (getProjectLockManager() === null) {
+    return { ok: false, reason: "coordination-unavailable" };
   }
+
+  const locked = await requestExclusiveProjectLock<ProjectStateClearResult>(() => {
+    const snapshot = readLocalProjectStorageSnapshot();
+    if (snapshot === null) return { ok: false, reason: "storage-error" };
+    const parsedRecord =
+      snapshot.recordValue === null
+        ? null
+        : parseProjectStorageRecord(snapshot.recordValue);
+    const actual = baselineFromSnapshot(snapshot, parsedRecord);
+    if (!storageBaselineMatches(expected, snapshot, actual)) {
+      return { ok: false, reason: "conflict" };
+    }
+
+    const currentRevision = parsedRecord?.record.revision ?? 0;
+    if (currentRevision >= Number.MAX_SAFE_INTEGER) {
+      return { ok: false, reason: "invalid-record" };
+    }
+    // An exact invalid baseline may be replaced only by this explicit destructive
+    // recovery path. Ordinary writes remain fail-closed for invalid records.
+    const revision = currentRevision + 1;
+    const record: ProjectStorageRecordV1 = {
+      formatVersion: 1,
+      revision,
+      value: { kind: "cleared" },
+      legacyFingerprints: legacyFingerprintsFromSnapshot(snapshot),
+    };
+    const recordValue = serializeProjectStorageRecord(record);
+    if (recordValue === null) return { ok: false, reason: "invalid-record" };
+
+    try {
+      window.localStorage.setItem(PROJECT_RECORD_KEY, recordValue);
+    } catch {
+      return { ok: false, reason: "storage-error" };
+    }
+
+    const verified = readLocalProjectStorageSnapshot();
+    if (verified === null) return { ok: false, reason: "storage-error" };
+    if (
+      verified.recordValue !== recordValue ||
+      !legacyValuesMatch(snapshot, verified)
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+
+    return {
+      ok: true,
+      recordValue,
+      revision,
+      baseline: successfulMutationBaseline(
+        recordValue,
+        revision,
+        "cleared",
+        verified,
+      ),
+    };
+  });
+
+  return locked.ok
+    ? locked.value
+    : { ok: false, reason: "coordination-unavailable" };
+}
+
+export async function purgeProjectState(
+  expected: ProjectStorageBaseline,
+): Promise<ProjectStatePurgeResult> {
+  if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
+  if (getProjectLockManager() === null) {
+    return { ok: false, reason: "coordination-unavailable" };
+  }
+
+  const locked = await requestExclusiveProjectLock<ProjectStatePurgeResult>(() => {
+    const snapshot = readLocalProjectStorageSnapshot();
+    if (snapshot === null) return { ok: false, reason: "storage-error" };
+    const parsedRecord =
+      snapshot.recordValue === null
+        ? null
+        : parseProjectStorageRecord(snapshot.recordValue);
+    const actual = baselineFromSnapshot(snapshot, parsedRecord);
+    if (!storageBaselineMatches(expected, snapshot, actual)) {
+      return { ok: false, reason: "conflict" };
+    }
+
+    const currentRevision = parsedRecord?.record.revision ?? 0;
+    if (currentRevision > Number.MAX_SAFE_INTEGER - 2) {
+      return { ok: false, reason: "invalid-record" };
+    }
+
+    // Publish a content-free guard before deleting legacy data. Current-version
+    // writers that observed the old record will then fail their exact baseline
+    // check even if this purge is interrupted partway through.
+    const guardRevision = currentRevision + 1;
+    const guardRecordValue = serializeProjectStorageRecord({
+      formatVersion: 1,
+      revision: guardRevision,
+      value: { kind: "cleared" },
+      legacyFingerprints: legacyFingerprintsFromSnapshot(snapshot),
+    });
+    if (guardRecordValue === null) {
+      return { ok: false, reason: "invalid-record" };
+    }
+
+    try {
+      window.localStorage.setItem(PROJECT_RECORD_KEY, guardRecordValue);
+    } catch {
+      return { ok: false, reason: "storage-error" };
+    }
+
+    const guarded = readLocalProjectStorageSnapshot();
+    if (guarded === null) return { ok: false, reason: "storage-error" };
+    const expectedGuarded: LocalProjectStorageSnapshot = {
+      ...snapshot,
+      recordValue: guardRecordValue,
+    };
+    if (!storageSnapshotsMatch(expectedGuarded, guarded)) {
+      return { ok: false, reason: "conflict" };
+    }
+
+    let working = guarded;
+    const removeLegacyValue = (
+      key: string,
+      field: "legacyV3Value" | "legacyV2Value" | "legacyV1Value",
+    ): ProjectStatePurgeResult | null => {
+      const before = readLocalProjectStorageSnapshot();
+      if (before === null) return { ok: false, reason: "storage-error" };
+      if (!storageSnapshotsMatch(working, before)) {
+        return { ok: false, reason: "conflict" };
+      }
+      if (before[field] === null) {
+        working = before;
+        return null;
+      }
+
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        return { ok: false, reason: "storage-error" };
+      }
+
+      const after = readLocalProjectStorageSnapshot();
+      if (after === null) return { ok: false, reason: "storage-error" };
+      const expectedAfter = { ...working, [field]: null };
+      if (!storageSnapshotsMatch(expectedAfter, after)) {
+        return { ok: false, reason: "conflict" };
+      }
+      working = after;
+      return null;
+    };
+
+    const legacyV1Removal = removeLegacyValue(
+      LEGACY_STORAGE_KEY,
+      "legacyV1Value",
+    );
+    if (legacyV1Removal !== null) return legacyV1Removal;
+    const legacyV2Removal = removeLegacyValue(
+      PREVIOUS_STORAGE_KEY,
+      "legacyV2Value",
+    );
+    if (legacyV2Removal !== null) return legacyV2Removal;
+    const legacyV3Removal = removeLegacyValue(STORAGE_KEY, "legacyV3Value");
+    if (legacyV3Removal !== null) return legacyV3Removal;
+
+    // A final tombstone records the now-empty legacy baseline. Keeping this
+    // content-free record prevents stale or older tabs from becoming an
+    // authoritative project again without surfacing a conflict.
+    const revision = guardRevision + 1;
+    const recordValue = serializeProjectStorageRecord({
+      formatVersion: 1,
+      revision,
+      value: { kind: "cleared" },
+      legacyFingerprints: {
+        v3: null,
+        v2: null,
+        v1: null,
+      },
+    });
+    if (recordValue === null) {
+      return { ok: false, reason: "invalid-record" };
+    }
+
+    const beforeFinalWrite = readLocalProjectStorageSnapshot();
+    if (beforeFinalWrite === null) {
+      return { ok: false, reason: "storage-error" };
+    }
+    if (!storageSnapshotsMatch(working, beforeFinalWrite)) {
+      return { ok: false, reason: "conflict" };
+    }
+    try {
+      window.localStorage.setItem(PROJECT_RECORD_KEY, recordValue);
+    } catch {
+      return { ok: false, reason: "storage-error" };
+    }
+
+    const verified = readLocalProjectStorageSnapshot();
+    if (verified === null) return { ok: false, reason: "storage-error" };
+    const expectedFinal: LocalProjectStorageSnapshot = {
+      recordValue,
+      legacyV3Value: null,
+      legacyV2Value: null,
+      legacyV1Value: null,
+    };
+    if (!storageSnapshotsMatch(expectedFinal, verified)) {
+      return { ok: false, reason: "conflict" };
+    }
+
+    return {
+      ok: true,
+      recordValue,
+      revision,
+      baseline: successfulMutationBaseline(
+        recordValue,
+        revision,
+        "cleared",
+        verified,
+      ),
+    };
+  });
+
+  return locked.ok
+    ? locked.value
+    : { ok: false, reason: "coordination-unavailable" };
 }

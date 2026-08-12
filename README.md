@@ -227,22 +227,23 @@ browser job creates a separate production build and sets
 `PLAYWRIGHT_PRODUCTION=true`, causing Playwright to exercise that artifact
 through `next start`.
 
-Current v0.5.0 runtime, static-export and test-code verification on 12 August
-2026 ([exact release commit `b8d80b0`, GitHub Actions run
-31593393903](https://github.com/Sion612/rubrictrail/actions/runs/31593393903)):
+Current v0.5.1 runtime, static-export and test-code verification on 12 August
+2026 is recorded in the [v0.5.1 release](https://github.com/Sion612/rubrictrail/releases/tag/v0.5.1)
+and the [main CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 261/261 tests passed across 19 files |
+| Vitest | 265/265 tests passed across 21 files |
 | Next.js production build | Passed independently in the quality and browser jobs |
 | Node-runtime Playwright | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 1440×900 and 390×844 Chromium projects), including the configured HTTP security headers, suppressed `X-Powered-By`, disabled Live routes, strict UTF-8 rejection, recorded-evidence trust copy, lock-serialized same-revision writes, confirmed self-check persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
 | Static demo | `/rubrictrail` export built successfully; its 29-file artifact passed the Live/OpenAI-marker audit and 28/28 browser executions (14 scenarios × 2 Chromium projects) |
 | Full dependency audit | No known vulnerabilities found |
 
-The same exact release SHA was rebuilt, audited and published by [Deploy Pages run
-31593580751](https://github.com/Sion612/rubrictrail/actions/runs/31593580751).
+The same release revision is rebuilt, audited and published by the
+[Deploy Pages workflow](https://github.com/Sion612/rubrictrail/actions/workflows/deploy-pages.yml?query=branch%3Amain)
+only after its exact-main CI run succeeds.
 A live HTTP smoke check observed the public page and all 11 HTML-linked static
 assets at 200, including the exported PDF worker at its same-origin
 `/rubrictrail` path. The absent Live routes returned 404 for GET and were rejected

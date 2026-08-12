@@ -244,6 +244,7 @@ export function UploadedRubricView({
 interface UploadedDraftReviewViewProps {
   project: UploadedProject;
   reviews: UploadedCriterionReview[];
+  initialCriterionId?: string | null;
   onChange: (review: UploadedCriterionReview) => void;
   onSave: (review: UploadedCriterionReview) => Promise<void>;
   onNavigate: (view: WorkspaceView) => void;
@@ -252,33 +253,44 @@ interface UploadedDraftReviewViewProps {
 export function UploadedDraftReviewView({
   project,
   reviews,
+  initialCriterionId = null,
   onChange,
   onSave,
   onNavigate,
 }: UploadedDraftReviewViewProps) {
-  const [criterionId, setCriterionId] = useState(project.criteria[0]?.id ?? "");
+  const criteriaKey = project.criteria.map((criterion) => criterion.id).join("\u0000");
+  const [selection, setSelection] = useState(() => ({
+    criteriaKey,
+    initialCriterionId,
+    criterionId: project.criteria.some(
+      (criterion) => criterion.id === initialCriterionId,
+    )
+      ? (initialCriterionId ?? "")
+      : (project.criteria[0]?.id ?? ""),
+  }));
   const [isSaving, setIsSaving] = useState(false);
-  const [workingReviews, setWorkingReviews] = useState<Record<string, Omit<UploadedCriterionReview, "criterionId" | "updatedAt">>>(
-    () => Object.fromEntries(reviews.map((review) => [review.criterionId, {
-      draftText: review.draftText,
-      evidenceVisible: review.evidenceVisible,
-      linkExplained: review.linkExplained,
-      sourceTraceable: review.sourceTraceable,
-    }])),
-  );
-  const activeReview = workingReviews[criterionId] ?? {
-    draftText: "",
-    evidenceVisible: false,
-    linkExplained: false,
-    sourceTraceable: false,
+  const contextChanged =
+    selection.criteriaKey !== criteriaKey ||
+    selection.initialCriterionId !== initialCriterionId;
+  const requestedCriterionId = contextChanged
+    ? initialCriterionId
+    : selection.criterionId;
+  const criterionId = project.criteria.some(
+    (criterion) => criterion.id === requestedCriterionId,
+  )
+    ? (requestedCriterionId ?? "")
+    : (project.criteria[0]?.id ?? "");
+
+  const parentReview = reviews.find((review) => review.criterionId === criterionId);
+  const activeReview = {
+    draftText: parentReview?.draftText ?? "",
+    evidenceVisible: parentReview?.evidenceVisible ?? false,
+    linkExplained: parentReview?.linkExplained ?? false,
+    sourceTraceable: parentReview?.sourceTraceable ?? false,
   };
 
   function updateActive(patch: Partial<typeof activeReview>) {
     const nextReview = { ...activeReview, ...patch };
-    setWorkingReviews((current) => ({
-      ...current,
-      [criterionId]: nextReview,
-    }));
     onChange({
       criterionId,
       ...nextReview,
@@ -333,7 +345,15 @@ export function UploadedDraftReviewView({
         <section className="draft-review-editor" aria-labelledby="review-editor-title">
           <label>
             <span>Rubric criterion</span>
-            <select disabled={isSaving} value={criterionId} onChange={(event) => setCriterionId(event.target.value)}>
+            <select
+              disabled={isSaving}
+              value={criterionId}
+              onChange={(event) => setSelection({
+                criteriaKey,
+                initialCriterionId,
+                criterionId: event.target.value,
+              })}
+            >
               {project.criteria.map((criterion) => (
                 <option key={criterion.id} value={criterion.id}>
                   {criterion.name}{criterion.weight !== null ? ` · ${criterion.weight}%` : ""}
@@ -413,7 +433,7 @@ interface UploadedProgressViewProps {
   reviews: UploadedCriterionReview[];
   readinessChecks: string[];
   onToggleReadiness: (id: string) => void;
-  onContinue: (target: "plan" | "draft") => void;
+  onContinue: (target: "plan" | "draft", criterionId?: string) => void;
 }
 
 function deadlineStatus(dueDate: string): { value: string; label: string; overdue: boolean } {
@@ -461,7 +481,7 @@ export function UploadedProgressView({
       return;
     }
     if (nextUnchecked) {
-      onContinue("draft");
+      onContinue("draft", nextUnchecked.id);
       return;
     }
     document.getElementById("uploaded-readiness-title")?.focus({ preventScroll: true });

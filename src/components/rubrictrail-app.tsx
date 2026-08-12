@@ -344,6 +344,7 @@ export function RubricTrailApp() {
   const [hydrated, setHydrated] = useState(false);
   const [project, setProjectState] = useState<PersistedProjectState>(() => createDefaultProjectState());
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
+  const [uploadedReviewCriterionId, setUploadedReviewCriterionId] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadFlowResult | null>(null);
   const [partialUploadResult, setPartialUploadResult] =
     useState<UploadFlowResult | null>(null);
@@ -739,6 +740,16 @@ export function RubricTrailApp() {
         ? current.visitedViews
         : [...current.visitedViews, view],
     }));
+  }
+
+  function continueUploadedProgress(
+    target: "plan" | "draft",
+    criterionId?: string,
+  ) {
+    if (target === "draft") {
+      setUploadedReviewCriterionId(criterionId ?? null);
+    }
+    navigate(target);
   }
 
   async function loadSample() {
@@ -1614,6 +1625,7 @@ export function RubricTrailApp() {
         <UploadedDraftReviewView
           project={uploaded}
           reviews={project.uploadedCriterionReviews}
+          initialCriterionId={uploadedReviewCriterionId}
           onChange={updateUploadedReview}
           onSave={saveUploadedReview}
           onNavigate={navigate}
@@ -1627,7 +1639,7 @@ export function RubricTrailApp() {
           reviews={project.uploadedCriterionReviews}
           readinessChecks={project.readinessChecks}
           onToggleReadiness={toggleReadiness}
-          onContinue={navigate}
+          onContinue={continueUploadedProgress}
         />
       );
     }

@@ -84,7 +84,7 @@ export function ProgressView({ analysis, plan, draftResult, readinessChecks, onT
       <section className="coverage-section" aria-labelledby="coverage-title">
         <div className="section-heading compact-heading"><div><p className="eyebrow">Rubric coverage</p><h2 id="coverage-title">Plan work and demo signals are tracked separately</h2></div></div>
         <div className="coverage-table" role="table" aria-label="Plan work and deterministic demo signals by rubric criterion">
-          <div className="coverage-table-head" role="row"><span role="columnheader">Criterion</span><span role="columnheader">Plan work</span><span role="columnheader">Demo signals</span><span role="columnheader">Signal state</span></div>
+          <div className="coverage-table-head mobile-visually-hidden" role="row"><span role="columnheader">Criterion</span><span role="columnheader">Plan work</span><span role="columnheader">Demo signals</span><span role="columnheader">Signal state</span></div>
           {analysis.rubric.map((criterion) => {
             const planned = plan.rubricProgress.find((item) => item.criterionId === criterion.id)?.percent ?? 0;
             const demoSignals = draftResult?.criteria.find((item) => item.criterionId === criterion.id)?.coverage ?? null;

@@ -80,6 +80,23 @@ describe("rubricTrailFixtureSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("requires exactly one draft-check result for every rubric criterion", () => {
+    const duplicate = clone(SAMPLE_FIXTURE);
+    duplicate.draftCheck.criteria[1] = clone(duplicate.draftCheck.criteria[0]);
+
+    const result = rubricTrailFixtureSchema.safeParse(duplicate);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.message)).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("Duplicate draft-check criterion"),
+          expect.stringContaining("Missing draft-check criterion"),
+        ]),
+      );
+    }
+  });
+
   it("bounds nested draft-check collections before they can be persisted or imported", () => {
     const invalid = clone(SAMPLE_FIXTURE);
     invalid.draftCheck.feedback = Array.from(

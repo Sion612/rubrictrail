@@ -19,8 +19,8 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 - Adds production HTTP contract coverage for the configured anti-framing,
   MIME-sniffing, referrer and browser-capability headers and the suppressed
   framework-identification header.
-- Verifies that both optional Live API routes remain disabled by default and
-  return uncached structured `503` responses without contacting a provider.
+- Verifies that both optional Live API routes return uncached structured `503`
+  responses without contacting a provider when Live mode is disabled.
 
 ## [0.4.0] - 2026-08-12
 

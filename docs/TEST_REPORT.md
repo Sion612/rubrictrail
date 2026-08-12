@@ -19,9 +19,10 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 | `pnpm test:e2e --workers=1` | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 2 Chromium projects) |
 | `pnpm audit --audit-level high` | No known vulnerabilities found |
 
-The browser suite runs each scenario at 1440×900 and a narrow responsive
-390×844 Chromium viewport, with targeted responsive checks narrowed to 320×700.
-The narrow projects do not emulate a mobile user agent or touch device:
+Thirteen UI scenarios run at 1440×900 and a narrow responsive 390×844 Chromium
+viewport, with targeted responsive checks narrowed to 320×700. One request-only
+HTTP-contract scenario runs once per Chromium project without rendering a page.
+The narrow project does not emulate a mobile user agent or touch device:
 
 - sample evidence-to-progress flow and honest demo-signal language;
 - planning-depth task scope, accessible explanation and refresh persistence

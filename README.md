@@ -214,7 +214,7 @@ Current v0.4.1 release-candidate runtime and test-code verification on 12 August
 | TypeScript | Passed |
 | Vitest | 257/257 tests passed across 19 files |
 | Next.js production build | Passed independently in the quality and browser jobs |
-| Playwright | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 1440×900 and 390×844 Chromium projects), including the configured HTTP security headers, suppressed `X-Powered-By`, default-disabled Live routes, strict UTF-8 rejection, recorded-evidence trust copy, lock-serialized same-revision writes, confirmed self-check persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
+| Playwright | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 1440×900 and 390×844 Chromium projects), including the configured HTTP security headers, suppressed `X-Powered-By`, disabled Live routes, strict UTF-8 rejection, recorded-evidence trust copy, lock-serialized same-revision writes, confirmed self-check persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,

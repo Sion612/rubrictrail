@@ -5,15 +5,12 @@ Runtime: Node.js 24 in CI, pnpm 11.9.0
 Browser method: GitHub Actions Playwright projects at desktop and narrow
 responsive Chromium sizes against a fresh production build served by
 `next start`, plus the generated static demo served at `/rubrictrail`; see the
-[v0.5.0 exact-main verification run for commit
-`b8d80b0`](https://github.com/Sion612/rubrictrail/actions/runs/31593393903)
+[v0.5.1 release](https://github.com/Sion612/rubrictrail/releases/tag/v0.5.1)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
-The v0.5.1 candidate adds four component/integration checks for fixed,
-privacy-safe community links and workspace menu focus behavior. A local
-non-browser run passed 21 files and 265/265 tests, ESLint with zero warnings and
-TypeScript. The published, exact-run evidence below remains the v0.5.0 baseline
-until the candidate completes remote CI.
+v0.5.1 adds four component/integration checks for fixed, privacy-safe community
+links and workspace menu focus behavior. Its required quality, production-browser
+and Pages-static checks all passed before release.
 
 ## Automated gates
 
@@ -21,7 +18,7 @@ until the candidate completes remote CI.
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 19 files, 261/261 tests passed |
+| `pnpm test` | 21 files, 265/265 tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed independently in both CI jobs |
 | `pnpm test:e2e --workers=1` | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 2 Chromium projects) |
 | `pnpm build:demo` | Static export for `/rubrictrail` completed successfully |
@@ -31,10 +28,11 @@ until the candidate completes remote CI.
 
 ## Deployment evidence
 
-[Deploy Pages run 31593580751](https://github.com/Sion612/rubrictrail/actions/runs/31593580751)
-checked out, rebuilt and audited the same tagged release SHA `b8d80b0`, then completed
-both its build and `github-pages` deployment jobs. The generated artifact, rather
-than the live host, is what passed the 28/28 static CI browser executions.
+The [Deploy Pages workflow](https://github.com/Sion612/rubrictrail/actions/workflows/deploy-pages.yml?query=branch%3Amain)
+checks out, rebuilds and audits the exact successful main CI revision before its
+`github-pages` deployment job. The generated artifact, rather than the live host,
+is what passes the 28/28 static CI browser executions. The v0.5.1 release notes
+link the exact CI and deployment runs for the tagged revision.
 
 A separate live HTTP smoke check observed:
 

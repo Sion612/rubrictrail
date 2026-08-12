@@ -18,6 +18,9 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 - Corrected the v0.5.0 verification references to the final tagged commit and
   its exact-main CI and Pages deployment runs.
+- Records v0.5.1 verification through stable Release and workflow-history links
+  so a later documentation-only release-preparation commit cannot stale an
+  embedded pre-release SHA.
 
 ## [0.5.0] - 2026-08-12
 

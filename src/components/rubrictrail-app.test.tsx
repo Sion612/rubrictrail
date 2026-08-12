@@ -481,20 +481,68 @@ describe("RubricTrailApp reliability", () => {
       await Promise.resolve();
     });
 
-    const firstCommit = window.localStorage.getItem(PROJECT_RECORD_KEY);
-    if (firstCommit === null) throw new Error("Expected the queued write to commit");
-    expect(projectRecord(firstCommit).revision).toBe(initialRevision + 1);
-    expect(storedProjectState(firstCommit).draftText).toBe(
-      "The first rapidly entered draft.",
-    );
-
-    await advance(0);
     const finalCommit = window.localStorage.getItem(PROJECT_RECORD_KEY);
     if (finalCommit === null) throw new Error("Expected the latest write to commit");
     expect(projectRecord(finalCommit).revision).toBe(initialRevision + 2);
     expect(storedProjectState(finalCommit).draftText).toBe(
       "The final rapidly entered draft.",
     );
+  });
+
+  it("confirms an explicit self-check save only after the durable write finishes", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<RubricTrailApp />);
+    await advance(0);
+    await restoreBackup(
+      screen.getByTestId("backup-file-input"),
+      uploadedBackupState(),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /Check/i })[0]);
+
+    const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
+    await act(async () => {
+      await holder.entered;
+    });
+
+    const reviewText =
+      "The evidence supports the strategy because the cited source explains the constraint.";
+    fireEvent.change(screen.getByTestId("uploaded-review-text"), {
+      target: { value: reviewText },
+    });
+    fireEvent.click(screen.getByLabelText(/Evidence is visible/));
+    fireEvent.click(screen.getByLabelText(/The link is explained/));
+    fireEvent.click(screen.getByLabelText(/The source is traceable/));
+    fireEvent.click(screen.getByTestId("save-self-check"));
+    await flushMicrotasks();
+
+    expect(testLocks.pendingCount()).toBe(1);
+    expect(screen.getByTestId("save-self-check")).toHaveTextContent("Saving self-check");
+    expect(screen.getByTestId("toast")).not.toHaveTextContent(
+      "Self-check saved in this browser",
+    );
+    expect(currentStoredProjectState().uploadedCriterionReviews).toEqual([]);
+
+    await act(async () => {
+      holder.release();
+      await holder.done;
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(currentStoredProjectState().uploadedCriterionReviews).toEqual([
+      expect.objectContaining({
+        criterionId: "analysis-1",
+        draftText: reviewText,
+        evidenceVisible: true,
+        linkExplained: true,
+        sourceTraceable: true,
+      }),
+    ]);
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "Self-check saved in this browser",
+    );
+    expect(screen.getByTestId("save-self-check")).toHaveTextContent("Save self-check");
   });
 
   it("keeps exact external bytes when a stale tab edits or closes", async () => {

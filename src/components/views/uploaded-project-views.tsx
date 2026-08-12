@@ -245,7 +245,7 @@ interface UploadedDraftReviewViewProps {
   project: UploadedProject;
   reviews: UploadedCriterionReview[];
   onChange: (review: UploadedCriterionReview) => void;
-  onSave: (review: UploadedCriterionReview) => void;
+  onSave: (review: UploadedCriterionReview) => Promise<void>;
   onNavigate: (view: WorkspaceView) => void;
 }
 
@@ -257,6 +257,7 @@ export function UploadedDraftReviewView({
   onNavigate,
 }: UploadedDraftReviewViewProps) {
   const [criterionId, setCriterionId] = useState(project.criteria[0]?.id ?? "");
+  const [isSaving, setIsSaving] = useState(false);
   const [workingReviews, setWorkingReviews] = useState<Record<string, Omit<UploadedCriterionReview, "criterionId" | "updatedAt">>>(
     () => Object.fromEntries(reviews.map((review) => [review.criterionId, {
       draftText: review.draftText,
@@ -297,16 +298,21 @@ export function UploadedDraftReviewView({
   ).size;
   const canSave = activeReview.draftText.trim().length >= 20;
 
-  function save() {
-    if (!canSave) return;
-    onSave({
-      criterionId,
-      draftText: activeReview.draftText.trim(),
-      evidenceVisible: activeReview.evidenceVisible,
-      linkExplained: activeReview.linkExplained,
-      sourceTraceable: activeReview.sourceTraceable,
-      updatedAt: new Date().toISOString(),
-    });
+  async function save() {
+    if (!canSave || isSaving) return;
+    setIsSaving(true);
+    try {
+      await onSave({
+        criterionId,
+        draftText: activeReview.draftText.trim(),
+        evidenceVisible: activeReview.evidenceVisible,
+        linkExplained: activeReview.linkExplained,
+        sourceTraceable: activeReview.sourceTraceable,
+        updatedAt: new Date().toISOString(),
+      });
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -327,7 +333,7 @@ export function UploadedDraftReviewView({
         <section className="draft-review-editor" aria-labelledby="review-editor-title">
           <label>
             <span>Rubric criterion</span>
-            <select value={criterionId} onChange={(event) => setCriterionId(event.target.value)}>
+            <select disabled={isSaving} value={criterionId} onChange={(event) => setCriterionId(event.target.value)}>
               {project.criteria.map((criterion) => (
                 <option key={criterion.id} value={criterion.id}>
                   {criterion.name}{criterion.weight !== null ? ` · ${criterion.weight}%` : ""}
@@ -339,6 +345,7 @@ export function UploadedDraftReviewView({
             <span id="review-editor-title">Paste the paragraph or notes that support this criterion</span>
             <textarea
               value={activeReview.draftText}
+              disabled={isSaving}
               onChange={(event) => updateActive({ draftText: event.target.value })}
               placeholder="Paste your own draft text here…"
               maxLength={UPLOADED_REVIEW_MAX_CHARACTERS}
@@ -350,12 +357,12 @@ export function UploadedDraftReviewView({
             {activeReview.draftText.length.toLocaleString()} / {UPLOADED_REVIEW_MAX_CHARACTERS.toLocaleString()} characters
           </p>
           {!canSave && activeReview.draftText ? <p className="field-message warning">Add at least 20 characters so the saved note is meaningful.</p> : null}
-          <button className="button button-primary button-full" type="button" disabled={!canSave} onClick={save} data-testid="save-self-check">
-            Save self-check
+          <button className="button button-primary button-full" type="button" disabled={!canSave || isSaving} aria-busy={isSaving} onClick={save} data-testid="save-self-check">
+            {isSaving ? "Saving self-check…" : "Save self-check"}
           </button>
           <div className="integrity-note compact">
             <LockKeyhole aria-hidden="true" />
-            <p><strong>Autosave is on.</strong> Save records a review time; the criterion counts complete only when the note and all three checks are present.</p>
+            <p><strong>Save checks browser storage.</strong> The criterion counts complete only when the note and all three checks are present.</p>
           </div>
         </section>
 
@@ -366,17 +373,17 @@ export function UploadedDraftReviewView({
             <p>Tick only what you can point to in the text above.</p>
           </div>
           <label>
-            <input type="checkbox" checked={activeReview.evidenceVisible} onChange={(event) => updateActive({ evidenceVisible: event.target.checked })} />
+            <input type="checkbox" disabled={isSaving} checked={activeReview.evidenceVisible} onChange={(event) => updateActive({ evidenceVisible: event.target.checked })} />
             <span aria-hidden="true"><Check /></span>
             <div><strong>Evidence is visible</strong><small>A fact, example, calculation or source appears in the paragraph.</small></div>
           </label>
           <label>
-            <input type="checkbox" checked={activeReview.linkExplained} onChange={(event) => updateActive({ linkExplained: event.target.checked })} />
+            <input type="checkbox" disabled={isSaving} checked={activeReview.linkExplained} onChange={(event) => updateActive({ linkExplained: event.target.checked })} />
             <span aria-hidden="true"><Check /></span>
             <div><strong>The link is explained</strong><small>Your words explain why the evidence helps meet this criterion.</small></div>
           </label>
           <label>
-            <input type="checkbox" checked={activeReview.sourceTraceable} onChange={(event) => updateActive({ sourceTraceable: event.target.checked })} />
+            <input type="checkbox" disabled={isSaving} checked={activeReview.sourceTraceable} onChange={(event) => updateActive({ sourceTraceable: event.target.checked })} />
             <span aria-hidden="true"><Check /></span>
             <div><strong>The source is traceable</strong><small>A reader can find the original source, data or calculation.</small></div>
           </label>

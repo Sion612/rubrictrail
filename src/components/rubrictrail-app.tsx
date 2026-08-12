@@ -274,6 +274,8 @@ interface PersistenceWarningState {
   message: string;
 }
 
+type PersistenceFlushOutcome = "saved" | "blocked" | "failed";
+
 function sampleStepStates(
   project: PersistedProjectState,
   completion: number,
@@ -372,8 +374,10 @@ export function RubricTrailApp() {
   const persistHydratedState = useRef(false);
   const skipNextPersistenceWrite = useRef(false);
   const persistenceDisabled = useRef(false);
-  const persistenceInFlight = useRef<Promise<void> | null>(null);
-  const flushPendingProjectRef = useRef<(() => Promise<void>) | null>(null);
+  const persistenceInFlight = useRef<Promise<PersistenceFlushOutcome> | null>(null);
+  const flushPendingProjectRef = useRef<
+    (() => Promise<PersistenceFlushOutcome>) | null
+  >(null);
   const backupImportActive = useRef(false);
   const intakeRunId = useRef(0);
   const focusWelcomeIntake = useRef<AssignmentIntakeMode | null>(null);
@@ -425,24 +429,22 @@ export function RubricTrailApp() {
     }, delay);
   }, [cancelPersistenceTimer]);
 
-  const flushPendingProject = useCallback(async () => {
-    if (
-      !hasPendingProjectChange.current ||
-      persistenceDisabled.current ||
-      storageConflictActive.current
-    ) {
-      return;
-    }
+  const flushPendingProject = useCallback(async (): Promise<PersistenceFlushOutcome> => {
+    if (!hasPendingProjectChange.current) return "saved";
+    if (persistenceDisabled.current || storageConflictActive.current) return "blocked";
     if (persistenceInFlight.current) {
-      await persistenceInFlight.current;
-      return;
+      const inFlightOutcome = await persistenceInFlight.current;
+      if (inFlightOutcome !== "saved") return inFlightOutcome;
+      if (!hasPendingProjectChange.current) return "saved";
+      if (persistenceDisabled.current || storageConflictActive.current) return "blocked";
+      return (await flushPendingProjectRef.current?.()) ?? "failed";
     }
 
     const baseline = observedStorageBaseline.current;
-    if (!baseline) return;
+    if (!baseline) return "failed";
     const projectToSave = latestProject.current;
     const operation = writeProjectState(projectToSave, baseline)
-      .then((result) => {
+      .then((result): PersistenceFlushOutcome => {
         if (result.ok) {
           observedStorageBaseline.current = result.baseline;
           markDurableSavingAvailable();
@@ -452,18 +454,18 @@ export function RubricTrailApp() {
           setPersistenceWarning((current) =>
             current?.kind === "write" ? null : current,
           );
-          return;
+          return "saved";
         }
         if (result.reason === "conflict" || result.reason === "invalid-record") {
           markStorageConflict();
-          return;
+          return "blocked";
         }
         if (result.reason === "coordination-unavailable") {
           markDurableSavingUnavailable();
           setPersistenceWarning((current) =>
             current?.kind === "write" ? null : current,
           );
-          return;
+          return "blocked";
         }
         const invalidState = result.reason === "invalid-state";
         const message = invalidState
@@ -475,14 +477,16 @@ export function RubricTrailApp() {
           setDurableSavingUnavailable(true);
         }
         setPersistenceWarning({ kind: "write", message });
+        return "failed";
       })
-      .catch(() => {
+      .catch((): PersistenceFlushOutcome => {
         setDurableSavingUnavailable(true);
         setPersistenceWarning({
           kind: "write",
           message:
             "RubricTrail could not finish the local save. Recent changes are only in this tab; download a backup before closing.",
         });
+        return "failed";
       })
       .finally(() => {
         if (persistenceInFlight.current === operation) {
@@ -498,7 +502,16 @@ export function RubricTrailApp() {
         }
       });
     persistenceInFlight.current = operation;
-    await operation;
+    const outcome = await operation;
+    if (
+      outcome === "saved" &&
+      hasPendingProjectChange.current &&
+      !persistenceDisabled.current &&
+      !storageConflictActive.current
+    ) {
+      return (await flushPendingProjectRef.current?.()) ?? "failed";
+    }
+    return outcome;
   }, [
     markDurableSavingAvailable,
     markDurableSavingUnavailable,
@@ -1428,9 +1441,22 @@ export function RubricTrailApp() {
     }));
   }
 
-  function saveUploadedReview(review: UploadedCriterionReview) {
+  async function saveUploadedReview(review: UploadedCriterionReview) {
     updateUploadedReview(review);
-    showNotice({ tone: "success", message: "Self-check recorded. It counts as complete only when the draft note and all three evidence checks are present." });
+    const outcome = await flushPendingProject();
+    if (outcome === "saved") {
+      showNotice({
+        tone: "success",
+        message:
+          "Self-check saved in this browser. It counts as complete only when the draft note and all three evidence checks are present.",
+      });
+      return;
+    }
+    showNotice({
+      tone: "warning",
+      message:
+        "Self-check is only in this tab because browser saving was not confirmed. Resolve the storage warning or download a backup before closing.",
+    });
   }
 
   function toggleReadiness(id: string) {

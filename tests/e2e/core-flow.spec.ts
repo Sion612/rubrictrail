@@ -389,7 +389,8 @@ test("real upload can create and persist a source-linked local project", async (
   await page.getByLabel("The link is explained").check();
   await page.getByLabel("The source is traceable").check();
   await page.getByTestId("save-self-check").click();
-  await expect(page.getByTestId("toast")).toContainText("Self-check recorded");
+  await expect(page.getByTestId("toast")).toContainText("Self-check saved in this browser");
+  expect(await readProjectRecordRaw(page)).toContain("strategic constraint");
 
   await page.reload();
   await expect(page.getByText("Strategy Report", { exact: true }).first()).toBeVisible();

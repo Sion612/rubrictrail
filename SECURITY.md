@@ -39,6 +39,12 @@ seen and will coordinate disclosure after a fix is available.
   rubric state stores `weightingStatus` as `complete`, `incomplete` or `none`,
   with each criterion percentage represented as a number or `null`. Only a
   complete 100% breakdown weights the plan; missing values are not synthesized.
+- TXT input is decoded as strict UTF-8. Invalid byte sequences fail closed and
+  can only be omitted through the explicit mixed-batch recovery decision.
+- Persisted and restored evidence is cross-checked against the compact source
+  list: source ids and filenames must be present together, one source id cannot
+  claim multiple filenames, and retained excerpt offsets must match the excerpt.
+  Full source text is not retained, so users must still re-check the original.
 - The authoritative browser value is the revisioned
   `rubrictrail.project.store.v1` record. Its envelope is separate from the state
   and backup protocols: active project and backup payloads remain v3. During

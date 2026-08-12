@@ -15,7 +15,7 @@ screenshots. Current functional browser coverage runs in GitHub Actions.
 | `docs/assets/rubrictrail-mobile.png` | Final mobile production viewport |
 
 The capture script creates a fictional TXT project, confirms a 100% rubric,
-opens the rubric view and, on desktop, opens the exact retained source excerpt.
+opens the rubric view and, on desktop, opens the retained source excerpt for re-checking.
 It waits for the local-save toast to leave before capturing.
 
 ## Concept-to-product comparison
@@ -26,7 +26,7 @@ It waits for the local-save toast to leave before capturing.
 | Five explicit workflow states | Desktop uses a persistent left rail; mobile uses a horizontally scrollable state strip with labels | Faithful, responsively adapted |
 | Assignment identity, due date, word count and local mode visible together | A project context line sits below the header and a Local-only badge stays in the header | Faithful |
 | Criterion, weight, confirmation state and source appear in one scan path | Desktop rubric rows preserve all four fields; mobile stacks the source below each row | Faithful, responsively adapted |
-| Source evidence opens beside the work rather than replacing it | A modal side drawer retains filename, page when available and exact excerpt | Faithful |
+| Source evidence opens beside the work rather than replacing it | A modal side drawer retains recorded filename, page when available and a short excerpt to re-check | Faithful |
 | One dominant next action | The rubric ends in **Build action plan**; secondary navigation stays visually quieter | Faithful |
 | Trust language avoids invented grades or semantic certainty | The UI says weights are user-confirmed, progress is work completion and self-checks record human judgment | Strengthened |
 
@@ -45,11 +45,12 @@ It waits for the local-save toast to leave before capturing.
 
 ## Interaction and layout checks
 
-- 24/24 Playwright executions passed in the [v0.3.7 runtime and test-code run
-  for commit `f8367d1`](https://github.com/Sion612/rubrictrail/actions/runs/31578088125):
-  12 scenarios at desktop and narrow responsive Chromium sizes, including
+- 26/26 Playwright executions passed in the [v0.4.0 release-candidate runtime and test-code run
+  for commit `b76ac92`](https://github.com/Sion612/rubrictrail/actions/runs/31585730947):
+  13 scenarios at desktop and narrow responsive Chromium sizes, including
   planning-depth persistence, multi-tab and v2/v3 recovery plus targeted
-  320×700 mixed-batch, paste, rubric-weighting and error states. These are
+  malformed UTF-8 rejection, recorded-evidence copy, and 320×700 mixed-batch,
+  paste, rubric-weighting and error states. These are
   viewport checks, not
   mobile-UA, touch or physical-device emulation.
 - Navigation and local-project creation reset the workspace to the top.
@@ -60,7 +61,8 @@ It waits for the local-save toast to leave before capturing.
 
 The screenshots predate the v0.3.1 paste form, v0.3.2 mixed-batch review,
 v0.3.3 multi-tab conflict banner, v0.3.4 complete/not-complete rubric choice,
-v0.3.5 planning-depth control or v0.3.6 bounded-parser recovery copy.
+v0.3.5 planning-depth control, v0.3.6 bounded-parser recovery copy, v0.3.7
+lock-backed storage record, or v0.4.0 evidence-trust copy.
 The established product flows have browser assertions for focus, text size,
 explicit recovery, privacy and overflow. The v0.3.6 parser boundaries and
 recovery mappings have unit and component coverage, while the full browser

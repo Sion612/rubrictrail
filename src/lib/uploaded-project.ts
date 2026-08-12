@@ -223,7 +223,13 @@ export function createUploadedProject(
       id: `${slug(criterion.name)}-${index + 1}`,
       name: criterion.name.trim(),
       weight: retainedWeights[index],
-      evidence: criterion.evidence,
+      evidence:
+        criterion.evidence !== null &&
+        criterion.evidence.sourceId !== null &&
+        criterion.evidence.fileName !== null &&
+        result.fileNames.includes(criterion.evidence.fileName)
+          ? criterion.evidence
+          : null,
     })),
     createdAt,
   };

@@ -7,7 +7,7 @@ pasted brief and rubric to confirmed requirements, scheduled work, draft
 evidence and final human checks.
 
 It is designed for students who need more than a document summary. Every
-criterion can retain the exact source excerpt that supports it, and every plan
+criterion can retain a short source excerpt recorded during intake, and every plan
 task has a definition of done. RubricTrail does not write a submission, invent a
 criterion, or predict a grade.
 
@@ -52,7 +52,9 @@ The custom workflow includes:
   50,000 merged lines and 100,000 merged whitespace-delimited words;
 - explicit mixed-batch recovery that requires a decision before omitting a file
   with a recoverable per-file problem;
-- exact retained rubric excerpts with filename and PDF page when available;
+- retained rubric excerpts with recorded filename and PDF page when available;
+- strict UTF-8 decoding for TXT files, with malformed text rejected instead of
+  silently inserting replacement characters;
 - a generic dependency-aware plan linked only to confirmed criteria;
 - `focused`, `standard`, `thorough` and `extended` planning-depth choices that
   adjust task scope and time allowance only; they do not correspond to or
@@ -85,6 +87,11 @@ are not added to the saved project or backup. Selection-wide PDF-page and merged
 text limits stop the complete batch; they do not omit later files according to
 selection order. The PDF-page total includes every selected PDF with readable
 page-count metadata, including a per-file over-limit PDF offered for omission.
+Saved evidence must include a canonical source id and a filename from the
+project source list; the same source id cannot claim different filenames, and
+excerpt offsets must match the retained text. Because full source text is
+discarded, a restored excerpt remains a recorded aid rather than independently
+verified proof—compare the original before relying on it.
 
 ### Back up or restore a project
 
@@ -193,24 +200,24 @@ and narrow responsive browser suite:
 pnpm test:e2e --workers=1
 ```
 
-Current v0.3.7 runtime and test-code verification on 12 August 2026
-([commit `f8367d1`, GitHub Actions run 31578088125](https://github.com/Sion612/rubrictrail/actions/runs/31578088125)):
+Current v0.4.0 release-candidate runtime and test-code verification on 12 August 2026
+([commit `b76ac92`, GitHub Actions run 31585730947](https://github.com/Sion612/rubrictrail/actions/runs/31585730947)):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 221/221 tests passed across 16 files |
+| Vitest | 257/257 tests passed across 19 files |
 | Next.js production build | Passed |
-| Playwright | GitHub Actions: 24/24 executions passed (12 scenarios × 1440×900 and 390×844 Chromium viewports), including lock-serialized same-revision writes, confirmed self-check persistence, planning-depth persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
+| Playwright | GitHub Actions: 26/26 executions passed (13 scenarios × 1440×900 and 390×844 Chromium viewports), including strict UTF-8 rejection, recorded-evidence trust copy, lock-serialized same-revision writes, confirmed self-check persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,
 explicit omitted-file review, pasted brief and rubric intake, manual repair of a
 missing rubric without fabricated weights, partial published weights, local
-persistence and privacy, evidence drawer focus, recoverable unsupported files,
-empty drafts, multi-tab overwrite protection, explicit v2-to-v3 recovery,
-console errors and horizontal overflow. The narrow projects test responsive
+persistence and privacy, recorded-evidence drawer focus, malformed UTF-8 and
+recoverable unsupported files, empty drafts, multi-tab overwrite protection,
+explicit v2-to-v3 recovery, console errors and horizontal overflow. The narrow projects test responsive
 Chromium viewports; they are not mobile-device, touch or mobile-UA emulation.
 
 ## Architecture

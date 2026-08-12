@@ -179,6 +179,166 @@ describe("local project persistence", () => {
     expect(readProjectState()).toEqual(state);
   });
 
+  it("rejects uploaded evidence that names a source outside the saved project", () => {
+    const state = uploadedState();
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      fileName: "invented-rubric.txt",
+    };
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+  });
+
+  it("rejects deceptive control and bidirectional characters in saved filenames", () => {
+    const state = uploadedState();
+    const deceptiveName = "report\u202Etxt.exe";
+    state.uploadedProject!.fileNames = [deceptiveName];
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      fileName: deceptiveName,
+    };
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+  });
+
+  it("rejects uploaded evidence with only one recorded source label", () => {
+    const state = uploadedState();
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      fileName: null,
+    };
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+  });
+
+  it("rejects a half-trusted evidence object with no recorded source", () => {
+    const state = uploadedState();
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      sourceId: null,
+      fileName: null,
+    };
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+  });
+
+  it("accepts retained input-index source ids when a middle file was omitted", () => {
+    const state = uploadedState();
+    state.uploadedProject!.fileNames = ["brief.txt", "rubric.txt"];
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      sourceId: "source-3",
+      fileName: "rubric.txt",
+    };
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(true);
+  });
+
+  it("rejects a non-canonical uploaded evidence source id", () => {
+    const state = uploadedState();
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      sourceId: "source-01",
+    };
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+  });
+
+  it("rejects source ids outside the persisted file-count boundary", () => {
+    const state = uploadedState();
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      sourceId: "source-26",
+    };
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+  });
+
+  it("rejects an evidence span shorter than its retained excerpt", () => {
+    const state = uploadedState();
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      endOffset: 54,
+    };
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+  });
+
+  it("recovers v2 and v3 evidence offsets written with the legacy untrimmed-line span", () => {
+    const legacyState = uploadedState();
+    legacyState.uploadedProject!.criteria[0].evidence = {
+      ...legacyState.uploadedProject!.criteria[0].evidence!,
+      endOffset: 57,
+    };
+
+    for (const candidate of [legacyState, v2Value(legacyState)]) {
+      const parsed = parsePersistedProjectStateValue(candidate);
+      expect(parsed).toMatchObject({ ok: true, recovered: true });
+      if (!parsed.ok) throw new Error("Expected legacy evidence offsets to recover");
+      expect(parsed.state.uploadedProject?.criteria[0].evidence).toMatchObject({
+        excerpt: "Analysis | 100%",
+        startOffset: 40,
+        endOffset: 55,
+      });
+    }
+  });
+
+  it("recovers legacy evidence offsets inside the authoritative project record", () => {
+    const legacyState = uploadedState();
+    legacyState.uploadedProject!.criteria[0].evidence = {
+      ...legacyState.uploadedProject!.criteria[0].evidence!,
+      endOffset: 57,
+    };
+    window.localStorage.setItem(
+      PROJECT_RECORD_KEY,
+      JSON.stringify({
+        formatVersion: 1,
+        revision: 1,
+        value: { kind: "project", state: legacyState },
+        legacyFingerprints: { v3: null, v2: null, v1: null },
+      }),
+    );
+
+    expect(readProjectStateWithStatus()).toMatchObject({
+      source: "record",
+      recovered: true,
+      state: {
+        uploadedProject: {
+          criteria: [
+            {
+              evidence: {
+                excerpt: "Analysis | 100%",
+                startOffset: 40,
+                endOffset: 55,
+              },
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("rejects one source id that claims two different filenames", () => {
+    const state = uploadedState();
+    state.uploadedProject!.fileNames = ["brief.txt", "rubric.txt"];
+    state.uploadedProject!.criteria.push({
+      id: "recommendations-2",
+      name: "Recommendations",
+      weight: null,
+      evidence: {
+        sourceId: "source-1",
+        fileName: "rubric.txt",
+        page: null,
+        excerpt: "Recommendations",
+        startOffset: 60,
+        endOffset: 75,
+      },
+    });
+    state.uploadedProject!.weightingStatus = "incomplete";
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+  });
+
   it("round-trips a v3 project whose rubric publishes no weights", async () => {
     const state = unweightedUploadedState();
 

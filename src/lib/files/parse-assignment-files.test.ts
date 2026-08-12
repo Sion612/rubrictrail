@@ -121,6 +121,52 @@ describe("parseAssignmentFiles", () => {
     expect(parserMocks.getDocument).not.toHaveBeenCalled();
   });
 
+  it("decodes valid ASCII, multibyte and BOM-prefixed UTF-8 text", async () => {
+    const ascii = makeFile("Assignment title: Plain text", "ascii.txt");
+    const multibyte = makeFile("Rubric\n分析 — café ✅", "multibyte.txt");
+    const withBom = makeFile(
+      new Uint8Array([0xef, 0xbb, 0xbf, 0x44, 0x75, 0x65]),
+      "bom.txt",
+    );
+
+    const result = await parseAssignmentFiles([ascii, multibyte, withBom]);
+
+    expect(result.text).toBe(
+      "Assignment title: Plain text\n\nRubric\n分析 — café ✅\n\nDue",
+    );
+    expect(result.text).not.toContain("�");
+  });
+
+  it.each([
+    { name: "invalid continuation", bytes: [0x41, 0x80, 0x42] },
+    { name: "invalid continuation sequence", bytes: [0x41, 0xc3, 0x28, 0x42] },
+    { name: "truncated multibyte sequence", bytes: [0x41, 0xe2, 0x82] },
+    { name: "overlong sequence", bytes: [0x41, 0xc0, 0xaf, 0x42] },
+  ])("rejects $name with a stable encoding code", async ({ bytes }) => {
+    const file = makeFile(new Uint8Array(bytes), "invalid-encoding.txt");
+
+    await expect(parseAssignmentFiles([file])).rejects.toSatisfy(
+      (error: unknown) => {
+        expect(error).toBeInstanceOf(AssignmentFileParseError);
+        expect(error).toMatchObject({
+          code: "INVALID_TEXT_ENCODING",
+          fileName: "invalid-encoding.txt",
+        });
+        expect((error as Error).message).toContain("valid UTF-8");
+        return true;
+      },
+    );
+  });
+
+  it("does not misreport a TXT read failure as invalid encoding", async () => {
+    const file = makeFile("Readable", "unreadable.txt");
+    vi.spyOn(file, "arrayBuffer").mockRejectedValue(new Error("read failed"));
+
+    await expect(parseAssignmentFiles([file])).rejects.toSatisfy(
+      expectErrorCode("CORRUPT_DOCUMENT"),
+    );
+  });
+
   it("rejects an unsupported file type with a stable code", async () => {
     const file = makeFile("legacy", "brief.doc", "application/msword");
 
@@ -656,6 +702,63 @@ describe("parseAssignmentFilesWithRecovery", () => {
         code: "UNSUPPORTED_FILE_TYPE",
       }),
     ]);
+  });
+
+  it("skips malformed UTF-8 while preserving readable files in a mixed batch", async () => {
+    const first = makeFile("Assignment title: Safe Brief", "brief.txt");
+    const malformed = makeFile(
+      new Uint8Array([0x52, 0x75, 0x62, 0x72, 0x69, 0x63, 0x3a, 0x20, 0x80]),
+      "malformed.txt",
+    );
+    const third = makeFile("Rubric\nAnalysis | 100%", "rubric.txt");
+
+    const result = await parseAssignmentFilesWithRecovery([
+      first,
+      malformed,
+      third,
+    ]);
+
+    expect(result.parsed.sources.map((source) => source.id)).toEqual([
+      "source-1",
+      "source-3",
+    ]);
+    expect(result.parsed.text).toBe(
+      "Assignment title: Safe Brief\n\nRubric\nAnalysis | 100%",
+    );
+    expect(result.parsed.totalBytes).toBe(first.size + third.size);
+    expect(result.skippedFiles).toEqual([
+      expect.objectContaining({
+        inputIndex: 1,
+        fileName: "malformed.txt",
+        code: "INVALID_TEXT_ENCODING",
+      }),
+    ]);
+  });
+
+  it("returns a friendly per-file encoding failure when no TXT is readable", async () => {
+    const malformed = makeFile(
+      new Uint8Array([0xf0, 0x28, 0x8c, 0x28]),
+      "malformed.txt",
+    );
+
+    await expect(
+      parseAssignmentFilesWithRecovery([malformed]),
+    ).rejects.toSatisfy((error: unknown) => {
+      expect(error).toBeInstanceOf(AssignmentFileBatchParseError);
+      expect((error as Error).message).toBe(
+        "None of the selected files could be read safely.",
+      );
+      expect((error as AssignmentFileBatchParseError).failures).toEqual([
+        expect.objectContaining({
+          inputIndex: 0,
+          fileName: "malformed.txt",
+          code: "INVALID_TEXT_ENCODING",
+          message:
+            '"malformed.txt" is not valid UTF-8 text. Save it as UTF-8 and try again.',
+        }),
+      ]);
+      return true;
+    });
   });
 
   it("continues after a corrupt document and keeps later source identity", async () => {

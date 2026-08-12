@@ -208,6 +208,7 @@ describe("uploaded project workflow", () => {
     expect(project.weightingStatus).toBe("complete");
     expect(project.criteria.map((criterion) => criterion.weight)).toEqual([40, 35, 25]);
     expect(project.fileNames).toEqual(["brief.txt", "rubric.txt"]);
+    expect(project.criteria.every((criterion) => criterion.evidence === null)).toBe(true);
     expect(JSON.stringify(project)).not.toContain("Use APA 7 referencing");
   });
 

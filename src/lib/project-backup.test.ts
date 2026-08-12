@@ -63,7 +63,7 @@ function unweightedUploadedState(): PersistedProjectState {
             ...criterion,
             weight: null,
             evidence: criterion.evidence
-              ? { ...criterion.evidence, excerpt: "Analysis" }
+              ? { ...criterion.evidence, excerpt: "Analysis", endOffset: 48 }
               : null,
           })),
         }
@@ -129,6 +129,19 @@ describe("RubricTrail project backups", () => {
     expect(restored.recovered).toBe(true);
     expect(restored.state.version).toBe(3);
     expect(restored.state.uploadedProject?.criteria[0].weight).toBe(100);
+  });
+
+  it("recovers the untrimmed-line evidence span written by older releases", () => {
+    const envelope = JSON.parse(serializeProjectBackup(uploadedState()));
+    envelope.project.uploadedProject.criteria[0].evidence.endOffset = 57;
+
+    const restored = parseProjectBackupText(JSON.stringify(envelope));
+    expect(restored.recovered).toBe(true);
+    expect(restored.state.uploadedProject?.criteria[0].evidence).toMatchObject({
+      excerpt: "Analysis | 100%",
+      startOffset: 40,
+      endOffset: 55,
+    });
   });
 
   it("uses a portable, recognizable filename without losing CJK titles", () => {
@@ -200,6 +213,24 @@ describe("RubricTrail project backups", () => {
     invalidEvidence.project.uploadedProject.criteria[0].evidence.page = -1;
     expectBackupError(
       () => parseProjectBackupText(JSON.stringify(invalidEvidence)),
+      "invalid-project",
+    );
+
+    const inventedSource = JSON.parse(serializeProjectBackup(uploadedState()));
+    inventedSource.project.uploadedProject.criteria[0].evidence.fileName =
+      "invented-rubric.txt";
+    expectBackupError(
+      () => parseProjectBackupText(JSON.stringify(inventedSource)),
+      "invalid-project",
+    );
+
+    const deceptiveSource = JSON.parse(serializeProjectBackup(uploadedState()));
+    const deceptiveName = "report\u202Etxt.exe";
+    deceptiveSource.project.uploadedProject.fileNames = [deceptiveName];
+    deceptiveSource.project.uploadedProject.criteria[0].evidence.fileName =
+      deceptiveName;
+    expectBackupError(
+      () => parseProjectBackupText(JSON.stringify(deceptiveSource)),
       "invalid-project",
     );
 

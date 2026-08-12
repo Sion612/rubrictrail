@@ -91,7 +91,7 @@ export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProp
         <div>
           <span className="trace-node"><Quote aria-hidden="true" /></span>
           <h2>Rubric</h2>
-          <p>Exact source excerpts</p>
+          <p>Recorded excerpts to re-check</p>
         </div>
         <i aria-hidden="true" />
         <div>

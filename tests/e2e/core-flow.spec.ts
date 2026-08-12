@@ -365,6 +365,7 @@ test("real upload can create and persist a source-linked local project", async (
   await expect(page.getByText("APA 7")).toBeVisible();
   await expect(page.getByText("LumaLane Market")).toHaveCount(0);
   await expect(page.getByText("OM302 Operations Management")).toHaveCount(0);
+  await expect(page.getByText("Recorded excerpts to re-check")).toBeVisible();
 
   await page.getByRole("button", { name: "Review rubric" }).click();
   await expect(page.getByRole("heading", { name: "Confirm what earns marks." })).toBeVisible();
@@ -373,6 +374,8 @@ test("real upload can create and persist a source-linked local project", async (
   await evidenceButton.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("Strategic analysis | 40%");
+  await expect(dialog).toContainText("Recorded source: strategy-brief.txt");
+  await expect(dialog).toContainText("Retained excerpt — re-check the original");
   await page.keyboard.press("Escape");
 
   await visibleWorkflowButton(page, "Plan").click();
@@ -706,4 +709,27 @@ test("unsupported files and empty sample drafts have actionable recovery states"
   await page.getByTestId("draft-text").fill("");
   await expect(page.getByText("Paste your own writing to begin.", { exact: false })).toBeVisible();
   await expect(page.getByTestId("run-draft-check")).toBeDisabled();
+});
+
+test("malformed UTF-8 TXT is rejected before a project is created", async ({ page }, testInfo) => {
+  await useNarrowMobileViewport(page, testInfo);
+  await page.getByTestId("file-input").setInputFiles({
+    name: "legacy-encoding.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from([0x41, 0xc3, 0x28, 0x42]),
+  });
+
+  const error = page.getByTestId("upload-error");
+  await expect(error).toBeFocused();
+  await expect(error).toContainText("This TXT file is not valid UTF-8.");
+  await expect(error).toContainText("Save it as UTF-8 text");
+  await expect(error.getByRole("button")).toHaveText([
+    "Choose another file",
+    "Paste text instead",
+  ]);
+  await expect(
+    page.getByRole("heading", { name: "Confirm what the assignment says." }),
+  ).not.toBeVisible();
+  expect(await readProjectRecordRaw(page)).toBeNull();
+  await expectNoHorizontalOverflow(page);
 });

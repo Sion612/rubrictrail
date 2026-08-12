@@ -19,6 +19,7 @@ const FILE_ISSUE_REASONS: Record<AssignmentFileErrorCode, string> = {
   PDF_TOO_MANY_PAGES: `The PDF contains more than ${ASSIGNMENT_PDF_MAX_PAGES.toLocaleString("en-US")} pages.`,
   TOTAL_PDF_PAGES_TOO_LARGE: `The selected PDFs contain more than ${ASSIGNMENT_PDFS_MAX_TOTAL_PAGES.toLocaleString("en-US")} pages combined.`,
   EMPTY_FILE: "No readable text was found.",
+  INVALID_TEXT_ENCODING: "The TXT file is not valid UTF-8 text.",
   SCANNED_NO_TEXT: "No selectable text was found; this may be a scan.",
   ENCRYPTED_PDF: "The PDF is password-protected.",
   PARSER_UNAVAILABLE: "The local document reader is unavailable.",

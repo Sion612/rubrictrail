@@ -20,6 +20,7 @@ import {
 import type { PersistedProjectState, UploadedProject } from "@/lib/ui-types";
 import {
   createFifoLockManager,
+  holdLock,
   installLockManager,
   removeLockManager,
 } from "../../tests/web-locks-mock";
@@ -768,6 +769,73 @@ describe("local project persistence", () => {
       reason: "coordination-unavailable",
     });
     expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(exactRecord);
+  });
+
+  it("abandons a queued write when its in-memory intent changes while waiting", async () => {
+    const initial = await writeProjectState(
+      createDefaultProjectState(),
+      observedBaseline(),
+    );
+    if (!initial.ok) throw new Error("Expected intent-guard write fixture");
+    const lockManager = createFifoLockManager();
+    installLockManager(lockManager.manager);
+    const heldLock = holdLock(lockManager.manager, PROJECT_LOCK_NAME);
+    await heldLock.entered;
+    const exactBefore = initial.recordValue;
+    let intentIsCurrent = true;
+
+    const pendingWrite = writeProjectState(
+      uploadedState(),
+      initial.baseline,
+      { intentGuard: () => intentIsCurrent },
+    );
+    expect(lockManager.pendingCount()).toBe(1);
+    intentIsCurrent = false;
+    heldLock.release();
+
+    await expect(pendingWrite).resolves.toEqual({
+      ok: false,
+      reason: "intent-changed",
+    });
+    await heldLock.done;
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(exactBefore);
+  });
+
+  it("abandons a queued purge when its in-memory intent changes while waiting", async () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(uploadedState()));
+    window.localStorage.setItem(PREVIOUS_STORAGE_KEY, JSON.stringify(v2Value()));
+    window.localStorage.setItem(LEGACY_STORAGE_KEY, "legacy bytes");
+    const baseline = observedBaseline();
+    const exactBefore = {
+      record: window.localStorage.getItem(PROJECT_RECORD_KEY),
+      v3: window.localStorage.getItem(STORAGE_KEY),
+      v2: window.localStorage.getItem(PREVIOUS_STORAGE_KEY),
+      v1: window.localStorage.getItem(LEGACY_STORAGE_KEY),
+    };
+    const lockManager = createFifoLockManager();
+    installLockManager(lockManager.manager);
+    const heldLock = holdLock(lockManager.manager, PROJECT_LOCK_NAME);
+    await heldLock.entered;
+    let intentIsCurrent = true;
+
+    const pendingPurge = purgeProjectState(baseline, {
+      intentGuard: () => intentIsCurrent,
+    });
+    expect(lockManager.pendingCount()).toBe(1);
+    intentIsCurrent = false;
+    heldLock.release();
+
+    await expect(pendingPurge).resolves.toEqual({
+      ok: false,
+      reason: "intent-changed",
+    });
+    await heldLock.done;
+    expect({
+      record: window.localStorage.getItem(PROJECT_RECORD_KEY),
+      v3: window.localStorage.getItem(STORAGE_KEY),
+      v2: window.localStorage.getItem(PREVIOUS_STORAGE_KEY),
+      v1: window.localStorage.getItem(LEGACY_STORAGE_KEY),
+    }).toEqual(exactBefore);
   });
 
   it("retains superseded v2 bytes and records their lineage after a record write", async () => {

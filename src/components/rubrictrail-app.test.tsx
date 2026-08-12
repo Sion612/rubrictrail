@@ -626,6 +626,38 @@ describe("RubricTrailApp reliability", () => {
     expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
   });
 
+  it("cancels a confirmed reset when this tab changes while purge waits for the lock", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
+    await act(async () => {
+      await holder.entered;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset local project" }));
+    await flushMicrotasks();
+    expect(testLocks.pendingCount()).toBe(1);
+
+    const postConfirmDraft = "This newer edit must cancel the confirmed reset.";
+    fireEvent.change(draft, { target: { value: postConfirmDraft } });
+    await act(async () => {
+      holder.release();
+      await holder.done;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("draft-text")).toHaveValue(postConfirmDraft);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(storedValue);
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "project changed in this tab after you confirmed",
+    );
+
+    await advance(250);
+    await flushMicrotasks();
+    expect(currentStoredProjectState().draftText).toBe(postConfirmDraft);
+  });
+
   it("loads the exact saved version after confirmation and clears the conflict", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const { draft, storedValue } = await openSavedSampleCheck();
@@ -751,6 +783,56 @@ describe("RubricTrailApp reliability", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("lets the latest confirmed replacement cancel an older queued keep intent", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { storedValue } = await openSavedSampleCheck();
+    const announcedExternalValue = storedDraftValue(
+      storedValue,
+      "An announced external draft that was already restored to the original bytes.",
+    );
+    dispatchExternalStorageUpdate(storedValue, announcedExternalValue);
+    expect(
+      screen.getByRole("heading", { name: "Autosave paused: another tab saved changes" }),
+    ).toBeInTheDocument();
+
+    const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
+    await act(async () => {
+      await holder.entered;
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Replace saved version with this tab" }),
+    );
+    await flushMicrotasks();
+    expect(testLocks.pendingCount()).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset local project" }));
+    await flushMicrotasks();
+    expect(testLocks.pendingCount()).toBe(2);
+
+    await act(async () => {
+      holder.release();
+      await holder.done;
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flushMicrotasks();
+
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("heading", { name: "Add your assignment" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Autosave paused: another tab saved changes" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
+    const storedAfterReset = window.localStorage.getItem(PROJECT_RECORD_KEY);
+    expect(storedAfterReset).not.toBeNull();
+    const record = projectRecord(storedAfterReset!);
+    expect(record.value).toEqual({ kind: "cleared" });
+    expect(record.legacyFingerprints).toEqual({ v3: null, v2: null, v1: null });
+    expect(record.revision).toBe(projectRecord(storedValue).revision + 2);
+  });
+
   it("does not offer project overwrite actions for unsaved intake", async () => {
     render(<RubricTrailApp />);
     await advance(0);
@@ -809,6 +891,41 @@ describe("RubricTrailApp reliability", () => {
     window.dispatchEvent(new Event("pagehide"));
     await flushMicrotasks();
     expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
+  });
+
+  it("cancels backup restore when this tab changes while the write waits for the lock", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
+    await act(async () => {
+      await holder.entered;
+    });
+
+    await restoreBackup(
+      screen.getByTestId("workspace-backup-file-input"),
+      uploadedBackupState(),
+    );
+    expect(testLocks.pendingCount()).toBe(1);
+
+    const postConfirmDraft = "This newer edit must cancel the backup replacement.";
+    fireEvent.change(draft, { target: { value: postConfirmDraft } });
+    await act(async () => {
+      holder.release();
+      await holder.done;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("heading", { name: "Restored Strategy Report" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("draft-text")).toHaveValue(postConfirmDraft);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(storedValue);
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "project changed in this tab after you confirmed",
+    );
+
+    await advance(250);
+    await flushMicrotasks();
+    expect(currentStoredProjectState().draftText).toBe(postConfirmDraft);
   });
 
   it("cancels an in-flight demo check when the draft changes", async () => {
@@ -899,6 +1016,39 @@ describe("RubricTrailApp reliability", () => {
       screen.getByRole("heading", { name: "Add your assignment" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Choose files" })).toHaveFocus();
+  });
+
+  it("cancels the sample handoff when this tab changes while purge waits for the lock", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
+    await act(async () => {
+      await holder.entered;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Use my assignment" }));
+    await flushMicrotasks();
+    expect(testLocks.pendingCount()).toBe(1);
+
+    const postConfirmDraft = "This newer edit must keep the sample open.";
+    fireEvent.change(draft, { target: { value: postConfirmDraft } });
+    await act(async () => {
+      holder.release();
+      await holder.done;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("button", { name: "Use my assignment" })).toBeInTheDocument();
+    expect(screen.getByTestId("draft-text")).toHaveValue(postConfirmDraft);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(storedValue);
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "project changed in this tab after you confirmed",
+    );
+
+    await advance(250);
+    await flushMicrotasks();
+    expect(currentStoredProjectState().draftText).toBe(postConfirmDraft);
   });
 
   it("keeps the sample handoff focused and unchanged when exit is cancelled", async () => {
@@ -1013,6 +1163,45 @@ describe("RubricTrailApp reliability", () => {
     expect(promoted.supersededV2Fingerprint).toMatch(/^v1:/);
     expect(window.localStorage.getItem(PREVIOUS_STORAGE_KEY)).toBe(previousValue);
     expect(readProjectStateWithStatus().crossVersionConflict).toBe(false);
+  });
+
+  it("cancels legacy promotion when this tab changes while the write waits for the lock", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const previousValue = JSON.stringify(
+      realV2State(storedProjectState(storedValue), {
+        draftText: "The older project that must not replace a post-confirm edit.",
+      }),
+    );
+    window.localStorage.setItem(PREVIOUS_STORAGE_KEY, previousValue);
+    dispatchExternalStorageUpdate(null, previousValue, PREVIOUS_STORAGE_KEY);
+    const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
+    await act(async () => {
+      await holder.entered;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Load saved version" }));
+    await flushMicrotasks();
+    expect(testLocks.pendingCount()).toBe(1);
+
+    const postConfirmDraft = "This newer tab edit must cancel legacy promotion.";
+    fireEvent.change(draft, { target: { value: postConfirmDraft } });
+    await act(async () => {
+      holder.release();
+      await holder.done;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("draft-text")).toHaveValue(postConfirmDraft);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(storedValue);
+    expect(window.localStorage.getItem(PREVIOUS_STORAGE_KEY)).toBe(previousValue);
+    expect(
+      screen.getByRole("heading", { name: "Autosave paused: another tab saved changes" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "project changed in this tab after you confirmed",
+    );
   });
 
   it("creates, saves, and renders an unweighted rubric without invented percentages", async () => {

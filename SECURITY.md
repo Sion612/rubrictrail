@@ -19,13 +19,20 @@ seen and will coordinate disclosure after a fix is available.
 ## Deployment boundary
 
 - Uploaded files and pasted assignment text are parsed as plain text in the
-  browser. Real-file selections are rejected above 10 files or 25 MiB combined,
-  counting the original selection before any per-file omission. Paste intake is
-  rejected above 100,000 characters or 10,000 lines.
+  browser. Real-file selections are rejected above 10 files, 10 MiB per file or
+  25 MiB combined, counting the original selection before any per-file omission.
+  Each PDF is limited to 200 pages and all selected PDFs to 400 pages combined.
+  Merged extracted text is limited to 2,000,000 normalized characters, 50,000
+  merged lines and 100,000 merged whitespace-delimited words. Paste intake is
+  separately rejected above 100,000 characters or 10,000 lines.
 - A mixed file batch can continue only after the user explicitly accepts the
-  readable subset. Omitted files do not contribute fields or evidence; their
-  names and issue list remain transient and are not added to local state or a
-  backup.
+  readable subset. A PDF above the 200-page per-file limit is one recoverable
+  per-file omission. The 400-page selection limit and every merged-text budget
+  stop the complete batch rather than choosing which later files to omit. Every
+  selected PDF whose page-count metadata can be read contributes to the 400-page
+  total, even when it is subsequently offered as a per-file omission. Omitted
+  files do not contribute fields or evidence; their names and issue list remain
+  transient and are not added to local state or a backup.
 - Full source text is temporary and is not written to `localStorage`; confirmed
   fields, source labels, short excerpts, draft snippets and progress can remain
   until reset and can appear in an unencrypted project backup. Compact custom
@@ -44,10 +51,13 @@ seen and will coordinate disclosure after a fix is available.
   can occur between separate reads and writes; readback, lineage checks and
   storage events detect ordinary divergence but cannot guarantee that every
   overwrite is impossible.
-- File byte limits and the 2,000,000-character retained-text ceiling reduce
-  accidental resource exhaustion. They do not fully sandbox peak CPU or memory
-  use while a compressed DOCX or PDF is being decoded; do not treat local parsing
-  as protection against deliberately malicious documents.
+- File-count, byte, PDF-page and merged-text limits reduce resource risk, but
+  they are not a CPU or peak-memory sandbox. PDF metadata must be loaded before
+  the page-count checks can run, a page's text items may be materialized before
+  its text budget is measured, and DOCX decompression occurs before extracted
+  text can be counted. Parsing is currently not cancellable. Do not treat these
+  checks as protection against deliberately malicious documents or open such
+  documents in RubricTrail.
 - Do not use a shared computer for sensitive work without resetting afterward.
 - The experimental Live routes are disabled by default. Enabling them requires a
   server-side API key and a separate 32-character bearer token.

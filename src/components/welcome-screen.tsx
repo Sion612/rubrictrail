@@ -63,10 +63,14 @@ const FLOW = [
 function chooseFilesLabel(error: AssignmentFileIntakeError): string {
   if (error.code === "NO_READABLE_FILES") return "Choose all files again";
   if (error.code === "FILE_TOO_LARGE") return "Choose a smaller file";
+  if (error.code === "PDF_TOO_MANY_PAGES") return "Choose a shorter PDF";
   return [
     "TOO_MANY_FILES",
     "TOTAL_FILE_SIZE_TOO_LARGE",
     "EXTRACTED_TEXT_TOO_LARGE",
+    "EXTRACTED_TEXT_TOO_MANY_LINES",
+    "EXTRACTED_TEXT_TOO_MANY_WORDS",
+    "TOTAL_PDF_PAGES_TOO_LARGE",
   ].includes(error.code)
     ? "Choose fewer files"
     : "Choose another file";
@@ -332,7 +336,7 @@ export function WelcomeScreen({
               >
                 <UploadCloud aria-hidden="true" />
                 <h3 id="upload-zone-title" tabIndex={-1}>Drop brief and rubric here</h3>
-                <p>PDF, DOCX or TXT · up to 10 files · 10 MB each · 25 MB combined</p>
+                <p>PDF, DOCX or TXT · up to 10 files · 10 MiB each · 25 MiB combined</p>
                 <button
                   id="choose-assignment-files"
                   type="button"

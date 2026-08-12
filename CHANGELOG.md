@@ -4,6 +4,30 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-08-12
+
+### Added
+
+- Added explicit PDF limits of 200 pages per file and 400 pages per selection,
+  plus merged extracted-text limits of 2,000,000 normalized characters, 50,000
+  merged lines and 100,000 merged whitespace-delimited words.
+
+### Changed
+
+- Allows a PDF above its per-file page limit to enter the existing explicit
+  partial-recovery decision, while selection-wide PDF-page and merged-text
+  budgets stop the complete batch. Every selected PDF with readable page-count
+  metadata contributes to the 400-page budget even when it is subsequently
+  offered as a per-file omission.
+- Uses the binary units 10 MiB per file and 25 MiB per selection consistently in
+  current product and security documentation.
+
+### Security
+
+- Documents that parsing limits reduce resource risk but are not a CPU or
+  peak-memory sandbox: PDF metadata, a page's text items and DOCX decompression
+  may consume resources before rejection, and parsing is not yet cancellable.
+
 ## [0.3.5] - 2026-08-12
 
 ### Changed

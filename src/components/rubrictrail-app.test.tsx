@@ -1,6 +1,11 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RubricTrailApp } from "@/components/rubrictrail-app";
+import {
+  friendlyFileError,
+  RubricTrailApp,
+} from "@/components/rubrictrail-app";
+import { assignmentFileIssueReason } from "@/lib/file-intake-messages";
+import { AssignmentFileParseError } from "@/lib/files/parse-assignment-files";
 import {
   createDefaultProjectState,
   PREVIOUS_STORAGE_KEY,
@@ -159,6 +164,78 @@ afterEach(() => {
 });
 
 describe("RubricTrailApp reliability", () => {
+  it.each([
+    {
+      code: "PDF_TOO_MANY_PAGES",
+      fileName: "long-brief.pdf",
+      expectedFileName: "long-brief.pdf",
+      title: "This PDF has too many pages to process at once.",
+      message: "200 pages or fewer",
+    },
+    {
+      code: "TOTAL_PDF_PAGES_TOO_LARGE",
+      fileName: "second-brief.pdf",
+      expectedFileName: null,
+      title: "The selected PDFs have too many pages to process at once.",
+      message: "400 pages or fewer combined",
+    },
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_LINES",
+      fileName: "second-brief.txt",
+      expectedFileName: null,
+      title: "The selected files contain too many lines to process at once.",
+      message: "50,000 lines or fewer combined",
+    },
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_WORDS",
+      fileName: "second-brief.txt",
+      expectedFileName: null,
+      title: "The selected files contain too many words to process at once.",
+      message: "100,000 words or fewer combined",
+    },
+    {
+      code: "EXTRACTED_TEXT_TOO_LARGE",
+      fileName: "second-brief.txt",
+      expectedFileName: null,
+      title: "The selected files contain too much text to process at once.",
+      message: "2,000,000 characters or fewer combined",
+    },
+  ] as const)(
+    "maps $code to scoped, actionable recovery copy",
+    ({ code, fileName, expectedFileName, title, message }) => {
+      const recovery = friendlyFileError(
+        new AssignmentFileParseError(code, "Internal parser detail", fileName),
+      );
+
+      expect(recovery).toMatchObject({
+        code,
+        fileName: expectedFileName,
+        title,
+        preferredRecovery: "paste",
+      });
+      expect(recovery.message).toContain(message);
+    },
+  );
+
+  it("uses binary units and exact bounded-parser issue reasons", () => {
+    expect(assignmentFileIssueReason("FILE_TOO_LARGE")).toContain("10 MiB");
+    expect(assignmentFileIssueReason("TOTAL_FILE_SIZE_TOO_LARGE")).toContain(
+      "25 MiB",
+    );
+    expect(assignmentFileIssueReason("PDF_TOO_MANY_PAGES")).toBe(
+      "The PDF contains more than 200 pages.",
+    );
+    expect(assignmentFileIssueReason("TOTAL_PDF_PAGES_TOO_LARGE")).toBe(
+      "The selected PDFs contain more than 400 pages combined.",
+    );
+    expect(assignmentFileIssueReason("EXTRACTED_TEXT_TOO_MANY_LINES")).toBe(
+      "The readable text contains more than 50,000 lines in total.",
+    );
+    expect(assignmentFileIssueReason("EXTRACTED_TEXT_TOO_MANY_WORDS")).toBe(
+      "The readable text contains more than 100,000 words in total.",
+    );
+  });
+
   it("writes a recovered legacy project to v3 once hydration succeeds", async () => {
     window.localStorage.setItem(
       LEGACY_STORAGE_KEY,

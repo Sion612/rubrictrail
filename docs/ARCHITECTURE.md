@@ -5,7 +5,7 @@ paths: a conservative user-source path and a rich fictional sample path.
 
 ```mermaid
 flowchart LR
-  U["User files"] --> BL["Batch count + byte limits"]
+  U["User files"] --> BL["Batch + resource limits"]
   BL --> RP["Recoverable per-file parser"]
   RP --> DR["Explicit ready / omitted decision"]
   PT["Pasted brief + rubric"] --> PF["Bounded synthetic TXT sources"]
@@ -59,14 +59,23 @@ other values to remain `null`; and `none` requires every value to be `null`.
 Missing values are never completed or equalized automatically.
 
 Real file selections and pasted text intentionally use different failure
-contracts. A real selection is rejected before reading when it exceeds 10 files
-or 25 MiB in total; those limits include files that might later be omitted.
+contracts. A real selection is rejected before reading when it exceeds 10 files,
+10 MiB per file or 25 MiB in total; the selection-wide limits include files that
+might later be omitted. Each PDF is limited to 200 pages, with 400 PDF pages
+allowed across the complete selection. Merged extracted text is limited to
+2,000,000 normalized characters, 50,000 merged lines and 100,000 merged
+whitespace-delimited words. Once page-count metadata is available, that PDF's
+pages are charged to the 400-page selection total even if the file is later
+offered as an explicit per-file omission for exceeding 200 pages.
+
 Unsupported types, unsafe names, per-file oversize, empty/scanned/encrypted or
-damaged documents can be listed as per-file omissions only when at least one
-source succeeds. Retained-text exhaustion, parser unavailability and unknown
-failures stop the whole batch. Pasted synthetic TXT sources remain strict and
-must all succeed. A partial batch stays outside confirmation until the user
-explicitly chooses to review only the readable sources.
+damaged documents, and a PDF above its 200-page file limit can be listed as
+per-file omissions only when at least one source succeeds. The user must
+explicitly accept that readable subset before confirmation. The 400-page
+selection limit, any merged-text budget, parser unavailability and unknown
+failures stop the complete batch instead; RubricTrail does not use file order to
+silently discard later sources. Pasted synthetic TXT sources remain strict and
+must all succeed.
 
 The persisted uploaded project includes:
 
@@ -79,8 +88,11 @@ The persisted uploaded project includes:
 It excludes original files and full uploaded or pasted source text. Pasted
 intake is bounded before parsing at 100,000 UTF-16 characters and 10,000 lines,
 then converted to one or two in-memory plain-text sources so the existing file,
-extracted-text and evidence-offset boundaries still apply. A future need for
-larger local documents should use IndexedDB rather than expanding localStorage.
+merged-text and evidence-offset boundaries still apply. A future need for larger
+local documents should use IndexedDB rather than expanding localStorage. The
+internal direct-string summary overload also applies a 2,000,000-character raw
+guard before normalization, then applies the normalized merged-text limits; the
+normal file and pasted-text paths retain the intake contracts described above.
 Omitted file names and issue metadata are transient intake state: they are shown
 before and during confirmation, but they are not copied into `UploadedProject`,
 localStorage or the backup protocol. Successful source IDs retain their original
@@ -199,9 +211,12 @@ See [LIVE_AI_ARCHITECTURE.md](./LIVE_AI_ARCHITECTURE.md).
 ## Performance and accessibility choices
 
 - PDF.js and Mammoth are dynamically imported only for their file types.
-- File-count, byte and retained-text limits bound saved parser output, but DOCX
-  decompression and PDF page extraction still happen before every peak-memory or
-  CPU cost can be known. They are not a complete malicious-document sandbox.
+- File-count, byte, PDF-page and merged-text limits bound accepted work and
+  retained parser output, but they are not a CPU or peak-memory sandbox. PDF
+  metadata is loaded before page-count checks, one page's text items can be
+  materialized before its text is counted, and DOCX decompression occurs before
+  extracted-text limits can be applied. Parsing is currently not cancellable;
+  do not open deliberately malicious documents.
 - Plan generation and template creation are memoized by their real inputs.
 - No login, analytics, database or remote bootstrap runs in local mode.
 - Evidence drawers trap focus, close with Escape and restore focus.

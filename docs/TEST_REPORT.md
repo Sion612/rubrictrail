@@ -3,8 +3,8 @@
 Date: 12 August 2026
 Runtime: Node.js 24 in CI, pnpm 11.9.0
 Browser method: GitHub Actions Playwright projects at desktop and narrow
-responsive Chromium sizes; see the [v0.3.6 runtime and test-code verification
-run for commit `322928e`](https://github.com/Sion612/rubrictrail/actions/runs/31548185076)
+responsive Chromium sizes; see the [v0.3.7 runtime and test-code verification
+run for commit `f8367d1`](https://github.com/Sion612/rubrictrail/actions/runs/31578088125)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
@@ -13,9 +13,9 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 14 files, 185/185 tests passed |
+| `pnpm test` | 16 files, 221/221 tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed |
-| `pnpm test:e2e --workers=1` | GitHub Actions: 22/22 executions passed (11 scenarios × 2 Chromium viewports) |
+| `pnpm test:e2e --workers=1` | GitHub Actions: 24/24 executions passed (12 scenarios × 2 Chromium viewports) |
 | `pnpm audit --audit-level high` | No known vulnerabilities found |
 
 The browser suite runs each scenario at 1440×900 and a narrow responsive
@@ -37,6 +37,8 @@ The narrow projects do not emulate a mobile user agent or touch device:
 - custom rubric source drawer and focus restoration;
 - generic plan task completion and dependency behavior;
 - custom evidence self-check and refresh persistence;
+- explicit self-check Save waits for a confirmed browser write before reporting success;
+- two same-revision tabs are serialized by the project lock so only one save wins;
 - stale-tab edit, navigation and page-close protection plus explicit recovery;
 - divergent v2/v3 browser state, exact older-version load and stable migration;
 - missing-rubric manual repair without fabricated or equalized weights;

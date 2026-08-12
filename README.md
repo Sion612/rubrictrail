@@ -193,16 +193,16 @@ and narrow responsive browser suite:
 pnpm test:e2e --workers=1
 ```
 
-Current v0.3.6 runtime and test-code verification on 12 August 2026
-([commit `322928e`, GitHub Actions run 31548185076](https://github.com/Sion612/rubrictrail/actions/runs/31548185076)):
+Current v0.3.7 runtime and test-code verification on 12 August 2026
+([commit `f8367d1`, GitHub Actions run 31578088125](https://github.com/Sion612/rubrictrail/actions/runs/31578088125)):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 185/185 tests passed across 14 files |
+| Vitest | 221/221 tests passed across 16 files |
 | Next.js production build | Passed |
-| Playwright | GitHub Actions: 22/22 executions passed (11 scenarios × 1440×900 and 390×844 Chromium viewports), including planning-depth persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
+| Playwright | GitHub Actions: 24/24 executions passed (12 scenarios × 1440×900 and 390×844 Chromium viewports), including lock-serialized same-revision writes, confirmed self-check persistence, planning-depth persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,

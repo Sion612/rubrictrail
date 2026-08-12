@@ -22,12 +22,15 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:demo": "next build demo",
+    "audit:demo": "node scripts/audit-static-demo.mjs",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:demo": "playwright test --config=playwright.demo.config.ts",
     "capture:screenshots": "node scripts/capture-screenshots.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },

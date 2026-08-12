@@ -27,6 +27,24 @@ const defaultProps = {
 afterEach(cleanup);
 
 describe("WelcomeScreen upload controls", () => {
+  it("states the local-processing, document-trust, and backup-authenticity boundaries", () => {
+    render(<WelcomeScreen {...defaultProps} />);
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveTextContent(
+      "RubricTrail parses assignment content locally in this browser; the app does not upload it or send it to an AI service.",
+    );
+    expect(main).toHaveTextContent(
+      "Use only documents you trust; these limits are not a malicious-document sandbox.",
+    );
+    expect(main).toHaveTextContent(
+      "Backups are unencrypted and unsigned; open only one you created or trust.",
+    );
+    expect(main).toHaveTextContent("Local processing.");
+    expect(main).not.toHaveTextContent("Everything is processed only in this browser.");
+    expect(main).not.toHaveTextContent("Private by default.");
+  });
+
   it("locks repeated drops until the parent reports that parsing finished", () => {
     const onFiles = vi.fn();
     const { rerender } = render(

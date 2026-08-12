@@ -175,6 +175,22 @@ describe("RubricTrail project backups", () => {
     );
   });
 
+  it("rejects project identity text that could spoof the restore preview", () => {
+    for (const [field, value] of [
+      ["title", "Trusted project\nNo existing project will be removed"],
+      ["title", "Trusted\u0007project"],
+      ["course", "BUS302\u202Etxt.exe"],
+    ] as const) {
+      const envelope = JSON.parse(serializeProjectBackup(uploadedState()));
+      envelope.project.uploadedProject[field] = value;
+
+      expectBackupError(
+        () => parseProjectBackupText(JSON.stringify(envelope)),
+        "invalid-project",
+      );
+    }
+  });
+
   it("rejects empty and character-oversized backup text before JSON validation", () => {
     expectBackupError(() => parseProjectBackupText(""), "empty-file");
     expectBackupError(

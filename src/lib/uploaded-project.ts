@@ -13,6 +13,13 @@ import type {
 
 export const UPLOADED_REVIEW_MAX_CHARACTERS = 40_000;
 
+const UNSAFE_SINGLE_LINE_PROJECT_METADATA_CHARACTER =
+  /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/u;
+
+export function isSafeSingleLineProjectMetadata(value: string): boolean {
+  return !UNSAFE_SINGLE_LINE_PROJECT_METADATA_CHARACTER.test(value);
+}
+
 export interface UploadedProjectDraftIssue {
   targetId: string;
   message: string;
@@ -128,13 +135,27 @@ export function validateUploadedProjectDraftIssues(
   };
   const wordCount = Number(draft.wordCount);
   const maximumDueDate = maximumSupportedDueDate();
+  const title = draft.title.trim();
+  const course = draft.course.trim();
   const totalWeight = draft.criteria.reduce(
     (total, criterion) => total + (Number(criterion.weight) || 0),
     0,
   );
-  if (!draft.title.trim()) addIssue("confirm-title", "Add an assignment title.");
-  else if (draft.title.trim().length > 300) addIssue("confirm-title", "Keep the assignment title under 300 characters.");
-  if (draft.course.trim().length > 200) addIssue("confirm-course", "Keep the course or module under 200 characters.");
+  if (!title) addIssue("confirm-title", "Add an assignment title.");
+  else if (title.length > 300) addIssue("confirm-title", "Keep the assignment title under 300 characters.");
+  else if (!isSafeSingleLineProjectMetadata(title)) {
+    addIssue(
+      "confirm-title",
+      "Use a single-line assignment title without control or bidirectional formatting characters.",
+    );
+  }
+  if (course.length > 200) addIssue("confirm-course", "Keep the course or module under 200 characters.");
+  else if (course && !isSafeSingleLineProjectMetadata(course)) {
+    addIssue(
+      "confirm-course",
+      "Use a single-line course or module name without control or bidirectional formatting characters.",
+    );
+  }
   if (!dateOnlySchema.safeParse(draft.dueDate).success) addIssue("confirm-deadline", "Add a real calendar deadline.");
   else if (draft.dueDate > maximumDueDate) addIssue("confirm-deadline", "Choose a deadline within the next four years.");
   if (!Number.isInteger(wordCount) || wordCount <= 0) addIssue("confirm-word-count", "Add a positive whole-number word count.");

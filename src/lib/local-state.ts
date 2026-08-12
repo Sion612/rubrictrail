@@ -5,6 +5,7 @@ import { DEFAULT_PLAN_TASK_TEMPLATES } from "@/lib/plan";
 import { SAMPLE_READINESS, UPLOADED_READINESS } from "@/lib/readiness";
 import { SAMPLE_DRAFT_TEXT } from "@/lib/sample-data";
 import {
+  isSafeSingleLineProjectMetadata,
   maximumSupportedDueDate,
   UPLOADED_REVIEW_MAX_CHARACTERS,
 } from "@/lib/uploaded-project";
@@ -49,6 +50,11 @@ const savedFileNameSchema = nonBlankString(255).refine(
   (value) => !UNSAFE_PERSISTED_FILE_NAME_CHARACTER.test(value),
   "Saved filenames cannot contain control or bidirectional formatting characters",
 );
+const singleLineProjectMetadataSchema = (maximum: number) =>
+  nonBlankString(maximum).refine(
+    isSafeSingleLineProjectMetadata,
+    "Project metadata cannot contain line breaks, control characters, or bidirectional formatting characters",
+  );
 
 const uploadedSourceEvidenceSchema: z.ZodType<UploadedSourceEvidence> = z
   .object({
@@ -82,8 +88,8 @@ const uploadedProjectCriterionSchema: z.ZodType<UploadedProjectCriterion> = z
 const uploadedProjectSchema: z.ZodType<UploadedProject> = z
   .object({
     id: idSchema,
-    title: nonBlankString(300),
-    course: nonBlankString(200),
+    title: singleLineProjectMetadataSchema(300),
+    course: singleLineProjectMetadataSchema(200),
     dueDate: dateOnlySchema,
     wordCount: z.number().int().positive().max(50_000),
     citationStyle: nonBlankString(160),

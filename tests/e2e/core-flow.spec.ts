@@ -1,5 +1,11 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 
+const APP_PATH = (() => {
+  const configured = process.env.PLAYWRIGHT_APP_PATH?.trim() || "/";
+  const withLeadingSlash = configured.startsWith("/") ? configured : `/${configured}`;
+  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
+})();
+
 const PROJECT_RECORD_KEY = "rubrictrail.project.store.v1";
 const PROJECT_LOCK_NAME = "rubrictrail.project.store.v1";
 
@@ -23,7 +29,7 @@ async function readStoredProjectState(page: Page) {
 }
 
 async function resetProject(page: Page) {
-  await page.goto("/");
+  await page.goto(APP_PATH);
   await page.evaluate(() => window.localStorage.clear());
   await page.reload();
   await expect(
@@ -167,7 +173,7 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
 
   await page.close();
   const [pageA, pageB] = await Promise.all([context.newPage(), context.newPage()]);
-  await Promise.all([pageA.goto("/"), pageB.goto("/")]);
+  await Promise.all([pageA.goto(APP_PATH), pageB.goto(APP_PATH)]);
   await Promise.all([
     expect(pageA.getByTestId("draft-text")).toBeVisible(),
     expect(pageB.getByTestId("draft-text")).toBeVisible(),
@@ -233,7 +239,7 @@ test("the project lock admits only one writer from the same revision", async ({
   ).toBe(1);
 
   const [pageA, pageB] = await Promise.all([context.newPage(), context.newPage()]);
-  await Promise.all([pageA.goto("/"), pageB.goto("/")]);
+  await Promise.all([pageA.goto(APP_PATH), pageB.goto(APP_PATH)]);
   await Promise.all([
     expect(pageA.getByTestId("draft-text")).toBeVisible(),
     expect(pageB.getByTestId("draft-text")).toBeVisible(),
@@ -286,7 +292,7 @@ test("an older v2 tab can be explicitly loaded without losing its draft", async 
   const olderDraft =
     "V2-EXACT-DRAFT-71C4: this older-version save was explicitly selected.";
   const legacyTab = await context.newPage();
-  await legacyTab.goto("/");
+  await legacyTab.goto(APP_PATH);
   const currentState = await readStoredProjectState(legacyTab);
   if (!currentState) throw new Error("Expected a stored project before creating v2 state");
   await legacyTab.evaluate(({ draftText, currentState }) => {

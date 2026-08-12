@@ -51,15 +51,16 @@ flowchart LR
 `pnpm build:demo` builds the separate `demo/app` entry point with Next.js static
 export. CI sets `PAGES_BASE_PATH=/rubrictrail`, audits every exported text asset
 and serves the generated files at that subpath for the full browser-local suite.
-The 29-file release-candidate artifact contained no Live API path, OpenAI
-endpoint or Live credential/configuration marker.
+The 29-file artifact contained no Live API path, OpenAI endpoint or Live
+credential/configuration marker. The exact-main artifact is published at
+<https://sion612.github.io/rubrictrail/> only after its complete CI run passes.
 
 This split is deliberate. The normal application keeps its optional POST Live
 routes and Node response-header configuration; neither is representable in the
-static artifact. A future static host controls its own HTTPS and response
-headers and receives ordinary requests for HTML, JavaScript, CSS and other
-assets. Passing the static CI gate is not evidence that the artifact has been
-deployed.
+static artifact. GitHub Pages controls the public demo's HTTPS, caching and
+response headers and receives ordinary requests for HTML, JavaScript, CSS and
+other assets. Deployment success and a live HTTP smoke check are recorded
+separately from the browser suite that runs against the generated artifact in CI.
 
 Project persistence remains browser `localStorage`. Storage isolation follows
 the page origin, not the `/rubrictrail` path, so unrelated scripts hosted on the

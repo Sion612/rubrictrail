@@ -78,11 +78,11 @@
     demo, not semantic evaluation or a predicted grade.
 15. **No public Live service.** The optional server adapter lacks the full rate,
     budget, abuse and consent controls required for a public deployment.
-16. **The static demo is verified but not deployed.** CI builds and tests the
-    browser-only artifact at `/rubrictrail`, but that does not establish a public
-    URL. The export omits the Live API and Node response headers. A future host
-    will still receive ordinary page and asset request metadata and will control
-    its own HTTPS and header policy.
+16. **The public demo is static-only.** It is deployed at
+    <https://sion612.github.io/rubrictrail/>, omits the Live API and Node
+    response-header configuration, and is subject to GitHub Pages' HTTPS,
+    caching and response-header policy. GitHub still receives ordinary page and
+    asset request metadata.
 17. **Browser storage is origin-scoped.** `localStorage` is shared by scripts on
     the same origin; the `/rubrictrail` path is not an isolation boundary. Do not
     colocate the demo with unrelated or untrusted scripts when project content is

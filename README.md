@@ -7,7 +7,7 @@ pasted brief and rubric to confirmed requirements, scheduled work, draft
 evidence and final human checks.
 
 It is designed for students who need more than a document summary. Every
-criterion can retain the exact source excerpt that supports it, and every plan
+criterion can retain a short source excerpt recorded during intake, and every plan
 task has a definition of done. RubricTrail does not write a submission, invent a
 criterion, or predict a grade.
 
@@ -52,7 +52,9 @@ The custom workflow includes:
   50,000 merged lines and 100,000 merged whitespace-delimited words;
 - explicit mixed-batch recovery that requires a decision before omitting a file
   with a recoverable per-file problem;
-- exact retained rubric excerpts with filename and PDF page when available;
+- retained rubric excerpts with recorded filename and PDF page when available;
+- strict UTF-8 decoding for TXT files, with malformed text rejected instead of
+  silently inserting replacement characters;
 - a generic dependency-aware plan linked only to confirmed criteria;
 - `focused`, `standard`, `thorough` and `extended` planning-depth choices that
   adjust task scope and time allowance only; they do not correspond to or
@@ -85,6 +87,11 @@ are not added to the saved project or backup. Selection-wide PDF-page and merged
 text limits stop the complete batch; they do not omit later files according to
 selection order. The PDF-page total includes every selected PDF with readable
 page-count metadata, including a per-file over-limit PDF offered for omission.
+Saved evidence must include a canonical source id and a filename from the
+project source list; the same source id cannot claim different filenames, and
+excerpt offsets must match the retained text. Because full source text is
+discarded, a restored excerpt remains a recorded aid rather than independently
+verified proof—compare the original before relying on it.
 
 ### Back up or restore a project
 

@@ -15,7 +15,7 @@ screenshots. Current functional browser coverage runs in GitHub Actions.
 | `docs/assets/rubrictrail-mobile.png` | Final mobile production viewport |
 
 The capture script creates a fictional TXT project, confirms a 100% rubric,
-opens the rubric view and, on desktop, opens the exact retained source excerpt.
+opens the rubric view and, on desktop, opens the retained source excerpt for re-checking.
 It waits for the local-save toast to leave before capturing.
 
 ## Concept-to-product comparison
@@ -26,7 +26,7 @@ It waits for the local-save toast to leave before capturing.
 | Five explicit workflow states | Desktop uses a persistent left rail; mobile uses a horizontally scrollable state strip with labels | Faithful, responsively adapted |
 | Assignment identity, due date, word count and local mode visible together | A project context line sits below the header and a Local-only badge stays in the header | Faithful |
 | Criterion, weight, confirmation state and source appear in one scan path | Desktop rubric rows preserve all four fields; mobile stacks the source below each row | Faithful, responsively adapted |
-| Source evidence opens beside the work rather than replacing it | A modal side drawer retains filename, page when available and exact excerpt | Faithful |
+| Source evidence opens beside the work rather than replacing it | A modal side drawer retains recorded filename, page when available and a short excerpt to re-check | Faithful |
 | One dominant next action | The rubric ends in **Build action plan**; secondary navigation stays visually quieter | Faithful |
 | Trust language avoids invented grades or semantic certainty | The UI says weights are user-confirmed, progress is work completion and self-checks record human judgment | Strengthened |
 

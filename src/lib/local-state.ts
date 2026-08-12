@@ -28,6 +28,9 @@ const MAX_CRITERIA = 50;
 const MAX_FILES = 25;
 const MAX_TASK_IDS = 200;
 const MAX_READINESS_IDS = 32;
+const UNSAFE_PERSISTED_FILE_NAME_CHARACTER =
+  /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
+const CANONICAL_SOURCE_ID = /^source-([1-9]\d*)$/u;
 const V2_FINGERPRINT_PATTERN = /^v1:\d+:[0-9a-f]{8}:[0-9a-f]{8}$/;
 const MAX_PROJECT_RECORD_CHARACTERS = MAX_STORED_CHARACTERS + 1_024;
 
@@ -42,11 +45,15 @@ const nonBlankString = (maximum: number) =>
     .refine((value) => value.trim().length > 0, "Expected a non-blank string");
 
 const idSchema = nonBlankString(MAX_ID_LENGTH);
+const savedFileNameSchema = nonBlankString(255).refine(
+  (value) => !UNSAFE_PERSISTED_FILE_NAME_CHARACTER.test(value),
+  "Saved filenames cannot contain control or bidirectional formatting characters",
+);
 
 const uploadedSourceEvidenceSchema: z.ZodType<UploadedSourceEvidence> = z
   .object({
     sourceId: idSchema.nullable(),
-    fileName: nonBlankString(255).nullable(),
+    fileName: savedFileNameSchema.nullable(),
     page: z.number().int().positive().max(1_000_000).nullable(),
     excerpt: nonBlankString(4_096),
     startOffset: z.number().int().nonnegative().max(20_000_000),
@@ -80,7 +87,7 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
     dueDate: dateOnlySchema,
     wordCount: z.number().int().positive().max(50_000),
     citationStyle: nonBlankString(160),
-    fileNames: z.array(nonBlankString(255)).min(1).max(MAX_FILES),
+    fileNames: z.array(savedFileNameSchema).min(1).max(MAX_FILES),
     extractedWordCount: z.number().int().nonnegative().max(5_000_000),
     weightingStatus: z.enum(["complete", "incomplete", "none"]),
     criteria: z.array(uploadedProjectCriterionSchema).min(1).max(MAX_CRITERIA),
@@ -88,6 +95,8 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
   })
   .strict()
   .superRefine((project, context) => {
+    const fileNames = new Set(project.fileNames);
+    const sourceFileNames = new Map<string, string>();
     const criterionIds = new Set<string>();
     project.criteria.forEach((criterion, index) => {
       if (criterionIds.has(criterion.id)) {
@@ -98,6 +107,58 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
         });
       }
       criterionIds.add(criterion.id);
+
+      const evidence = criterion.evidence;
+      if (
+        evidence !== null &&
+        evidence.fileName !== null &&
+        !fileNames.has(evidence.fileName)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Criterion evidence filename is not part of the saved project sources",
+          path: ["criteria", index, "evidence", "fileName"],
+        });
+      }
+      if (evidence !== null) {
+        if (evidence.sourceId === null || evidence.fileName === null) {
+          context.addIssue({
+            code: "custom",
+            message: "Criterion evidence must include both its source id and filename",
+            path: ["criteria", index, "evidence", "sourceId"],
+          });
+        }
+        if (evidence.sourceId !== null) {
+          const sourceIdMatch = CANONICAL_SOURCE_ID.exec(evidence.sourceId);
+          const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
+          if (!Number.isSafeInteger(sourceNumber) || sourceNumber > MAX_FILES) {
+            context.addIssue({
+              code: "custom",
+              message: "Criterion evidence source id is not canonical",
+              path: ["criteria", index, "evidence", "sourceId"],
+            });
+          }
+        }
+        if (evidence.endOffset - evidence.startOffset !== evidence.excerpt.length) {
+          context.addIssue({
+            code: "custom",
+            message: "Criterion evidence offsets do not match its retained excerpt",
+            path: ["criteria", index, "evidence", "endOffset"],
+          });
+        }
+        if (evidence.sourceId !== null && evidence.fileName !== null) {
+          const previousFileName = sourceFileNames.get(evidence.sourceId);
+          if (previousFileName !== undefined && previousFileName !== evidence.fileName) {
+            context.addIssue({
+              code: "custom",
+              message: "One criterion evidence source id cannot name multiple files",
+              path: ["criteria", index, "evidence", "fileName"],
+            });
+          } else {
+            sourceFileNames.set(evidence.sourceId, evidence.fileName);
+          }
+        }
+      }
     });
 
     const numericWeights = project.criteria.filter(
@@ -565,6 +626,54 @@ function migrateV2ProjectStateValue(
   };
 }
 
+function normalizeLegacyEvidenceOffsets(value: Record<string, unknown>): {
+  value: Record<string, unknown>;
+  recovered: boolean;
+} {
+  const uploadedProject = value.uploadedProject;
+  if (!isRecord(uploadedProject) || !Array.isArray(uploadedProject.criteria)) {
+    return { value, recovered: false };
+  }
+
+  let recovered = false;
+  const criteria = uploadedProject.criteria.map((criterion) => {
+    if (!isRecord(criterion) || !isRecord(criterion.evidence)) return criterion;
+    const evidence = criterion.evidence;
+    const { excerpt, startOffset, endOffset } = evidence;
+    if (
+      typeof excerpt !== "string" ||
+      typeof startOffset !== "number" ||
+      !Number.isInteger(startOffset) ||
+      typeof endOffset !== "number" ||
+      !Number.isInteger(endOffset) ||
+      endOffset - startOffset <= excerpt.length
+    ) {
+      return criterion;
+    }
+
+    recovered = true;
+    return {
+      ...criterion,
+      evidence: {
+        ...evidence,
+        // v0.2.0 retained a trimmed excerpt while its offsets covered the
+        // untrimmed source line. The original text is no longer available, so
+        // preserve the recorded start and normalize the span to the excerpt.
+        endOffset: startOffset + excerpt.length,
+      },
+    };
+  });
+
+  if (!recovered) return { value, recovered: false };
+  return {
+    value: {
+      ...value,
+      uploadedProject: { ...uploadedProject, criteria },
+    },
+    recovered: true,
+  };
+}
+
 export function parsePersistedProjectStateValue(
   value: unknown,
 ): ProjectStateParseResult {
@@ -579,16 +688,19 @@ export function parsePersistedProjectStateValue(
     return { ok: false, reason: "invalid-state" };
   }
 
-  const parsed = persistedProjectStateSchema.safeParse(
-    value.version === 2 ? migrateV2ProjectStateValue(value) : value,
-  );
+  const migratedValue = value.version === 2 ? migrateV2ProjectStateValue(value) : value;
+  const evidenceNormalization = normalizeLegacyEvidenceOffsets(migratedValue);
+  const parsed = persistedProjectStateSchema.safeParse(evidenceNormalization.value);
   if (!parsed.success) return { ok: false, reason: "invalid-state" };
 
   const normalized = normalizeValidatedState(parsed.data);
   return {
     ok: true,
     state: normalized.state,
-    recovered: value.version === 2 || normalized.recovered,
+    recovered:
+      value.version === 2 ||
+      evidenceNormalization.recovered ||
+      normalized.recovered,
   };
 }
 

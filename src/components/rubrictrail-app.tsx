@@ -147,6 +147,11 @@ const FILE_ERROR_RECOVERY: Record<
     message: "Open it, copy the assignment instructions, then paste them here.",
     preferredRecovery: "paste",
   },
+  INVALID_TEXT_ENCODING: {
+    title: "This TXT file is not valid UTF-8.",
+    message: "Save it as UTF-8 text, choose a fresh copy, or paste the assignment text.",
+    preferredRecovery: "files",
+  },
   SCANNED_NO_TEXT: {
     title: "This file has no selectable text.",
     message: "Open the scan, copy or transcribe the assignment instructions, then paste them here.",

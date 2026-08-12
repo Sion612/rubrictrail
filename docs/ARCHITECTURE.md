@@ -77,12 +77,19 @@ failures stop the complete batch instead; RubricTrail does not use file order to
 silently discard later sources. Pasted synthetic TXT sources remain strict and
 must all succeed.
 
+TXT decoding is strict UTF-8. A malformed byte sequence is a recoverable
+per-file error, never replacement-decoded content. Persisted evidence must carry
+both a canonical source id and a filename present in the compact project source
+list. A source id cannot map to different filenames, and excerpt offsets must
+span exactly the retained excerpt. Direct-string summaries have no authoritative
+source object, so their evidence is discarded before project persistence.
+
 The persisted uploaded project includes:
 
 - confirmed title, course label, deadline, word count and citation style;
 - source-label or filename list and aggregate extracted word count;
 - criterion names, `weightingStatus`, per-criterion published percentages or
-  `null`, and short retained source excerpts;
+  `null`, and short retained source excerpts with recorded source labels;
 - task completion, self-check text and checklist state.
 
 It excludes original files and full uploaded or pasted source text. Pasted

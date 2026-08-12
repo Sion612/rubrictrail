@@ -33,6 +33,7 @@ export type AssignmentFileErrorCode =
   | "PDF_TOO_MANY_PAGES"
   | "TOTAL_PDF_PAGES_TOO_LARGE"
   | "EMPTY_FILE"
+  | "INVALID_TEXT_ENCODING"
   | "SCANNED_NO_TEXT"
   | "ENCRYPTED_PDF"
   | "PARSER_UNAVAILABLE"
@@ -251,6 +252,7 @@ const RECOVERABLE_PER_FILE_ERROR_CODES = new Set<AssignmentFileErrorCode>([
   "INVALID_FILE_NAME",
   "FILE_TOO_LARGE",
   "EMPTY_FILE",
+  "INVALID_TEXT_ENCODING",
   "SCANNED_NO_TEXT",
   "ENCRYPTED_PDF",
   "PDF_TOO_MANY_PAGES",
@@ -660,7 +662,18 @@ async function parseTextFile(
 ): Promise<LocallyParsedFile> {
   try {
     const bytes = await file.arrayBuffer();
-    const text = normalizeExtractedText(new TextDecoder("utf-8").decode(bytes));
+    let decodedText: string;
+    try {
+      decodedText = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch (error) {
+      throw new AssignmentFileParseError(
+        "INVALID_TEXT_ENCODING",
+        `"${file.name}" is not valid UTF-8 text. Save it as UTF-8 and try again.`,
+        file.name,
+        { cause: error },
+      );
+    }
+    const text = normalizeExtractedText(decodedText);
     ensureTextWasExtracted(text, file, "EMPTY_FILE");
     const metrics = extractedTextMetrics(text, file, limits);
     return { text, ...metrics, pageCount: null, pages: [] };

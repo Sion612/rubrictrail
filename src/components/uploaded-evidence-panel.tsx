@@ -96,18 +96,19 @@ export function UploadedEvidencePanel({
         <div className="evidence-panel__body">
           <div className="evidence-panel__source-meta">
             <span className="evidence-panel__source-kind">
-              <FileText aria-hidden="true" />{evidence?.fileName ?? "Manually added"}
+              <FileText aria-hidden="true" />
+              {evidence ? `Recorded source: ${evidence.fileName}` : "Manually added"}
             </span>
             <span className="evidence-panel__locator">
               <MapPin aria-hidden="true" />
-              {evidence?.page ? `Page ${evidence.page}` : "Page not available"}
+              {evidence?.page ? `Recorded page: ${evidence.page}` : "Page not available"}
             </span>
           </div>
 
           <section className="evidence-panel__section" aria-labelledby="uploaded-excerpt-title">
             <div className="evidence-panel__section-heading">
               <Quote aria-hidden="true" />
-              <h3 id="uploaded-excerpt-title">Exact retained excerpt</h3>
+              <h3 id="uploaded-excerpt-title">Retained excerpt — re-check the original</h3>
             </div>
             {evidence ? (
               <blockquote className="evidence-panel__quote">{evidence.excerpt}</blockquote>
@@ -122,8 +123,9 @@ export function UploadedEvidencePanel({
           <section className="evidence-panel__section" aria-labelledby="local-retention-title">
             <h3 id="local-retention-title">What is retained</h3>
             <p className="evidence-panel__explanation">
-              RubricTrail stores this short excerpt and the confirmed criterion locally. It does not
-          keep the authoritative source because full source text is not retained.
+              RubricTrail stores this short excerpt, recorded source label and any recorded page
+              locator locally. It cannot re-verify them after the full source text is discarded,
+              so compare the original before relying on them.
             </p>
           </section>
         </div>

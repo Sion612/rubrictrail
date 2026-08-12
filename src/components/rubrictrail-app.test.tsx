@@ -5,7 +5,10 @@ import {
   RubricTrailApp,
 } from "@/components/rubrictrail-app";
 import { assignmentFileIssueReason } from "@/lib/file-intake-messages";
-import { AssignmentFileParseError } from "@/lib/files/parse-assignment-files";
+import {
+  AssignmentFileBatchParseError,
+  AssignmentFileParseError,
+} from "@/lib/files/parse-assignment-files";
 import {
   createDefaultProjectState,
   PREVIOUS_STORAGE_KEY,
@@ -331,6 +334,32 @@ describe("RubricTrailApp reliability", () => {
     expect(assignmentFileIssueReason("EXTRACTED_TEXT_TOO_MANY_WORDS")).toBe(
       "The readable text contains more than 100,000 words in total.",
     );
+    expect(assignmentFileIssueReason("INVALID_TEXT_ENCODING")).toBe(
+      "The TXT file is not valid UTF-8 text.",
+    );
+  });
+
+  it("maps invalid UTF-8 to accurate save-as-UTF-8 recovery", () => {
+    const failure = {
+      inputIndex: 0,
+      fileName: "legacy-encoding.txt",
+      code: "INVALID_TEXT_ENCODING" as const,
+      message: "Internal decoder detail",
+    };
+
+    const recovery = friendlyFileError(
+      new AssignmentFileBatchParseError([failure]),
+    );
+
+    expect(recovery).toEqual({
+      code: "INVALID_TEXT_ENCODING",
+      fileName: "legacy-encoding.txt",
+      title: "This TXT file is not valid UTF-8.",
+      message:
+        "Save it as UTF-8 text, choose a fresh copy, or paste the assignment text.",
+      preferredRecovery: "files",
+      fileIssues: [],
+    });
   });
 
   it("writes a recovered legacy project to the canonical record once hydration succeeds", async () => {

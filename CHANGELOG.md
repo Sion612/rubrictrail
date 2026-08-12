@@ -4,6 +4,22 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-12
+
+### Fixed
+
+- Rejects malformed UTF-8 TXT input with a stable, recoverable error instead of
+  silently inserting replacement characters into detected fields or excerpts.
+- Cross-validates persisted and restored evidence against the compact source
+  list, bounded canonical source labels and retained excerpt offsets, rejecting
+  internally inconsistent source labels in saved state and backups.
+- Recovers the wider untrimmed-line offset spans written by early releases while
+  normalizing them to the retained excerpt, and rejects deceptive control or
+  bidirectional formatting characters in restored filenames.
+- Drops source-less evidence produced by internal direct-string summaries before
+  project persistence and clarifies that retained excerpts must be checked
+  against the original source.
+
 ## [0.3.9] - 2026-08-12
 
 ### Fixed

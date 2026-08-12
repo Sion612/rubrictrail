@@ -209,6 +209,17 @@ svg { width: 1.15em; height: 1.15em; stroke-width: 1.8; }
 
 .welcome-header { border-bottom: 1px solid var(--line); background: rgba(255,255,255,0.92); }
 .welcome-footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 0.76rem; }
+.community-links { min-width: 0; }
+.community-link { min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 9px; color: var(--ink); text-decoration: none; }
+.community-link:hover { color: var(--teal-dark); }
+.community-link > svg { width: 17px; height: 17px; flex: 0 0 17px; color: var(--teal); }
+.community-link > span, .community-link strong, .community-link small { min-width: 0; display: block; }
+.community-link strong { font-size: 0.78rem; }
+.community-link small { margin-top: 2px; color: var(--muted); font-size: 0.75rem; line-height: 1.35; overflow-wrap: anywhere; }
+.welcome-footer .community-links { display: grid; grid-template-columns: repeat(3,max-content); gap: 10px; }
+.welcome-footer .community-link { padding: 4px 7px; border-radius: 6px; }
+.welcome-footer .community-link:hover { background: var(--surface-alt); }
+.welcome-footer .community-link small { display: none; }
 
 .welcome-grid {
   width: min(1320px, 100%);
@@ -533,6 +544,17 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 .workspace-context-line svg { color: var(--teal); }
 .workspace-context-line strong { max-width: 42%; overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
 .workspace-context-line small { margin-left: auto; padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 0.7rem; }
+.workspace-community-menu { position: relative; margin-left: auto; }
+.workspace-community-menu > summary { min-height: 44px; display: inline-flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--teal-dark); font-size: 0.75rem; font-weight: 720; list-style: none; cursor: pointer; }
+.workspace-community-menu > summary::-webkit-details-marker { display: none; }
+.workspace-community-menu > summary svg { width: 16px; height: 16px; }
+.workspace-community-menu[open] > summary { border-color: var(--teal); background: var(--teal-pale); }
+.workspace-community-popover { position: absolute; z-index: 60; top: calc(100% + 8px); right: 0; width: min(330px,calc(100vw - 32px)); padding: 17px; border: 1px solid #aab8b1; border-radius: 9px; background: white; box-shadow: 0 16px 44px rgba(22,42,35,0.16); }
+.workspace-community-popover > strong { display: block; color: var(--ink); font-size: 0.9rem; }
+.workspace-community-popover > p { margin: 5px 0 12px; color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
+.workspace-community-popover .community-links { display: grid; }
+.workspace-community-popover .community-link { padding: 9px 7px; border-top: 1px solid var(--line); }
+.workspace-context-line > small { margin-left: 0; }
 .view-stack { display: flex; flex-direction: column; gap: 28px; }
 .view-header { max-width: 850px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
 .view-header h1 { margin-bottom: 12px; font-size: clamp(2.1rem, 3.2vw, 3rem); }
@@ -1026,6 +1048,7 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .mobile-workflow button.is-active { background: white; color: var(--ink); }
   .mobile-workflow button.is-active span { border-color: var(--teal); background: var(--teal); color: white; }
   .workspace-main { padding: 30px 20px 65px; }
+  .workspace-context-line { flex-wrap: wrap; }
   .overview-view__primary-grid, .overview-view__risk-grid { grid-template-columns: 1fr; }
   .assignment-facts__grid { grid-template-columns: 1fr 1fr; }
   .assignment-facts__item:nth-child(3) { border-left: 0; border-top: 1px solid var(--line-soft); padding-left: 0; }
@@ -1054,7 +1077,11 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .welcome-header, .welcome-footer { padding-inline: 16px; }
   .welcome-header .mode-indicator { font-size: 0.66rem; }
   .welcome-footer { justify-content: center; }
-  .welcome-footer > span:last-child { display: none; }
+  .welcome-footer > span { display: none; }
+  .welcome-footer .community-links { width: 100%; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 4px; }
+  .welcome-footer .community-link { justify-content: center; gap: 5px; padding-inline: 2px; text-align: center; }
+  .welcome-footer .community-link > svg { display: none; }
+  .welcome-footer .community-link strong { font-size: 0.75rem; line-height: 1.2; }
   .welcome-grid { padding: 36px 16px 48px; gap: 38px; }
   .welcome-copy h1 { font-size: 2.85rem; }
   .welcome-lede { font-size: 0.98rem; }
@@ -1072,6 +1099,10 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .workspace-context-line { flex-wrap: wrap; margin-bottom: 20px; }
   .workspace-context-line strong { max-width: calc(100% - 30px); }
   .workspace-context-line small { width: fit-content; margin-left: 0; }
+  .workspace-community-menu { width: 100%; order: 10; margin-left: 0; }
+  .workspace-community-menu > summary { min-height: 44px; }
+  .workspace-community-popover { right: auto; left: 0; }
+  .workspace-context-line > small { order: 11; }
   .view-stack { gap: 22px; }
   .view-header h1, .overview-hero h1, .rubric-view__heading-copy h1 { font-size: 2.15rem; }
   .split-header, .overview-hero { display: block; }

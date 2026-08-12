@@ -2,6 +2,22 @@
 
 Thank you for helping make assignment planning more traceable and honest.
 
+## Five-minute orientation
+
+1. Browse the open
+   [`good first issue`](https://github.com/Sion612/rubrictrail/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
+   tasks and choose one with a clear acceptance checklist.
+2. Comment on the issue before starting so maintainers and contributors do not
+   duplicate work.
+3. Fork the repository and create a focused branch from `main`.
+4. Follow the setup below, then run the smallest relevant test while iterating.
+5. Before opening a pull request, run `pnpm check` and any browser command named
+   in the issue. Describe what changed, what you verified and any limitation.
+
+Never attach real coursework, student names, private course material, downloaded
+backups or API keys to an issue, test fixture or pull request. Use fictional,
+minimal examples that are safe to publish.
+
 ## Good first contributions
 
 - improve local parsing for real-world brief and rubric formats;
@@ -9,6 +25,9 @@ Thank you for helping make assignment planning more traceable and honest.
 - make rubric-to-plan templates clearer without inventing requirements;
 - improve documentation, translations, or recovery messages;
 - add migration tests for future project-backup formats.
+
+These are direction areas, not automatically approved scope. Prefer an existing
+labelled issue; open a focused proposal first if no issue matches your idea.
 
 Please do not add essay generation, fabricated citations, hidden telemetry, or a
 grade-prediction claim.

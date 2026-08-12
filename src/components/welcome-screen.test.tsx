@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WelcomeScreen } from "@/components/welcome-screen";
+import { COMMUNITY_URLS } from "@/components/community-links";
 import { buildUploadedAssignmentSummary } from "@/lib/files/parse-assignment-files";
 
 const defaultProps = {
@@ -27,6 +28,33 @@ const defaultProps = {
 afterEach(cleanup);
 
 describe("WelcomeScreen upload controls", () => {
+  it("keeps fixed community links visible without putting pasted work in their URLs", () => {
+    const privateDraft = "PRIVATE-COURSEWORK-MARKER";
+    render(
+      <WelcomeScreen
+        {...defaultProps}
+        pastedBrief={privateDraft}
+        pastedRubric={`${privateDraft}-RUBRIC`}
+      />,
+    );
+
+    const community = screen.getByRole("navigation", {
+      name: "RubricTrail community",
+    });
+    expect(
+      within(community).getByRole("link", { name: /View source/ }),
+    ).toHaveAttribute("href", COMMUNITY_URLS.source);
+    expect(
+      within(community).getByRole("link", { name: /Report a problem/ }),
+    ).toHaveAttribute("href", COMMUNITY_URLS.report);
+    expect(
+      within(community).getByRole("link", { name: /Contribute/ }),
+    ).toHaveAttribute("href", COMMUNITY_URLS.contribute);
+    for (const link of within(community).getAllByRole("link")) {
+      expect(link.getAttribute("href")).not.toContain(privateDraft);
+    }
+  });
+
   it("states the local-processing, document-trust, and backup-authenticity boundaries", () => {
     render(<WelcomeScreen {...defaultProps} />);
 

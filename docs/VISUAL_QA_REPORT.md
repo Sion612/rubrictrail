@@ -45,13 +45,13 @@ It waits for the local-save toast to leave before capturing.
 
 ## Interaction and layout checks
 
-- 26/26 Playwright executions passed in the [v0.4.0 release-candidate runtime and test-code run
-  for commit `b76ac92`](https://github.com/Sion612/rubrictrail/actions/runs/31585730947):
-  13 scenarios at desktop and narrow responsive Chromium sizes, including
+- 28/28 Playwright executions passed through `next start` in the [v0.4.1
+  release-candidate runtime and test-code run for commit `de147fd`](https://github.com/Sion612/rubrictrail/actions/runs/31587275622):
+  14 scenarios across desktop and narrow responsive Chromium projects, including
   planning-depth persistence, multi-tab and v2/v3 recovery plus targeted
   malformed UTF-8 rejection, recorded-evidence copy, and 320×700 mixed-batch,
-  paste, rubric-weighting and error states. These are
-  viewport checks, not
+  paste, rubric-weighting and error states. The additional HTTP-contract case is
+  a non-visual production-runtime smoke test. The viewport checks are not
   mobile-UA, touch or physical-device emulation.
 - Navigation and local-project creation reset the workspace to the top.
 - The active mobile workflow step scrolls into view.

@@ -1,8 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const isCi = process.env.CI === "true";
+const useProductionServer = process.env.PLAYWRIGHT_PRODUCTION === "true";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,
+  forbidOnly: isCi,
   retries: 0,
   reporter: "list",
   use: {
@@ -25,7 +29,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev --hostname 127.0.0.1 --port 3100",
+    command: useProductionServer
+      ? "pnpm start --hostname 127.0.0.1 --port 3100"
+      : "pnpm dev --hostname 127.0.0.1 --port 3100",
+    env: {
+      OPENAI_LIVE_ENABLED: "false",
+    },
     url: "http://127.0.0.1:3100",
     reuseExistingServer: false,
     timeout: 120_000,

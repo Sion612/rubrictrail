@@ -4,6 +4,24 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-12
+
+### Changed
+
+- Builds the app inside the browser CI job and runs the complete Playwright
+  suite through `next start`, so browser checks exercise the production
+  artifact instead of the development server.
+- Fails CI when a focused Playwright test is committed accidentally while
+  keeping local browser-test iteration on the development server.
+
+### Security
+
+- Adds production HTTP contract coverage for the configured anti-framing,
+  MIME-sniffing, referrer and browser-capability headers and the suppressed
+  framework-identification header.
+- Verifies that both optional Live API routes remain disabled by default and
+  return uncached structured `503` responses without contacting a provider.
+
 ## [0.4.0] - 2026-08-12
 
 ### Fixed

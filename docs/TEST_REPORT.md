@@ -3,8 +3,9 @@
 Date: 12 August 2026
 Runtime: Node.js 24 in CI, pnpm 11.9.0
 Browser method: GitHub Actions Playwright projects at desktop and narrow
-responsive Chromium sizes; see the [v0.4.0 release-candidate runtime and test-code verification
-run for commit `b76ac92`](https://github.com/Sion612/rubrictrail/actions/runs/31585730947)
+responsive Chromium sizes against a fresh production build served by
+`next start`; see the [v0.4.1 release-candidate runtime and test-code verification
+run for commit `de147fd`](https://github.com/Sion612/rubrictrail/actions/runs/31587275622)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
@@ -14,13 +15,14 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
 | `pnpm test` | 19 files, 257/257 tests passed |
-| `pnpm build` | Next.js 16.3.0 production build passed |
-| `pnpm test:e2e --workers=1` | GitHub Actions: 26/26 executions passed (13 scenarios × 2 Chromium viewports) |
+| `pnpm build` | Next.js 16.3.0 production build passed independently in both CI jobs |
+| `pnpm test:e2e --workers=1` | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 2 Chromium projects) |
 | `pnpm audit --audit-level high` | No known vulnerabilities found |
 
-The browser suite runs each scenario at 1440×900 and a narrow responsive
-390×844 Chromium viewport, with targeted responsive checks narrowed to 320×700.
-The narrow projects do not emulate a mobile user agent or touch device:
+Thirteen UI scenarios run at 1440×900 and a narrow responsive 390×844 Chromium
+viewport, with targeted responsive checks narrowed to 320×700. One request-only
+HTTP-contract scenario runs once per Chromium project without rendering a page.
+The narrow project does not emulate a mobile user agent or touch device:
 
 - sample evidence-to-progress flow and honest demo-signal language;
 - planning-depth task scope, accessible explanation and refresh persistence
@@ -44,6 +46,8 @@ The narrow projects do not emulate a mobile user agent or touch device:
 - divergent v2/v3 browser state, exact older-version load and stable migration;
 - missing-rubric manual repair without fabricated or equalized weights;
 - unsupported-file and empty-draft recovery;
+- production HTTP response headers, suppressed `X-Powered-By` and uncached
+  `LIVE_DISABLED` responses from both optional Live routes;
 - console/page errors and document-level horizontal overflow.
 
 ## Security checks
@@ -60,6 +64,10 @@ The narrow projects do not emulate a mobile user agent or touch device:
   before entering the existing bounded plain-text parser.
 - Live routes reject disabled, unauthenticated, wrong-content-type and oversized
   requests before provider creation.
+- Production-runtime smoke tests directly verify the configured anti-framing,
+  MIME-sniffing, referrer and browser-capability headers, the absence of
+  `X-Powered-By`, and the disabled branch of both Live routes. They do not claim
+  CSP, HSTS, HTTPS or comprehensive security validation.
 - Authoritative project records use revisions and tombstones under one exclusive
   Web Lock; retained v3/v2/v1 lineage is fingerprinted and divergence pauses
   writes for an explicit choice. Visibility and page-close saving remains

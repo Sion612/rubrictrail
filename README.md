@@ -200,24 +200,24 @@ and narrow responsive browser suite:
 pnpm test:e2e --workers=1
 ```
 
-Current v0.3.7 runtime and test-code verification on 12 August 2026
-([commit `f8367d1`, GitHub Actions run 31578088125](https://github.com/Sion612/rubrictrail/actions/runs/31578088125)):
+Current v0.4.0 release-candidate runtime and test-code verification on 12 August 2026
+([commit `b76ac92`, GitHub Actions run 31585730947](https://github.com/Sion612/rubrictrail/actions/runs/31585730947)):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 221/221 tests passed across 16 files |
+| Vitest | 257/257 tests passed across 19 files |
 | Next.js production build | Passed |
-| Playwright | GitHub Actions: 24/24 executions passed (12 scenarios × 1440×900 and 390×844 Chromium viewports), including lock-serialized same-revision writes, confirmed self-check persistence, planning-depth persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
+| Playwright | GitHub Actions: 26/26 executions passed (13 scenarios × 1440×900 and 390×844 Chromium viewports), including strict UTF-8 rejection, recorded-evidence trust copy, lock-serialized same-revision writes, confirmed self-check persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
 | Full dependency audit | No known vulnerabilities found |
 
 Playwright covers the sample loop, complete and mixed real-file projects,
 explicit omitted-file review, pasted brief and rubric intake, manual repair of a
 missing rubric without fabricated weights, partial published weights, local
-persistence and privacy, evidence drawer focus, recoverable unsupported files,
-empty drafts, multi-tab overwrite protection, explicit v2-to-v3 recovery,
-console errors and horizontal overflow. The narrow projects test responsive
+persistence and privacy, recorded-evidence drawer focus, malformed UTF-8 and
+recoverable unsupported files, empty drafts, multi-tab overwrite protection,
+explicit v2-to-v3 recovery, console errors and horizontal overflow. The narrow projects test responsive
 Chromium viewports; they are not mobile-device, touch or mobile-UA emulation.
 
 ## Architecture

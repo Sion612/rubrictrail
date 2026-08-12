@@ -45,11 +45,12 @@ It waits for the local-save toast to leave before capturing.
 
 ## Interaction and layout checks
 
-- 24/24 Playwright executions passed in the [v0.3.7 runtime and test-code run
-  for commit `f8367d1`](https://github.com/Sion612/rubrictrail/actions/runs/31578088125):
-  12 scenarios at desktop and narrow responsive Chromium sizes, including
+- 26/26 Playwright executions passed in the [v0.4.0 release-candidate runtime and test-code run
+  for commit `b76ac92`](https://github.com/Sion612/rubrictrail/actions/runs/31585730947):
+  13 scenarios at desktop and narrow responsive Chromium sizes, including
   planning-depth persistence, multi-tab and v2/v3 recovery plus targeted
-  320×700 mixed-batch, paste, rubric-weighting and error states. These are
+  malformed UTF-8 rejection, recorded-evidence copy, and 320×700 mixed-batch,
+  paste, rubric-weighting and error states. These are
   viewport checks, not
   mobile-UA, touch or physical-device emulation.
 - Navigation and local-project creation reset the workspace to the top.
@@ -60,7 +61,8 @@ It waits for the local-save toast to leave before capturing.
 
 The screenshots predate the v0.3.1 paste form, v0.3.2 mixed-batch review,
 v0.3.3 multi-tab conflict banner, v0.3.4 complete/not-complete rubric choice,
-v0.3.5 planning-depth control or v0.3.6 bounded-parser recovery copy.
+v0.3.5 planning-depth control, v0.3.6 bounded-parser recovery copy, v0.3.7
+lock-backed storage record, or v0.4.0 evidence-trust copy.
 The established product flows have browser assertions for focus, text size,
 explicit recovery, privacy and overflow. The v0.3.6 parser boundaries and
 recovery mappings have unit and component coverage, while the full browser

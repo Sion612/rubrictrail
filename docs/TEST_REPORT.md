@@ -3,8 +3,8 @@
 Date: 12 August 2026
 Runtime: Node.js 24 in CI, pnpm 11.9.0
 Browser method: GitHub Actions Playwright projects at desktop and narrow
-responsive Chromium sizes; see the [v0.3.7 runtime and test-code verification
-run for commit `f8367d1`](https://github.com/Sion612/rubrictrail/actions/runs/31578088125)
+responsive Chromium sizes; see the [v0.4.0 release-candidate runtime and test-code verification
+run for commit `b76ac92`](https://github.com/Sion612/rubrictrail/actions/runs/31585730947)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
 
 ## Automated gates
@@ -13,9 +13,9 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 16 files, 221/221 tests passed |
+| `pnpm test` | 19 files, 257/257 tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed |
-| `pnpm test:e2e --workers=1` | GitHub Actions: 24/24 executions passed (12 scenarios × 2 Chromium viewports) |
+| `pnpm test:e2e --workers=1` | GitHub Actions: 26/26 executions passed (13 scenarios × 2 Chromium viewports) |
 | `pnpm audit --audit-level high` | No known vulnerabilities found |
 
 The browser suite runs each scenario at 1440×900 and a narrow responsive
@@ -27,6 +27,7 @@ The narrow projects do not emulate a mobile user agent or touch device:
   without percentage-labelled grade targets;
 - direct sample-to-own-assignment handoff with focus restoration;
 - complete TXT upload, editable confirmation and local project creation;
+- malformed UTF-8 TXT rejection before any project is created or saved;
 - mixed valid/unsupported file intake, explicit omission review, Back
   restoration and localStorage privacy;
 - pasted brief and rubric intake, Back preservation and raw-text privacy;
@@ -34,7 +35,7 @@ The narrow projects do not emulate a mobile user agent or touch device:
 - complete, partial and unweighted rubric confirmation without synthetic
   percentages, including retained partial values and neutral planning;
 - portable project backup download, reset and restore;
-- custom rubric source drawer and focus restoration;
+- custom rubric source drawer, recorded-evidence trust copy and focus restoration;
 - generic plan task completion and dependency behavior;
 - custom evidence self-check and refresh persistence;
 - explicit self-check Save waits for a confirmed browser write before reporting success;
@@ -59,10 +60,13 @@ The narrow projects do not emulate a mobile user agent or touch device:
   before entering the existing bounded plain-text parser.
 - Live routes reject disabled, unauthenticated, wrong-content-type and oversized
   requests before provider creation.
-- State-v3 autosave, page-close flushing, restore and reset compare observed v3
-  and retained-v2 values; detected divergence pauses writes for an explicit
-  choice. Web Storage remains non-transactional, as documented in the security
-  and limitations files.
+- Authoritative project records use revisions and tombstones under one exclusive
+  Web Lock; retained v3/v2/v1 lineage is fingerprinted and divergence pauses
+  writes for an explicit choice. Visibility and page-close saving remains
+  best-effort, as documented in the security and limitations files.
+- TXT parsing is strict UTF-8, and persisted evidence cross-checks bounded source
+  IDs, safe filenames and retained excerpt spans while recovering the wider
+  untrimmed-line spans written by early releases.
 - Source scan found no committed key, token, private key, email or user-specific
   absolute path.
 

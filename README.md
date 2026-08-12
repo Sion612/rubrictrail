@@ -11,6 +11,9 @@ account, API key or paid service is required. Selected file contents, filenames
 and project state stay in the browser; GitHub Pages still receives ordinary page
 and asset request metadata. Use trusted documents only.
 
+[Demo](https://sion612.github.io/rubrictrail/) · [Quick start](#quick-start) ·
+[Contribute](#contributing) · [Good first issues](https://github.com/Sion612/rubrictrail/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
+
 It is designed for students who need more than a document summary. Every
 criterion can retain a short source excerpt recorded during intake, and every plan
 task has a definition of done. RubricTrail does not write a submission, invent a
@@ -225,8 +228,8 @@ browser job creates a separate production build and sets
 through `next start`.
 
 Current v0.5.0 runtime, static-export and test-code verification on 12 August
-2026 ([exact-main commit `46fdd64`, GitHub Actions run
-31592217190](https://github.com/Sion612/rubrictrail/actions/runs/31592217190)):
+2026 ([exact release commit `b8d80b0`, GitHub Actions run
+31593393903](https://github.com/Sion612/rubrictrail/actions/runs/31593393903)):
 
 | Gate | Result |
 | --- | --- |
@@ -238,8 +241,8 @@ Current v0.5.0 runtime, static-export and test-code verification on 12 August
 | Static demo | `/rubrictrail` export built successfully; its 29-file artifact passed the Live/OpenAI-marker audit and 28/28 browser executions (14 scenarios × 2 Chromium projects) |
 | Full dependency audit | No known vulnerabilities found |
 
-The same exact-main SHA was rebuilt, audited and published by [Deploy Pages run
-31592403754](https://github.com/Sion612/rubrictrail/actions/runs/31592403754).
+The same exact release SHA was rebuilt, audited and published by [Deploy Pages run
+31593580751](https://github.com/Sion612/rubrictrail/actions/runs/31593580751).
 A live HTTP smoke check observed the public page and all 11 HTML-linked static
 assets at 200, including the exported PDF worker at its same-origin
 `/rubrictrail` path. The absent Live routes returned 404 for GET and were rejected
@@ -374,7 +377,11 @@ More detail is in [docs/KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md).
 Issues and pull requests are welcome. Start with
 [CONTRIBUTING.md](./CONTRIBUTING.md), follow the
 [code of conduct](./CODE_OF_CONDUCT.md), and never attach real student work to a
-public issue.
+public issue. New contributors can browse the scoped
+[`good first issue`](https://github.com/Sion612/rubrictrail/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
+tasks or the broader
+[`help wanted`](https://github.com/Sion612/rubrictrail/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22help%20wanted%22)
+queue.
 
 The project is maintained by [Sion612](https://github.com/Sion612). See
 [MAINTAINERS.md](./MAINTAINERS.md).

@@ -6,6 +6,7 @@ import {
   BookOpenCheck,
   Check,
   ClipboardCheck,
+  Code2,
   Download,
   FileSearch,
   ListChecks,
@@ -14,6 +15,7 @@ import {
   Upload,
   UploadCloud,
 } from "lucide-react";
+import { CommunityLinks } from "@/components/community-links";
 import { BRAND } from "@/lib/brand";
 import type { WorkflowState, WorkspaceView } from "@/lib/ui-types";
 
@@ -68,7 +70,7 @@ function dateLabel(value: string): string {
   }).format(new Date(`${value}T12:00:00`));
 }
 
-function closeBackupMenu(
+function closeDetailsMenu(
   menu: HTMLDetailsElement | null,
   restoreFocus = false,
 ) {
@@ -96,26 +98,30 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const backupInputRef = useRef<HTMLInputElement>(null);
   const backupMenuRef = useRef<HTMLDetailsElement>(null);
+  const communityMenuRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
-    function handleBackupMenuDismiss(event: PointerEvent | KeyboardEvent) {
-      const menu = backupMenuRef.current;
-      if (!menu?.open) return;
+    function handleDetailsMenuDismiss(event: PointerEvent | KeyboardEvent) {
+      const menus = [backupMenuRef.current, communityMenuRef.current];
       if (event.type === "keydown") {
         if ((event as KeyboardEvent).key !== "Escape") return;
-        closeBackupMenu(menu, true);
+        for (const menu of menus) {
+          if (menu?.open) closeDetailsMenu(menu, true);
+        }
         return;
       }
-      if (!menu.contains(event.target as Node)) {
-        closeBackupMenu(menu);
+      for (const menu of menus) {
+        if (menu?.open && !menu.contains(event.target as Node)) {
+          closeDetailsMenu(menu);
+        }
       }
     }
 
-    document.addEventListener("pointerdown", handleBackupMenuDismiss);
-    document.addEventListener("keydown", handleBackupMenuDismiss);
+    document.addEventListener("pointerdown", handleDetailsMenuDismiss);
+    document.addEventListener("keydown", handleDetailsMenuDismiss);
     return () => {
-      document.removeEventListener("pointerdown", handleBackupMenuDismiss);
-      document.removeEventListener("keydown", handleBackupMenuDismiss);
+      document.removeEventListener("pointerdown", handleDetailsMenuDismiss);
+      document.removeEventListener("keydown", handleDetailsMenuDismiss);
     };
   }, []);
 
@@ -123,7 +129,7 @@ export function WorkspaceShell({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    closeBackupMenu(backupMenuRef.current, true);
+    closeDetailsMenu(backupMenuRef.current, true);
     onImportBackup(file);
   }
 
@@ -162,7 +168,16 @@ export function WorkspaceShell({
             </div>
           )}
           <details className="project-backup-menu" ref={backupMenuRef}>
-            <summary className="icon-button" aria-label="Project backup options" title="Project backup options">
+            <summary
+              className="icon-button"
+              aria-label="Project backup options"
+              title="Project backup options"
+              onClick={() => {
+                if (!backupMenuRef.current?.open) {
+                  closeDetailsMenu(communityMenuRef.current);
+                }
+              }}
+            >
               <ArchiveRestore aria-hidden="true" />
             </summary>
             <div className="project-backup-popover">
@@ -172,7 +187,7 @@ export function WorkspaceShell({
                 className="backup-menu-action"
                 type="button"
                 onClick={() => {
-                  closeBackupMenu(backupMenuRef.current, true);
+                  closeDetailsMenu(backupMenuRef.current, true);
                   onExportBackup();
                 }}
               >
@@ -277,6 +292,24 @@ export function WorkspaceShell({
           <span>Due {dateLabel(project.dueDate)}</span>
           <span>·</span>
           <span>{project.wordCount.toLocaleString()} words</span>
+          <details className="workspace-community-menu" ref={communityMenuRef}>
+            <summary
+              aria-label="Open-source project links"
+              onClick={() => {
+                if (!communityMenuRef.current?.open) {
+                  closeDetailsMenu(backupMenuRef.current);
+                }
+              }}
+            >
+              <Code2 aria-hidden="true" />
+              <span>Open source</span>
+            </summary>
+            <div className="workspace-community-popover">
+              <strong>RubricTrail is open source</strong>
+              <p>View the code, report a problem, or make a contribution. Never include real coursework in a public report.</p>
+              <CommunityLinks />
+            </div>
+          </details>
           <small>{project.mode === "sample" ? "sample project" : "local project"}</small>
         </div>
         {children}

@@ -6,8 +6,14 @@ Browser method: GitHub Actions Playwright projects at desktop and narrow
 responsive Chromium sizes against a fresh production build served by
 `next start`, plus the generated static demo served at `/rubrictrail`; see the
 [v0.5.0 exact-main verification run for commit
-`46fdd64`](https://github.com/Sion612/rubrictrail/actions/runs/31592217190)
+`b8d80b0`](https://github.com/Sion612/rubrictrail/actions/runs/31593393903)
 and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
+
+The v0.5.1 candidate adds four component/integration checks for fixed,
+privacy-safe community links and workspace menu focus behavior. A local
+non-browser run passed 21 files and 265/265 tests, ESLint with zero warnings and
+TypeScript. The published, exact-run evidence below remains the v0.5.0 baseline
+until the candidate completes remote CI.
 
 ## Automated gates
 
@@ -25,8 +31,8 @@ and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/
 
 ## Deployment evidence
 
-[Deploy Pages run 31592403754](https://github.com/Sion612/rubrictrail/actions/runs/31592403754)
-checked out, rebuilt and audited the same exact-main SHA `46fdd64`, then completed
+[Deploy Pages run 31593580751](https://github.com/Sion612/rubrictrail/actions/runs/31593580751)
+checked out, rebuilt and audited the same tagged release SHA `b8d80b0`, then completed
 both its build and `github-pages` deployment jobs. The generated artifact, rather
 than the live host, is what passed the 28/28 static CI browser executions.
 

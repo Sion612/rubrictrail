@@ -4,6 +4,21 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-12
+
+### Added
+
+- Added privacy-safe community handoff links so demo users can view the source,
+  report a problem or read the contribution guide without including project
+  content in the destination URL.
+- Added a five-minute contributor orientation and a direct path to scoped
+  `good first issue` tasks.
+
+### Documentation
+
+- Corrected the v0.5.0 verification references to the final tagged commit and
+  its exact-main CI and Pages deployment runs.
+
 ## [0.5.0] - 2026-08-12
 
 ### Added

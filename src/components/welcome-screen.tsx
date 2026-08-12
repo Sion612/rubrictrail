@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   UploadCloud,
 } from "lucide-react";
+import { CommunityLinks } from "@/components/community-links";
 import { BRAND } from "@/lib/brand";
 import { assignmentFileIssueReason } from "@/lib/file-intake-messages";
 import {
@@ -609,7 +610,7 @@ export function WelcomeScreen({
 
       <footer className="welcome-footer">
         <span>Built for evidence-led coursework</span>
-        <span>Local-first · Traceable · Integrity-aware</span>
+        <CommunityLinks />
       </footer>
     </main>
   );

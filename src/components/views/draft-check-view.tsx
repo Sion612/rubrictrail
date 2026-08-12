@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, FileCheck2, Highlighter, LoaderCircle, Quote, ShieldCheck, Sparkles } from "lucide-react";
 import type { AssignmentAnalysis, DraftCheckResult } from "@/lib/domain";
 import { PROJECT_DRAFT_MAX_CHARACTERS } from "@/lib/local-state";
@@ -59,6 +60,7 @@ export function DraftCheckView({
   onOpenEvidence,
   onNavigateProgress,
 }: DraftCheckViewProps) {
+  const [hasEditedDraft, setHasEditedDraft] = useState(false);
   const words = countWords(draftText);
   const isEmpty = words === 0;
   const isShort = words > 0 && words < 80;
@@ -90,14 +92,17 @@ export function DraftCheckView({
           <textarea
             id="draft-text"
             value={draftText}
-            onChange={(event) => onDraftChange(event.target.value)}
+            onChange={(event) => {
+              setHasEditedDraft(true);
+              onDraftChange(event.target.value);
+            }}
             placeholder="Paste your own paragraph or section here…"
             maxLength={PROJECT_DRAFT_MAX_CHARACTERS}
-            aria-describedby="draft-help draft-count"
+            aria-describedby={`draft-help draft-count${isEmpty ? " draft-empty-message" : ""}`}
             data-testid="draft-text"
           />
           <div className="editor-meta"><span id="draft-count">{words} words · {draftText.length.toLocaleString()} / {PROJECT_DRAFT_MAX_CHARACTERS.toLocaleString()} characters</span><span id="draft-help">Best for one section at a time</span></div>
-          {isEmpty ? <p className="field-message error" role="alert">Paste your own writing to begin. RubricTrail prompts your review; it will not write the assignment for you.</p> : null}
+          {isEmpty ? <p className="field-message error" id="draft-empty-message" role={hasEditedDraft ? "alert" : undefined}>Paste your own writing to begin. RubricTrail prompts your review; it will not write the assignment for you.</p> : null}
           {isShort ? <p className="field-message warning">This is a short extract. You can still run a limited check, but structural coverage may be incomplete.</p> : null}
           <button className="button button-primary button-full" type="button" onClick={onCheck} disabled={isEmpty || isChecking} data-testid="run-draft-check">
             {isChecking ? <><LoaderCircle className="spin" aria-hidden="true" />Scanning demo signals…</> : <><Sparkles aria-hidden="true" />Run demo signal check</>}

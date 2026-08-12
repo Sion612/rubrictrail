@@ -4,6 +4,19 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-08-12
+
+### Fixed
+
+- Made uploaded-project self-check reviews parent-authoritative so loading or
+  restoring another project cannot leave stale criterion text in the editor.
+- Routed Progress to the actual next unchecked rubric criterion instead of the
+  first or previously selected criterion.
+- Rejected Live draft-check output that duplicates one rubric criterion while
+  omitting another, preventing double-counted coverage.
+- Kept responsive Progress table headers available to assistive technology and
+  stopped announcing an untouched empty draft as an error.
+
 ## [0.3.7] - 2026-08-12
 
 ### Added

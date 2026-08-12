@@ -1116,7 +1116,18 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .progress-facts { grid-template-columns: 1fr; }
   .progress-facts > div + div { border-top: 1px solid var(--line); border-left: 0; }
   .coverage-table { overflow: visible; border-top: 0; }
-  .coverage-table-head { display: none; }
+  .coverage-table-head.mobile-visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+  .coverage-table-head.mobile-visually-hidden > :last-child { display: block; }
   .coverage-table-row { min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; padding: 14px; border: 1px solid var(--line); background: white; }
   .coverage-table-row > span:first-child { grid-column: 1 / -1; }
   .coverage-table-row > :last-child { display: block; }

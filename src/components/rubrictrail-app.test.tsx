@@ -17,6 +17,7 @@ import {
   type ProjectStorageRecordV1,
 } from "@/lib/local-state";
 import { serializeProjectBackup } from "@/lib/project-backup";
+import { buildUploadedPlanTemplates } from "@/lib/uploaded-project";
 import type { PersistedProjectState, UploadedProject } from "@/lib/ui-types";
 import {
   createFifoLockManager,
@@ -1246,6 +1247,60 @@ describe("RubricTrailApp reliability", () => {
     });
     expect(screen.getByTestId("toast")).toHaveTextContent(
       "Project restored from backup",
+    );
+  });
+
+  it("opens the actual next unchecked criterion from uploaded progress", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const project: UploadedProject = {
+      ...uploadedProject(),
+      weightingStatus: "complete",
+      criteria: [
+        {
+          id: "analysis-1",
+          name: "Analysis",
+          weight: 60,
+          evidence: null,
+        },
+        {
+          id: "communication-2",
+          name: "Communication",
+          weight: 40,
+          evidence: null,
+        },
+      ],
+    };
+    const state: PersistedProjectState = {
+      ...uploadedBackupState(),
+      uploadedProject: project,
+      view: "progress",
+      visitedViews: ["overview", "progress"],
+      completedTaskIds: buildUploadedPlanTemplates(project).map((task) => task.id),
+      uploadedCriterionReviews: [
+        {
+          criterionId: "analysis-1",
+          draftText: "This saved analysis note contains enough real draft evidence.",
+          evidenceVisible: true,
+          linkExplained: true,
+          sourceTraceable: true,
+          updatedAt: "2026-08-12T08:00:00.000Z",
+        },
+      ],
+    };
+    render(<RubricTrailApp />);
+    await advance(0);
+
+    await restoreBackup(screen.getByTestId("backup-file-input"), state);
+
+    expect(
+      screen.getByRole("heading", { name: "Self-check Communication" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue next action" }),
+    );
+
+    expect(screen.getByRole("combobox", { name: "Rubric criterion" })).toHaveValue(
+      "communication-2",
     );
   });
 

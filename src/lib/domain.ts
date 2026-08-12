@@ -281,7 +281,17 @@ export const draftCheckResultSchema = z
   })
   .strict()
   .superRefine((result, context) => {
-    const criterionIds = new Set(result.criteria.map((item) => item.criterionId));
+    const criterionIds = new Set<string>();
+    result.criteria.forEach((criterion, index) => {
+      if (criterionIds.has(criterion.criterionId)) {
+        context.addIssue({
+          code: "custom",
+          message: `Duplicate draft-check criterion: ${criterion.criterionId}`,
+          path: ["criteria", index, "criterionId"],
+        });
+      }
+      criterionIds.add(criterion.criterionId);
+    });
     result.feedback.forEach((feedback, feedbackIndex) => {
       feedback.rubricIds.forEach((criterionId, rubricIndex) => {
         if (!criterionIds.has(criterionId)) {
@@ -334,6 +344,9 @@ export const rubricTrailFixtureSchema = z
     const evidenceIds = new Set(
       fixture.assignment.evidence.map((evidence) => evidence.id),
     );
+    const checkedCriterionIds = new Set(
+      fixture.draftCheck.criteria.map((criterion) => criterion.criterionId),
+    );
 
     fixture.draftCheck.criteria.forEach((criterion, index) => {
       if (!rubricIds.has(criterion.criterionId)) {
@@ -352,6 +365,15 @@ export const rubricTrailFixtureSchema = z
           });
         }
       });
+    });
+    fixture.assignment.rubric.forEach((criterion) => {
+      if (!checkedCriterionIds.has(criterion.id)) {
+        context.addIssue({
+          code: "custom",
+          message: `Missing draft-check criterion: ${criterion.id}`,
+          path: ["draftCheck", "criteria"],
+        });
+      }
     });
 
     fixture.draftCheck.feedback.forEach((feedback, feedbackIndex) => {

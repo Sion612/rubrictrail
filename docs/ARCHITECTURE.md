@@ -44,6 +44,27 @@ flowchart LR
 | Persistence | Revisioned authoritative Web Storage record, exclusive Web Locks mutation, state-v3 validation, tombstones, compatibility-lineage checks and explicit privacy purge | `src/lib/local-state.ts` |
 | Data portability | Versioned UTF-8 JSON export/import with conflict-aware restore | `src/lib/project-backup.ts` |
 | Optional Live boundary | Authenticated, bounded, disabled-by-default routes | `src/lib/ai/*`, `src/app/api/live/*` |
+| Static demo boundary | Separate browser-only export that reuses the product UI without compiling Node-only routes | `demo/`, `scripts/audit-static-demo.mjs` |
+
+## Static demo boundary
+
+`pnpm build:demo` builds the separate `demo/app` entry point with Next.js static
+export. CI sets `PAGES_BASE_PATH=/rubrictrail`, audits every exported text asset
+and serves the generated files at that subpath for the full browser-local suite.
+The 29-file release-candidate artifact contained no Live API path, OpenAI
+endpoint or Live credential/configuration marker.
+
+This split is deliberate. The normal application keeps its optional POST Live
+routes and Node response-header configuration; neither is representable in the
+static artifact. A future static host controls its own HTTPS and response
+headers and receives ordinary requests for HTML, JavaScript, CSS and other
+assets. Passing the static CI gate is not evidence that the artifact has been
+deployed.
+
+Project persistence remains browser `localStorage`. Storage isolation follows
+the page origin, not the `/rubrictrail` path, so unrelated scripts hosted on the
+same origin would share that boundary. Project backups are validated portable
+JSON, not encrypted or signed archives.
 
 ## Trust boundary for user sources
 

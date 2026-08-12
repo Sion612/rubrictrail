@@ -69,3 +69,41 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  pages-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      PAGES_BASE_PATH: /rubrictrail
+      PLAYWRIGHT_APP_PATH: /rubrictrail/
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Build static demo
+        run: pnpm build:demo
+      - name: Audit static demo boundary
+        run: pnpm audit:demo
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Test static demo under the Pages subpath
+        run: pnpm test:e2e:demo --workers=1
+      - name: Upload static-demo diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: static-demo-diagnostics-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/static-demo/
+          if-no-files-found: ignore
+          retention-days: 7

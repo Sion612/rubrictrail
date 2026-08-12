@@ -289,7 +289,7 @@ export function WelcomeScreen({
             <div>
               <p className="eyebrow">Start a new project</p>
               <h2>Add your assignment</h2>
-              <p>Upload a file or paste instructions from your course page. Everything is processed only in this browser.</p>
+              <p>Upload a file or paste instructions from your course page. RubricTrail parses assignment content locally in this browser; the app does not upload it or send it to an AI service.</p>
             </div>
             <FileText aria-hidden="true" />
           </div>
@@ -336,7 +336,7 @@ export function WelcomeScreen({
               >
                 <UploadCloud aria-hidden="true" />
                 <h3 id="upload-zone-title" tabIndex={-1}>Drop brief and rubric here</h3>
-                <p>PDF, DOCX or TXT · up to 10 files · 10 MiB each · 25 MiB combined</p>
+                <p>PDF, DOCX or TXT · up to 10 files · 10 MiB each · 25 MiB combined. Use only documents you trust; these limits are not a malicious-document sandbox.</p>
                 <button
                   id="choose-assignment-files"
                   type="button"
@@ -566,7 +566,7 @@ export function WelcomeScreen({
 
           <div className="privacy-row">
             <LockKeyhole aria-hidden="true" />
-            <p><strong>Private by default.</strong> Files and pasted text are processed in this browser. Only confirmed fields and short excerpts are saved; full source text is not.</p>
+            <p><strong>Local processing.</strong> RubricTrail does not send selected file contents or pasted text to an analysis service. Confirmed fields, short excerpts, self-check notes and progress may be saved in this browser; full source text is not retained.</p>
           </div>
 
           <div className="welcome-backup-restore" aria-busy={isImportingBackup}>
@@ -574,7 +574,7 @@ export function WelcomeScreen({
             <div>
               <span className="backup-eyebrow">Continue an existing project</span>
               <strong>Already have a RubricTrail backup?</strong>
-              <p>Restore a versioned JSON backup. Confirm its project name and export date before anything is replaced.</p>
+              <p>Restore a versioned JSON backup. Backups are unencrypted and unsigned; open only one you created or trust. Confirm its project name and export date before anything is replaced.</p>
               <button
                 className="button button-ghost"
                 type="button"

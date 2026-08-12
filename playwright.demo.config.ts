@@ -1,18 +1,19 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const isCi = process.env.CI === "true";
-const useProductionServer = process.env.PLAYWRIGHT_PRODUCTION === "true";
+const appPath = process.env.PLAYWRIGHT_APP_PATH || "/rubrictrail/";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testIgnore: "static-export.spec.ts",
+  testMatch: ["core-flow.spec.ts", "static-export.spec.ts"],
   fullyParallel: false,
   forbidOnly: isCi,
   retries: 0,
   reporter: "list",
+  outputDir: "test-results/static-demo",
   use: {
-    baseURL: "http://127.0.0.1:3100",
-    channel: process.env.CI ? undefined : "chrome",
+    baseURL: "http://127.0.0.1:3101",
+    channel: isCi ? undefined : "chrome",
     launchOptions: {
       args: ["--disable-background-mode"],
     },
@@ -30,14 +31,14 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: useProductionServer
-      ? "pnpm start --hostname 127.0.0.1 --port 3100"
-      : "pnpm dev --hostname 127.0.0.1 --port 3100",
+    command: "node scripts/serve-static-demo.mjs",
     env: {
-      OPENAI_LIVE_ENABLED: "false",
+      PORT: "3101",
+      STATIC_DEMO_BASE_PATH: appPath,
+      STATIC_DEMO_ROOT: "demo/out",
     },
-    url: "http://127.0.0.1:3100",
+    url: `http://127.0.0.1:3101${appPath.endsWith("/") ? appPath : `${appPath}/`}`,
     reuseExistingServer: false,
-    timeout: 120_000,
+    timeout: 30_000,
   },
 });

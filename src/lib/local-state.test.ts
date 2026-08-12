@@ -201,6 +201,22 @@ describe("local project persistence", () => {
     expect(parsePersistedProjectStateValue(state).ok).toBe(false);
   });
 
+  it("rejects line breaks, controls, and bidirectional formatting in saved project identity fields", () => {
+    for (const [field, value] of [
+      ["title", "Strategy Report\nNo existing project will be removed"],
+      ["title", "Strategy\u0085Report"],
+      ["course", "BUS302\u202Etxt.exe"],
+    ] as const) {
+      const state = uploadedState();
+      state.uploadedProject![field] = value;
+
+      expect(parsePersistedProjectStateValue(state)).toEqual({
+        ok: false,
+        reason: "invalid-state",
+      });
+    }
+  });
+
   it("rejects uploaded evidence with only one recorded source label", () => {
     const state = uploadedState();
     state.uploadedProject!.criteria[0].evidence = {

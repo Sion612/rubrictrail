@@ -39,6 +39,9 @@ seen and will coordinate disclosure after a fix is available.
   rubric state stores `weightingStatus` as `complete`, `incomplete` or `none`,
   with each criterion percentage represented as a number or `null`. Only a
   complete 100% breakdown weights the plan; missing values are not synthesized.
+- Browser storage is scoped to the complete origin, not to the `/rubrictrail`
+  path. Do not serve the demo on an origin that also runs unrelated or untrusted
+  scripts with access to the same `localStorage`.
 - TXT input is decoded as strict UTF-8. Invalid byte sequences fail closed and
   can only be omitted through the explicit mixed-batch recovery decision.
 - Persisted and restored evidence is cross-checked against the compact source
@@ -81,6 +84,13 @@ seen and will coordinate disclosure after a fix is available.
   conflict rather than silently restoring it.
 - The experimental Live routes are disabled by default. Enabling them requires a
   server-side API key and a separate 32-character bearer token.
+- The separate static demo export contains no Live API routes or Node runtime
+  response-header configuration. Its artifact audit rejects Live paths, OpenAI
+  endpoints and Live credential/configuration markers. This verifies the built
+  files, not the policy of a future host: a host still receives ordinary page
+  and asset request metadata and controls HTTPS and response headers.
+- Downloaded project backups are plain JSON. They are neither encrypted nor
+  signed; schema and version validation does not authenticate their author.
 - A public Live deployment also needs rate limits, per-user authorization, budget
   caps, abuse monitoring, and an explicit consent UI. Those controls are outside
   the current release, so the maintainers do not operate a public Live service.

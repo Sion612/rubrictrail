@@ -87,6 +87,28 @@ describe("uploaded project workflow", () => {
     );
   });
 
+  it("rejects deceptive single-line project identity fields before creation", () => {
+    const upload = completeUpload();
+    const titleDraft = draftFromUpload(upload);
+    titleDraft.title = "Strategy Report\nNo existing project will be removed";
+
+    expect(validateUploadedProjectDraft(titleDraft)).toContain(
+      "Use a single-line assignment title without control or bidirectional formatting characters.",
+    );
+    expect(() => createUploadedProject(upload, titleDraft)).toThrow(
+      "Use a single-line assignment title",
+    );
+
+    const courseDraft = draftFromUpload(upload);
+    courseDraft.course = "BUS302\u202Etxt.exe";
+    expect(validateUploadedProjectDraft(courseDraft)).toContain(
+      "Use a single-line course or module name without control or bidirectional formatting characters.",
+    );
+    expect(() => createUploadedProject(upload, courseDraft)).toThrow(
+      "Use a single-line course or module name",
+    );
+  });
+
   it("requires an explicit choice when published weights are incomplete", () => {
     const draft = draftFromUpload(incompleteWeightUpload());
 

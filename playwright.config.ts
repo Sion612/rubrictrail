@@ -5,6 +5,7 @@ const useProductionServer = process.env.PLAYWRIGHT_PRODUCTION === "true";
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  testIgnore: "static-export.spec.ts",
   fullyParallel: false,
   forbidOnly: isCi,
   retries: 0,

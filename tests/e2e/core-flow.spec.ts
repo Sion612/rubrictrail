@@ -365,10 +365,10 @@ test("real upload can create and persist a source-linked local project", async (
   await expect(page.getByText("APA 7")).toBeVisible();
   await expect(page.getByText("LumaLane Market")).toHaveCount(0);
   await expect(page.getByText("OM302 Operations Management")).toHaveCount(0);
+  await expect(page.getByText("Recorded excerpts to re-check")).toBeVisible();
 
   await page.getByRole("button", { name: "Review rubric" }).click();
   await expect(page.getByRole("heading", { name: "Confirm what earns marks." })).toBeVisible();
-  await expect(page.getByText("Recorded excerpts to re-check")).toBeVisible();
   await expectWorkspaceAtTop(page);
   const evidenceButton = page.getByRole("button", { name: "Open source for Strategic analysis" });
   await evidenceButton.click();
@@ -721,7 +721,7 @@ test("malformed UTF-8 TXT is rejected before a project is created", async ({ pag
 
   const error = page.getByTestId("upload-error");
   await expect(error).toBeFocused();
-  await expect(error).toContainText("This TXT file is not valid UTF-8 text.");
+  await expect(error).toContainText("This TXT file is not valid UTF-8.");
   await expect(error).toContainText("Save it as UTF-8 text");
   await expect(error.getByRole("button")).toHaveText([
     "Choose another file",

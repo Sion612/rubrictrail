@@ -44,19 +44,33 @@
 8. **Simple rubric parser.** Explicit lines such as `Analysis | 30%` work best.
    Complex tables may require manual repair in the confirmation screen.
 9. **Manual portability only.** There is no account, automatic sync,
-   collaboration or multi-project dashboard. Simultaneous tabs are detected and
-   autosave is paused, but edits are not merged; download either version before
-   choosing which one to keep. A versioned JSON backup can move one project
-   between browsers, but it is not encrypted and must be kept private. The v3/v2
-   lineage fingerprint, value comparisons and readback checks are best effort:
-   `localStorage` has no transaction or atomic compare-and-swap across both keys,
-   so a narrow race remains possible between separate operations.
-10. **English-first.** Date parsing intentionally leaves ambiguous numeric dates
-   blank; language, grading and citation conventions are not universal yet.
-11. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal
-   demo, not semantic evaluation or a predicted grade.
-12. **No public Live service.** The optional server adapter lacks the full rate,
-   budget, abuse and consent controls required for a public deployment.
+    collaboration or multi-project dashboard. Simultaneous tabs are detected and
+    autosave is paused, but edits are not merged; download either version before
+    choosing which one to keep. A versioned JSON backup can move one project
+    between browsers, but it is not encrypted and must be kept private. Current
+    mutations use an exclusive Web Lock and monotonic authoritative-record
+    revision, so two writes or a write and clear from one baseline cannot both
+    win. This remains an application protocol, not a `localStorage` transaction
+    or atomic compare-and-swap; older releases can still change compatibility
+    keys, which fingerprint checks surface as conflicts or recovery candidates.
+    An explicit reset removes the observed v3, v2 and v1 project values and keeps
+    only a content-free tombstone, but a still-open older tab can write its key
+    again afterward. Close older tabs before resetting sensitive work.
+    Without Web Locks, mutation fails closed and edits remain only in that tab.
+10. **Close-time saving is best effort.** Autosave waits 250 ms, while hidden-page
+    and `pagehide` handlers start an asynchronous flush. A close during the
+    debounce, browser shutdown or force-kill may stop that work and lose the last
+    uncommitted edit. Download a backup before closing when the interface reports
+    tab-only changes.
+11. **Local-first is not complete offline support.** Files and project content are
+    processed in the browser after the app loads, but there is no service worker
+    guarantee that the application can be loaded or reopened without its host.
+12. **English-first.** Date parsing intentionally leaves ambiguous numeric dates
+    blank; language, grading and citation conventions are not universal yet.
+13. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal
+    demo, not semantic evaluation or a predicted grade.
+14. **No public Live service.** The optional server adapter lacks the full rate,
+    budget, abuse and consent controls required for a public deployment.
 
 These boundaries are shown in the product and should not be hidden by downstream
 deployments.

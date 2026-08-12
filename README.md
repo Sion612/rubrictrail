@@ -65,11 +65,14 @@ The custom workflow includes:
 - criterion-by-criterion self-checks for visible, explained and traceable
   evidence;
 - a final human submission checklist;
-- v3 local persistence with validated migration from v2 and the earlier
-  sample-state format;
+- a revisioned authoritative browser record containing the v3 state payload,
+  with validated migration from v2 and the earlier sample-state format;
 - deep local-state validation, recovery messaging and visible storage failures;
-- best-effort multi-tab conflict checks that pause autosave when v3 or retained
-  v2 state diverges from this tab's observed lineage;
+- exclusive Web Locks coordination so concurrent current-version writes from the
+  same observed revision cannot both win;
+- compatibility-key fingerprints that surface a parseable older-tab change as
+  a recovery candidate instead of silently selecting it, plus a verified privacy
+  purge when the user explicitly resets the project;
 - versioned project backups that can be restored without retaining original files.
 
 Original files and full uploaded or pasted source text are not written to
@@ -100,16 +103,30 @@ mark. The four values previously exposed by the interface keep the same task
 gates and time multipliers, so this wording correction does not silently
 reschedule an existing supported profile.
 Newer unsupported versions still fail with an upgrade message rather than being
-guessed at. The v2 browser value is retained as a recovery candidate. Each v3
-save records a non-cryptographic fingerprint of the v2 bytes it superseded, so
-a later divergent write by an older tab is surfaced as a cross-version conflict.
+guessed at. Browser persistence now uses the authoritative
+`rubrictrail.project.store.v1` record, whose format is separate from the state-v3
+and backup protocols. Each successful mutation takes the exclusive
+`rubrictrail.project.store.v1` Web Lock, compares the complete observed baseline,
+then writes the next monotonic revision as either an active project or a cleared
+tombstone. Two writes, or a write and clear, starting from the same revision
+therefore serialize and only the first can succeed; the other reports a conflict.
 
-RubricTrail compares the observed v3 and v2 values before a write and reads both
-back afterward. Detected divergence pauses autosave and asks which version to
-keep. These checks are best effort: `localStorage` does not provide transactions
-or atomic compare-and-swap, so a narrow write race can still occur between
-separate operations. Download a backup before resolving edits that matter in
-multiple tabs or versions.
+The older `rubrictrail.project.v3`, `rubrictrail.project.v2` and
+`proofline.project.v1` values are retained during normal saves and migration.
+The authoritative record fingerprints their exact bytes. If one parseable
+legacy value later changes, RubricTrail can present it as an older-tab recovery
+candidate without making that value authoritative automatically. An explicit
+project reset instead writes a content-free guard, removes all three compatibility
+values, verifies the deletion and keeps only a content-free cleared tombstone.
+This coordination is an application protocol over Web Storage, not a claim that
+`localStorage` itself provides transactions or atomic compare-and-swap.
+
+If Web Locks are unavailable or lock acquisition fails, RubricTrail fails closed:
+it can still read the saved project, but it does not write or reset browser state.
+New edits remain only in that tab, and the interface asks the user to keep one tab
+open and download a backup before closing. Autosave waits 250 ms; hidden-page and
+`pagehide` handlers make an additional best-effort flush attempt, but an immediate
+close or force-kill can still lose the final uncommitted edit.
 
 A backup contains the compact saved project: course details, source labels or
 original filenames, short source excerpts, pasted draft or self-check text, task
@@ -266,7 +283,12 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
 - There is no account, automatic sync, collaboration or multi-project dashboard;
   moving data requires an explicit local backup and restore. Detected external
   changes pause autosave, but simultaneous edits are not automatically merged
-  and Web Storage cannot make the protection transactional.
+  even though current-version mutations are serialized with an exclusive Web
+  Lock. Without Web Locks, changes remain tab-only and require a manual backup.
+- Close-time saving is best effort: the final debounced edit may be lost if the
+  page or browser is terminated before its asynchronous save completes.
+- Local-first describes where assignment content is processed and persisted; it
+  is not a promise that the site can be loaded or reopened completely offline.
 - The interface and parser are English-first.
 - RubricTrail is not a substitute for the actual rubric, university policy,
   tutor advice or final human review.

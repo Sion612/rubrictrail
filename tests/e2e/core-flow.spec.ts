@@ -1,5 +1,27 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 
+const PROJECT_RECORD_KEY = "rubrictrail.project.store.v1";
+const PROJECT_LOCK_NAME = "rubrictrail.project.store.v1";
+
+async function readProjectRecordRaw(page: Page) {
+  return page.evaluate((key) => window.localStorage.getItem(key), PROJECT_RECORD_KEY);
+}
+
+async function readStoredProjectState(page: Page) {
+  return page.evaluate((key) => {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    try {
+      const record = JSON.parse(raw) as {
+        value?: { kind?: string; state?: Record<string, unknown> };
+      };
+      return record.value?.kind === "project" ? record.value.state ?? null : null;
+    } catch {
+      return null;
+    }
+  }, PROJECT_RECORD_KEY);
+}
+
 async function resetProject(page: Page) {
   await page.goto("/");
   await page.evaluate(() => window.localStorage.clear());
@@ -106,13 +128,7 @@ test("sample assignment keeps demo signals distinct from real completion", async
   await expect(page.getByText(/80% target(?: band)?/i)).toHaveCount(0);
   await expect(page.getByTestId("task-s3")).toBeVisible();
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const raw = window.localStorage.getItem("rubrictrail.project.v3");
-        if (!raw) return null;
-        return (JSON.parse(raw) as { targetGrade?: number }).targetGrade ?? null;
-      }),
-    )
+    .poll(async () => (await readStoredProjectState(page))?.targetGrade ?? null)
     .toBe(80);
   await page.reload();
   await expect(page.getByTestId("planning-depth")).toHaveValue("extended");
@@ -143,18 +159,10 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
   await visibleWorkflowButton(page, "Check").click();
   await expect(page.getByTestId("draft-text")).toBeVisible();
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const raw = window.localStorage.getItem("rubrictrail.project.v3");
-        if (!raw) return "";
-        try {
-          const state = JSON.parse(raw) as { projectKind?: string; view?: string };
-          return `${state.projectKind}:${state.view}`;
-        } catch {
-          return "";
-        }
-      }),
-    )
+    .poll(async () => {
+      const state = await readStoredProjectState(page);
+      return state ? `${state.projectKind}:${state.view}` : "";
+    })
     .toBe("sample:draft");
 
   await page.close();
@@ -168,25 +176,13 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
   const savedDraft = "TAB-A-EXACT-SAVED-DRAFT-4D91: only this version may persist.";
   await pageA.getByTestId("draft-text").fill(savedDraft);
   await expect
-    .poll(() =>
-      pageA.evaluate(() => {
-        const raw = window.localStorage.getItem("rubrictrail.project.v3");
-        if (!raw) return "";
-        try {
-          return (JSON.parse(raw) as { draftText?: string }).draftText ?? "";
-        } catch {
-          return "";
-        }
-      }),
-    )
+    .poll(async () => (await readStoredProjectState(pageA))?.draftText ?? "")
     .toBe(savedDraft);
-  const exactSavedValue = await pageA.evaluate(() =>
-    window.localStorage.getItem("rubrictrail.project.v3"),
-  );
+  const exactSavedValue = await readProjectRecordRaw(pageA);
   expect(exactSavedValue).not.toBeNull();
 
   const conflictHeading = pageB.getByRole("heading", {
-    name: "Project changed in another tab",
+    name: "Autosave paused: another tab saved changes",
   });
   await expect(conflictHeading).toBeVisible();
 
@@ -200,7 +196,7 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
   await pageB.evaluate(() => window.dispatchEvent(new Event("pagehide")));
   await pageB.waitForTimeout(350);
   expect(
-    await pageA.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3")),
+    await readProjectRecordRaw(pageA),
   ).toBe(exactSavedValue);
 
   pageB.once("dialog", (dialog) => dialog.accept());
@@ -208,8 +204,72 @@ test("a stale tab cannot overwrite a newer saved draft", async ({ page, context 
   await expect(pageB.getByTestId("draft-text")).toHaveValue(savedDraft);
   await expect(conflictHeading).toHaveCount(0);
   expect(
-    await pageB.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3")),
+    await readProjectRecordRaw(pageB),
   ).toBe(exactSavedValue);
+});
+
+test("the project lock admits only one writer from the same revision", async ({
+  page,
+  context,
+}) => {
+  await page.getByTestId("try-sample").click();
+  await visibleWorkflowButton(page, "Check").click();
+  await expect(page.getByTestId("draft-text")).toBeVisible();
+  await expect.poll(async () => (await readStoredProjectState(page))?.view ?? null)
+    .toBe("draft");
+
+  await page.evaluate((lockName) => {
+    const state = window as typeof window & { releaseRubricTrailTestLock?: () => void };
+    const gate = new Promise<void>((resolve) => {
+      state.releaseRubricTrailTestLock = resolve;
+    });
+    void navigator.locks.request(lockName, () => gate);
+  }, PROJECT_LOCK_NAME);
+  await expect.poll(() =>
+    page.evaluate(async (lockName) => {
+      const snapshot = await navigator.locks.query();
+      return (snapshot.held ?? []).filter((lock) => lock.name === lockName).length;
+    }, PROJECT_LOCK_NAME),
+  ).toBe(1);
+
+  const [pageA, pageB] = await Promise.all([context.newPage(), context.newPage()]);
+  await Promise.all([pageA.goto("/"), pageB.goto("/")]);
+  await Promise.all([
+    expect(pageA.getByTestId("draft-text")).toBeVisible(),
+    expect(pageB.getByTestId("draft-text")).toBeVisible(),
+  ]);
+
+  const winningDraft = "LOCK-WINNER-A-91B2: this revision must remain canonical.";
+  const losingDraft = "LOCK-LOSER-B-77C4: this must stay in the conflicting tab.";
+  await pageA.getByTestId("draft-text").fill(winningDraft);
+  await expect.poll(() =>
+    page.evaluate(async (lockName) => {
+      const snapshot = await navigator.locks.query();
+      return (snapshot.pending ?? []).filter((lock) => lock.name === lockName).length;
+    }, PROJECT_LOCK_NAME),
+  ).toBe(1);
+
+  await pageB.getByTestId("draft-text").fill(losingDraft);
+  await expect.poll(() =>
+    page.evaluate(async (lockName) => {
+      const snapshot = await navigator.locks.query();
+      return (snapshot.pending ?? []).filter((lock) => lock.name === lockName).length;
+    }, PROJECT_LOCK_NAME),
+  ).toBe(2);
+
+  await page.evaluate(() => {
+    const state = window as typeof window & { releaseRubricTrailTestLock?: () => void };
+    state.releaseRubricTrailTestLock?.();
+  });
+
+  await expect.poll(async () => (await readStoredProjectState(pageA))?.draftText ?? "")
+    .toBe(winningDraft);
+  await expect(
+    pageB.getByRole("heading", {
+      name: "Autosave paused: another tab saved changes",
+    }),
+  ).toBeVisible();
+  await expect(pageB.getByTestId("draft-text")).toHaveValue(losingDraft);
 });
 
 test("an older v2 tab can be explicitly loaded without losing its draft", async ({ page, context }) => {
@@ -217,28 +277,20 @@ test("an older v2 tab can be explicitly loaded without losing its draft", async 
   await visibleWorkflowButton(page, "Check").click();
   await expect(page.getByTestId("draft-text")).toBeVisible();
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const raw = window.localStorage.getItem("rubrictrail.project.v3");
-        if (!raw) return "";
-        try {
-          const state = JSON.parse(raw) as { projectKind?: string; view?: string };
-          return `${state.projectKind ?? ""}:${state.view ?? ""}`;
-        } catch {
-          return "";
-        }
-      }),
-    )
+    .poll(async () => {
+      const state = await readStoredProjectState(page);
+      return state ? `${state.projectKind ?? ""}:${state.view ?? ""}` : "";
+    })
     .toBe("sample:draft");
 
   const olderDraft =
     "V2-EXACT-DRAFT-71C4: this older-version save was explicitly selected.";
   const legacyTab = await context.newPage();
   await legacyTab.goto("/");
-  await legacyTab.evaluate((draftText) => {
-    const currentRaw = window.localStorage.getItem("rubrictrail.project.v3");
-    if (!currentRaw) throw new Error("Expected a v3 project before creating v2 state");
-    const previous = JSON.parse(currentRaw) as Record<string, unknown>;
+  const currentState = await readStoredProjectState(legacyTab);
+  if (!currentState) throw new Error("Expected a stored project before creating v2 state");
+  await legacyTab.evaluate(({ draftText, currentState }) => {
+    const previous = { ...currentState } as Record<string, unknown>;
     delete previous.supersededV2Fingerprint;
     previous.version = 2;
     previous.draftText = draftText;
@@ -246,11 +298,11 @@ test("an older v2 tab can be explicitly loaded without losing its draft", async 
       "rubrictrail.project.v2",
       JSON.stringify(previous),
     );
-  }, olderDraft);
+  }, { draftText: olderDraft, currentState });
   await legacyTab.close();
 
   const conflictHeading = page.getByRole("heading", {
-    name: "Project changed in another tab",
+    name: "Autosave paused: another tab saved changes",
   });
   await expect(conflictHeading).toBeVisible();
   page.once("dialog", async (dialog) => {
@@ -262,17 +314,14 @@ test("an older v2 tab can be explicitly loaded without losing its draft", async 
   await expect(page.getByTestId("draft-text")).toHaveValue(olderDraft);
   await expect(conflictHeading).toHaveCount(0);
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const raw = window.localStorage.getItem("rubrictrail.project.v3");
-        if (!raw) return "";
-        const state = JSON.parse(raw) as {
+    .poll(async () => {
+        const state = await readStoredProjectState(page) as {
           draftText?: string;
           supersededV2Fingerprint?: string | null;
-        };
+        } | null;
+        if (!state) return "";
         return `${state.draftText}|${state.supersededV2Fingerprint ?? ""}`;
-      }),
-    )
+      })
     .toMatch(/^V2-EXACT-DRAFT-71C4:.*\|v1:/);
   expect(
     await page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2")),
@@ -407,12 +456,8 @@ test("a mixed file batch keeps readable sources only after explicit review", asy
   await expect(
     page.getByRole("heading", { name: "Strategy Report", exact: true }),
   ).toBeVisible();
-  await expect.poll(() =>
-    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3") ?? ""),
-  ).toContain("brief.txt");
-  const storedProject = await page.evaluate(
-    () => window.localStorage.getItem("rubrictrail.project.v3") ?? "",
-  );
+  await expect.poll(() => readProjectRecordRaw(page)).toContain("brief.txt");
+  const storedProject = await readProjectRecordRaw(page) ?? "";
   expect(storedProject).toContain("brief.txt");
   expect(storedProject).not.toContain(longUnsupportedName);
   expect(storedProject).not.toContain(omittedTail);
@@ -460,12 +505,8 @@ test("pasted brief and rubric can create a private source-linked project", async
   await expect(
     page.getByRole("heading", { name: "Pasted Strategy Report", exact: true }),
   ).toBeVisible();
-  await expect.poll(() =>
-    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3") ?? ""),
-  ).not.toBe("");
-  const storedProject = await page.evaluate(
-    () => window.localStorage.getItem("rubrictrail.project.v3") ?? "",
-  );
+  await expect.poll(() => readProjectRecordRaw(page)).not.toBeNull();
+  const storedProject = await readProjectRecordRaw(page) ?? "";
   expect(storedProject).not.toContain(privateTail);
   await expectNoHorizontalOverflow(page);
 });
@@ -507,22 +548,19 @@ test("partial published weights remain recorded without weighting the plan", asy
     page.getByRole("heading", { name: "Partial Weight Report", exact: true }),
   ).toBeVisible();
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const raw = window.localStorage.getItem("rubrictrail.project.v3");
-        if (!raw) return null;
-        const state = JSON.parse(raw) as {
+    .poll(async () => {
+        const state = await readStoredProjectState(page) as {
           uploadedProject?: {
             weightingStatus?: string;
             criteria?: Array<{ weight?: number | null }>;
           };
-        };
+        } | null;
+        if (!state) return null;
         return {
           weightingStatus: state.uploadedProject?.weightingStatus,
           weights: state.uploadedProject?.criteria?.map((criterion) => criterion.weight),
         };
-      }),
-    )
+      })
     .toEqual({ weightingStatus: "incomplete", weights: [null, 40] });
 
   await page.reload();
@@ -621,12 +659,8 @@ test("missing rubric can be repaired without fabricating weights", async ({ page
 
   await expect(page.getByRole("heading", { name: "Service Report", exact: true })).toBeVisible();
   await expect(page.getByText(/2 confirmed criteria .* no published percentages recorded/)).toBeVisible();
-  await expect.poll(() =>
-    page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v3") ?? ""),
-  ).toContain('"weight":null');
-  const saved = await page.evaluate(
-    () => window.localStorage.getItem("rubrictrail.project.v3") ?? "",
-  );
+  await expect.poll(() => readProjectRecordRaw(page)).toContain('"weight":null');
+  const saved = await readProjectRecordRaw(page) ?? "";
   expect(saved).toContain('"weight":null');
   expect(saved).toContain('"weightingStatus":"none"');
   expect(saved).not.toContain('"weight":50');

@@ -39,18 +39,29 @@ seen and will coordinate disclosure after a fix is available.
   rubric state stores `weightingStatus` as `complete`, `incomplete` or `none`,
   with each criterion percentage represented as a number or `null`. Only a
   complete 100% breakdown weights the plan; missing values are not synthesized.
-- State-v3 tabs compare the observed v3 and retained v2 values before changing
-  storage, read both keys back after normal writes, and store a
-  non-cryptographic fingerprint of the v2 lineage in v3. A later divergent v2
-  write from an older tab therefore surfaces as a conflict. Valid v2 uploaded
-  custom projects and backups migrate with their complete numeric weights;
-  sample and empty state have no uploaded-rubric status. Unsupported future
-  versions are not coerced.
-- Multi-tab protection is best effort. `localStorage` does not provide a
-  transaction or atomic compare-and-swap across the two keys, so a narrow race
-  can occur between separate reads and writes; readback, lineage checks and
-  storage events detect ordinary divergence but cannot guarantee that every
-  overwrite is impossible.
+- The authoritative browser value is the revisioned
+  `rubrictrail.project.store.v1` record. Its envelope is separate from the state
+  and backup protocols: active project and backup payloads remain v3. During
+  normal saves, the earlier v3, v2 and v1 keys are retained and each record stores
+  non-cryptographic fingerprints of their exact bytes. A single parseable
+  legacy-key change can therefore surface as an older-tab recovery candidate.
+  An explicit reset performs a verified privacy purge: it removes those three
+  compatibility values and leaves only a content-free cleared tombstone with
+  null legacy fingerprints. Unsupported future state versions are not coerced.
+- Current-version writes, backup restores and clears request the same exclusive
+  Web Lock, compare the complete record-plus-legacy baseline while holding it,
+  and write the next revision. Two writes, or a write and clear, from the same
+  baseline cannot both report success. This is application-level coordination,
+  not a claim that `localStorage` provides a transaction or atomic
+  compare-and-swap; older code that does not take the lock can still change a
+  legacy key, which the stored fingerprints and later reads are designed to
+  surface.
+- If Web Locks are missing or lock acquisition fails, mutation fails closed. The
+  saved project can remain readable, but edits are tab-only and the interface
+  recommends keeping one tab open and downloading a backup before closing.
+  `visibilitychange` and `pagehide` trigger best-effort asynchronous flushes, but
+  the 250 ms debounce, an immediate close or a force-kill can still lose the last
+  uncommitted edit.
 - File-count, byte, PDF-page and merged-text limits reduce resource risk, but
   they are not a CPU or peak-memory sandbox. PDF metadata must be loaded before
   the page-count checks can run, a page's text items may be materialized before
@@ -58,7 +69,10 @@ seen and will coordinate disclosure after a fix is available.
   text can be counted. Parsing is currently not cancellable. Do not treat these
   checks as protection against deliberately malicious documents or open such
   documents in RubricTrail.
-- Do not use a shared computer for sensitive work without resetting afterward.
+- Do not use a shared computer for sensitive work without closing older
+  RubricTrail tabs and resetting afterward. A still-open older release can write
+  its compatibility key again; the current release will surface that as a
+  conflict rather than silently restoring it.
 - The experimental Live routes are disabled by default. Enabling them requires a
   server-side API key and a separate 32-character bearer token.
 - A public Live deployment also needs rate limits, per-user authorization, budget

@@ -41,7 +41,7 @@ flowchart LR
 | Planning | Deterministic dependency and capacity scheduling | `src/lib/plan.ts` |
 | Uploaded checks | Human evidence-trail checklist, no automatic score | `uploaded-project-views.tsx` |
 | Sample contract | Strict source, evidence, rubric and feedback schemas | `src/lib/domain.ts`, `src/lib/sample-data.ts` |
-| Persistence | v3 localStorage, validated v2 and legacy migration, retained-v2 lineage checks and post-write verification | `src/lib/local-state.ts` |
+| Persistence | Revisioned authoritative Web Storage record, exclusive Web Locks mutation, state-v3 validation, tombstones, compatibility-lineage checks and explicit privacy purge | `src/lib/local-state.ts` |
 | Data portability | Versioned UTF-8 JSON export/import with conflict-aware restore | `src/lib/project-backup.ts` |
 | Optional Live boundary | Authenticated, bounded, disabled-by-default routes | `src/lib/ai/*`, `src/app/api/live/*` |
 
@@ -120,11 +120,11 @@ The original `proofline.project.v1` sample-state migration is also retained.
 Unsupported newer state versions are rejected explicitly rather than coerced.
 
 Restore validates and previews the backup, obtains replacement confirmation,
-then conditionally writes it against the values observed by this tab before
-changing React state. Detected read, validation, write or other-tab failures do
-not switch the open project. This is conflict-aware rather than transactional;
-the same narrow `localStorage` race described below still applies. Backups are
-portable local files, not encrypted archives or automatic synchronization.
+then conditionally writes it against the complete baseline observed by this tab
+before changing React state. The mutation uses the same exclusive project lock
+and revision rules as autosave and reset. Detected read, validation, lock, write
+or other-tab failures do not switch the open project. Backups are portable local
+files, not encrypted archives or automatic synchronization.
 
 Deterministic sample Draft Check output is derived rather than authoritative, so
 it is omitted on export and stripped from imported files. The user's draft text
@@ -133,32 +133,50 @@ self-check text is user-authored state and remains portable.
 
 ## Multi-tab data integrity
 
-Each tab retains the exact raw `localStorage` values it observed at hydration and
-after a successful save. State v3 uses `rubrictrail.project.v3`; the v2 value at
-`rubrictrail.project.v2` is deliberately retained as a recoverable
-cross-version candidate. A v3 save embeds a non-cryptographic fingerprint of the
-exact v2 bytes it superseded. If an older tab later writes different v2 bytes,
-and the resulting project is not canonically equivalent, the lineage mismatch
-becomes an explicit conflict rather than being guessed away.
+The authoritative value is the `rubrictrail.project.store.v1` record in Web
+Storage. Its envelope has an independent format version, a monotonic revision,
+an active-project or cleared-tombstone value, and fingerprints of the exact
+legacy v3, v2 and v1 bytes observed when it was written. The enclosed project
+remains a state-v3 payload, and project backups keep their existing outer format
+and inner state-v3 contract.
 
-Autosave, page-close flushing, backup restore and reset compare both current
-values with their observed baselines. Normal writes then read both keys back;
-detected divergence fails the operation, with rollback attempted only when the
-writer's exact v3 bytes are still present. Storage events from either key also
-pause pending writes.
+Every current-version write, backup restore, clear and privacy purge requests the exclusive
+`rubrictrail.project.store.v1` Web Lock. While holding it, the operation reads the
+record and retained legacy keys, compares all exact values and the revision with
+the caller's observed baseline, then writes and verifies the next revision. Two
+writes from one baseline serialize: the first wins and the second sees a changed
+revision. A write and clear behave the same way. Clear writes a tombstone instead
+of deleting current or legacy bytes, preventing an absent-value ABA cycle from
+making a stale baseline appear current again.
 
-These checks are best effort, not a true compare-and-swap: Web Storage offers no
-transaction spanning two keys and no atomic conditional write or delete. A
-concurrent write can land in the narrow interval between separate reads and
-writes, and rollback is likewise non-atomic. Fingerprint checks and later reads
-make surviving cross-version divergence visible, but cannot prove that every
-possible overwrite race was prevented.
+The user-facing reset uses the separate privacy-purge mutation. It first publishes
+a content-free guard tombstone, removes the v1, v2 and v3 compatibility values
+with a full-snapshot check after each deletion, then writes and verifies a final
+content-free tombstone whose legacy fingerprints are all null. This keeps a
+revisioned guard against stale current-version writes while removing project
+content from all RubricTrail compatibility keys observed by the operation.
 
-The persistent conflict banner offers three explicit paths: download this tab,
-load the other saved version, or deliberately make this tab active after a
-warning. RubricTrail does not claim automatic synchronization or merge concurrent
-edits. The guard is intended to prevent ordinary stale-tab overwrites; the JSON
-backup remains the recovery path when both versions matter.
+Outside an explicit reset, the legacy `rubrictrail.project.v3`,
+`rubrictrail.project.v2` and `proofline.project.v1` keys remain as migration and
+older-tab evidence. A record's
+fingerprints mark the exact legacy values it incorporated. If one parseable key
+later diverges, it can be exposed as an explicit recovery candidate; multiple or
+invalid divergences remain a conflict rather than being guessed into one project.
+Storage events also pause pending work promptly.
+
+This is application-level serialization, not a `localStorage` transaction or
+atomic compare-and-swap. An older release does not take the new lock and can
+still write a legacy key, which is why the fingerprints and full-baseline checks
+remain required. If Web Locks are missing or acquisition rejects, mutations fail
+closed: saved state stays readable, new edits remain only in the current tab, and
+the product recommends one open tab plus a downloaded backup.
+
+Autosave uses a 250 ms debounce. `visibilitychange` when hidden and `pagehide`
+start another asynchronous flush attempt, but browsers do not guarantee that the
+promise finishes during shutdown. A close inside the debounce window, abrupt
+termination or force-kill can therefore lose the last uncommitted edit. The
+persistent conflict banner offers explicit download-this-tab, load-saved-version
+and replace-saved-version actions; RubricTrail does not automatically merge edits.
 
 ## Plan generation
 
@@ -219,6 +237,9 @@ See [LIVE_AI_ARCHITECTURE.md](./LIVE_AI_ARCHITECTURE.md).
   do not open deliberately malicious documents.
 - Plan generation and template creation are memoized by their real inputs.
 - No login, analytics, database or remote bootstrap runs in local mode.
+- Local-first does not imply complete offline startup: the current page performs
+  its project work in the browser, but no service worker guarantees that the app
+  shell can be loaded or reopened without its host.
 - Evidence drawers trap focus, close with Escape and restore focus.
 - Workflow states have visible text, not color alone.
 - Motion respects `prefers-reduced-motion`.

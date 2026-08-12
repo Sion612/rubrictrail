@@ -8,6 +8,7 @@ import { UploadSummaryView } from "@/components/upload-summary-view";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { UploadedEvidencePanel } from "@/components/uploaded-evidence-panel";
 import { StorageConflictBanner } from "@/components/storage-conflict-banner";
+import { PersistenceUnavailableBanner } from "@/components/persistence-unavailable-banner";
 import { OverviewView } from "@/components/views/overview-view";
 import { RubricView } from "@/components/views/rubric-view";
 import { ActionPlanView } from "@/components/views/action-plan-view";
@@ -47,12 +48,15 @@ import {
   validatePastedAssignmentText,
 } from "@/lib/pasted-text-intake";
 import {
-  clearProjectState,
   createDefaultProjectState,
+  LEGACY_STORAGE_KEY,
   parsePreviousProjectStateValue,
   PREVIOUS_STORAGE_KEY,
+  PROJECT_RECORD_KEY,
+  purgeProjectState,
   readProjectStateWithStatus,
   STORAGE_KEY,
+  type ProjectStorageBaseline,
   writeProjectState,
 } from "@/lib/local-state";
 import {
@@ -357,6 +361,7 @@ export function RubricTrailApp() {
   const [persistenceWarning, setPersistenceWarning] =
     useState<PersistenceWarningState | null>(null);
   const [storageConflict, setStorageConflict] = useState(false);
+  const [durableSavingUnavailable, setDurableSavingUnavailable] = useState(false);
   const noticeTimer = useRef<number | null>(null);
   const persistenceTimer = useRef<number | null>(null);
   const draftCheckRunId = useRef(0);
@@ -366,12 +371,24 @@ export function RubricTrailApp() {
   const hasPendingProjectChange = useRef(false);
   const persistHydratedState = useRef(false);
   const skipNextPersistenceWrite = useRef(false);
+  const persistenceDisabled = useRef(false);
+  const persistenceInFlight = useRef<Promise<void> | null>(null);
+  const flushPendingProjectRef = useRef<(() => Promise<void>) | null>(null);
   const backupImportActive = useRef(false);
   const intakeRunId = useRef(0);
   const focusWelcomeIntake = useRef<AssignmentIntakeMode | null>(null);
-  const observedStoredValue = useRef<string | null>(null);
-  const observedPreviousStoredValue = useRef<string | null>(null);
+  const observedStorageBaseline = useRef<ProjectStorageBaseline | null>(null);
   const storageConflictActive = useRef(false);
+
+  const markDurableSavingUnavailable = useCallback(() => {
+    persistenceDisabled.current = true;
+    setDurableSavingUnavailable(true);
+  }, []);
+
+  const markDurableSavingAvailable = useCallback(() => {
+    persistenceDisabled.current = false;
+    setDurableSavingUnavailable(false);
+  }, []);
 
   const cancelPersistenceTimer = useCallback(() => {
     if (persistenceTimer.current) {
@@ -394,6 +411,110 @@ export function RubricTrailApp() {
     setStorageConflict(false);
   }, []);
 
+  const schedulePendingPersistence = useCallback((delay = 250) => {
+    if (
+      !hasPendingProjectChange.current ||
+      persistenceDisabled.current ||
+      storageConflictActive.current
+    ) {
+      return;
+    }
+    cancelPersistenceTimer();
+    persistenceTimer.current = window.setTimeout(() => {
+      void flushPendingProjectRef.current?.();
+    }, delay);
+  }, [cancelPersistenceTimer]);
+
+  const flushPendingProject = useCallback(async () => {
+    if (
+      !hasPendingProjectChange.current ||
+      persistenceDisabled.current ||
+      storageConflictActive.current
+    ) {
+      return;
+    }
+    if (persistenceInFlight.current) {
+      await persistenceInFlight.current;
+      return;
+    }
+
+    const baseline = observedStorageBaseline.current;
+    if (!baseline) return;
+    const projectToSave = latestProject.current;
+    const operation = writeProjectState(projectToSave, baseline)
+      .then((result) => {
+        if (result.ok) {
+          observedStorageBaseline.current = result.baseline;
+          markDurableSavingAvailable();
+          if (latestProject.current === projectToSave) {
+            hasPendingProjectChange.current = false;
+          }
+          setPersistenceWarning((current) =>
+            current?.kind === "write" ? null : current,
+          );
+          return;
+        }
+        if (result.reason === "conflict" || result.reason === "invalid-record") {
+          markStorageConflict();
+          return;
+        }
+        if (result.reason === "coordination-unavailable") {
+          markDurableSavingUnavailable();
+          setPersistenceWarning((current) =>
+            current?.kind === "write" ? null : current,
+          );
+          return;
+        }
+        const invalidState = result.reason === "invalid-state";
+        const message = invalidState
+          ? "This project failed local validation, so recent changes are only in this tab. Reset the local project if the warning continues."
+          : "Browser storage is unavailable or full. Recent changes are only in this tab and may be lost when it closes.";
+        if (result.reason === "unavailable") {
+          markDurableSavingUnavailable();
+        } else if (result.reason === "storage-error") {
+          setDurableSavingUnavailable(true);
+        }
+        setPersistenceWarning({ kind: "write", message });
+      })
+      .catch(() => {
+        setDurableSavingUnavailable(true);
+        setPersistenceWarning({
+          kind: "write",
+          message:
+            "RubricTrail could not finish the local save. Recent changes are only in this tab; download a backup before closing.",
+        });
+      })
+      .finally(() => {
+        if (persistenceInFlight.current === operation) {
+          persistenceInFlight.current = null;
+        }
+        if (
+          hasPendingProjectChange.current &&
+          latestProject.current !== projectToSave &&
+          !persistenceDisabled.current &&
+          !storageConflictActive.current
+        ) {
+          schedulePendingPersistence(0);
+        }
+      });
+    persistenceInFlight.current = operation;
+    await operation;
+  }, [
+    markDurableSavingAvailable,
+    markDurableSavingUnavailable,
+    markStorageConflict,
+    schedulePendingPersistence,
+  ]);
+
+  useEffect(() => {
+    flushPendingProjectRef.current = flushPendingProject;
+    return () => {
+      if (flushPendingProjectRef.current === flushPendingProject) {
+        flushPendingProjectRef.current = null;
+      }
+    };
+  }, [flushPendingProject]);
+
   const updateProject = useCallback(
     (
       action:
@@ -413,16 +534,21 @@ export function RubricTrailApp() {
     const hydrationTimer = window.setTimeout(() => {
       const result = readProjectStateWithStatus();
       latestProject.current = result.state;
-      observedStoredValue.current = result.storedValue;
-      observedPreviousStoredValue.current = result.previousStoredValue;
+      observedStorageBaseline.current = result.baseline;
+      if (result.mutationAvailable) {
+        markDurableSavingAvailable();
+      } else {
+        markDurableSavingUnavailable();
+      }
       storageConflictActive.current = result.crossVersionConflict;
       persistHydratedState.current =
         result.recovered &&
         result.source !== "default" &&
-        !result.crossVersionConflict;
+        !result.crossVersionConflict &&
+        result.mutationAvailable;
       setStorageConflict(result.crossVersionConflict);
       setProjectState(result.state);
-      if (result.recovered) {
+      if (result.recovered && result.mutationAvailable) {
         setPersistenceWarning({
           kind: "recovered",
           message:
@@ -438,7 +564,7 @@ export function RubricTrailApp() {
       setHydrated(true);
     }, 0);
     return () => window.clearTimeout(hydrationTimer);
-  }, []);
+  }, [markDurableSavingAvailable, markDurableSavingUnavailable]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -456,76 +582,56 @@ export function RubricTrailApp() {
       cancelPersistenceTimer();
       return;
     }
-    cancelPersistenceTimer();
-    persistenceTimer.current = window.setTimeout(() => {
-      const result = writeProjectState(
-        project,
-        observedStoredValue.current,
-        observedPreviousStoredValue.current,
-      );
-      if (result.ok) {
-        observedStoredValue.current = result.serialized;
-        if (latestProject.current === project) {
-          hasPendingProjectChange.current = false;
-        }
-        setPersistenceWarning((current) =>
-          current?.kind === "write" ? null : current,
-        );
-        return;
-      }
-      if (result.reason === "conflict") {
-        markStorageConflict();
-        return;
-      }
-      const message =
-        result.reason === "invalid-state"
-          ? "This project failed local validation, so recent changes are only in this tab. Reset the local project if the warning continues."
-          : "Browser storage is unavailable or full. Recent changes are only in this tab and may be lost when it closes.";
-      setPersistenceWarning({ kind: "write", message });
-    }, 250);
+    if (persistenceDisabled.current) {
+      cancelPersistenceTimer();
+      return;
+    }
+    schedulePendingPersistence();
     return () => {
       cancelPersistenceTimer();
     };
-  }, [cancelPersistenceTimer, hydrated, markStorageConflict, project]);
+  }, [cancelPersistenceTimer, hydrated, project, schedulePendingPersistence]);
 
   useEffect(() => {
     if (!hydrated) return;
     const flushLatestProject = () => {
       if (!hasPendingProjectChange.current || storageConflictActive.current) return;
-      const result = writeProjectState(
-        latestProject.current,
-        observedStoredValue.current,
-        observedPreviousStoredValue.current,
-      );
-      if (result.ok) {
-        observedStoredValue.current = result.serialized;
-        hasPendingProjectChange.current = false;
-      } else if (result.reason === "conflict") {
-        markStorageConflict();
-      }
+      void flushPendingProjectRef.current?.();
     };
+    const flushWhenHidden = () => {
+      if (document.visibilityState === "hidden") flushLatestProject();
+    };
+    document.addEventListener("visibilitychange", flushWhenHidden);
     window.addEventListener("pagehide", flushLatestProject);
-    return () => window.removeEventListener("pagehide", flushLatestProject);
-  }, [hydrated, markStorageConflict]);
+    return () => {
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+      window.removeEventListener("pagehide", flushLatestProject);
+    };
+  }, [hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
     const detectExternalProjectChange = (event: StorageEvent) => {
       if (event.storageArea && event.storageArea !== window.localStorage) return;
       if (
+        event.key !== PROJECT_RECORD_KEY &&
         event.key !== STORAGE_KEY &&
         event.key !== PREVIOUS_STORAGE_KEY &&
+        event.key !== LEGACY_STORAGE_KEY &&
         event.key !== null
       ) return;
-      if (event.key === STORAGE_KEY && event.newValue === observedStoredValue.current) return;
-      if (
-        event.key === PREVIOUS_STORAGE_KEY &&
-        event.newValue === observedPreviousStoredValue.current
-      ) return;
+      const baseline = observedStorageBaseline.current;
+      if (!baseline) return;
+      if (event.key === PROJECT_RECORD_KEY && event.newValue === baseline.recordValue) return;
+      if (event.key === STORAGE_KEY && event.newValue === baseline.legacyV3Value) return;
+      if (event.key === PREVIOUS_STORAGE_KEY && event.newValue === baseline.legacyV2Value) return;
+      if (event.key === LEGACY_STORAGE_KEY && event.newValue === baseline.legacyV1Value) return;
       if (
         event.key === null &&
-        observedStoredValue.current === null &&
-        observedPreviousStoredValue.current === null
+        baseline.recordValue === null &&
+        baseline.legacyV3Value === null &&
+        baseline.legacyV2Value === null &&
+        baseline.legacyV1Value === null
       ) return;
       markStorageConflict();
     };
@@ -726,36 +832,50 @@ export function RubricTrailApp() {
     setSelectedEvidenceId(null);
     showNotice({
       tone: "success",
-      message: "Local project created in this session. Full source text was not retained; confirmed fields and short excerpts are set to autosave.",
+      message: persistenceDisabled.current
+        ? "Local project created in this tab. Full source text was not retained. Browser saving is unavailable, so download a backup before closing this tab."
+        : "Local project created in this session. Full source text was not retained; confirmed fields and short excerpts are set to autosave.",
     });
   }
 
-  function clearSavedProjectForReplacement(): boolean {
-    const clearResult = clearProjectState(
-      observedStoredValue.current,
-      observedPreviousStoredValue.current,
-    );
-    if (clearResult.ok) {
-      cancelPersistenceTimer();
-      observedStoredValue.current = null;
-      observedPreviousStoredValue.current = null;
+  async function purgeSavedProjectForReplacement(): Promise<boolean> {
+    cancelPersistenceTimer();
+    if (persistenceInFlight.current) await persistenceInFlight.current;
+    const baseline = observedStorageBaseline.current;
+    if (!baseline) return false;
+    const purgeResult = await purgeProjectState(baseline);
+    if (purgeResult.ok) {
+      observedStorageBaseline.current = purgeResult.baseline;
+      markDurableSavingAvailable();
+      hasPendingProjectChange.current = false;
       clearStorageConflict();
       return true;
     }
-    if (clearResult.reason === "conflict") {
+    if (purgeResult.reason === "conflict" || purgeResult.reason === "invalid-record") {
       markStorageConflict();
       return false;
     }
     const message =
-      "Browser storage is unavailable, so the saved project could not be cleared and this tab was left unchanged.";
+      purgeResult.reason === "coordination-unavailable"
+        ? "Safe multi-tab storage coordination is unavailable, so RubricTrail did not delete the saved project and this tab was left unchanged."
+        : "RubricTrail could not confirm complete deletion of the saved project. Some browser data may remain; reload before trying again.";
+    if (
+      purgeResult.reason === "coordination-unavailable" ||
+      purgeResult.reason === "unavailable"
+    ) {
+      markDurableSavingUnavailable();
+    } else {
+      setDurableSavingUnavailable(true);
+    }
     setPersistenceWarning({ kind: "write", message });
     showNotice({ tone: "warning", message });
+    schedulePendingPersistence();
     return false;
   }
 
-  function resetProject() {
+  async function resetProject() {
     if (!window.confirm("Reset this local project? This clears saved draft excerpts, checks, results and task progress from this browser.")) return;
-    if (!clearSavedProjectForReplacement()) return;
+    if (!(await purgeSavedProjectForReplacement())) return;
     intakeRunId.current += 1;
     backupImportActive.current = false;
     setIsImportingBackup(false);
@@ -777,9 +897,9 @@ export function RubricTrailApp() {
     setPersistenceWarning(null);
   }
 
-  function startOwnProject() {
+  async function startOwnProject() {
     if (!window.confirm("Leave the sample demo and use your own assignment? Demo changes and progress will be cleared from this browser.")) return;
-    if (!clearSavedProjectForReplacement()) return;
+    if (!(await purgeSavedProjectForReplacement())) return;
     intakeRunId.current += 1;
     backupImportActive.current = false;
     setIsImportingBackup(false);
@@ -826,42 +946,55 @@ export function RubricTrailApp() {
     }
   }
 
-  function loadLatestSavedProject() {
+  async function loadLatestSavedProject() {
+    cancelPersistenceTimer();
+    if (persistenceInFlight.current) await persistenceInFlight.current;
     const storageSnapshot = readProjectStateWithStatus();
     if (!storageSnapshot.storageAvailable) {
       const message =
         "Browser storage could not be read, so nothing was replaced. This tab and its conflict warning were left unchanged.";
+      markDurableSavingUnavailable();
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
+      schedulePendingPersistence();
       return;
     }
 
+    const observedBaseline = observedStorageBaseline.current;
+    if (!observedBaseline) return;
+    const currentRecordChanged =
+      storageSnapshot.baseline.recordValue !== observedBaseline.recordValue;
     const currentV3Changed =
-      storageSnapshot.storedValue !== observedStoredValue.current;
+      storageSnapshot.baseline.legacyV3Value !== observedBaseline.legacyV3Value;
     const currentV2Changed =
-      storageSnapshot.previousStoredValue !== observedPreviousStoredValue.current;
+      storageSnapshot.baseline.legacyV2Value !== observedBaseline.legacyV2Value;
+    const legacyCandidate =
+      currentRecordChanged ? null : storageSnapshot.legacyConflictCandidate;
     const shouldLoadPrevious =
-      storageSnapshot.previousStoredValue !== null &&
+      legacyCandidate === null &&
+      storageSnapshot.baseline.legacyV2Value !== null &&
+      !currentRecordChanged &&
       ((!currentV3Changed && currentV2Changed) ||
         (!currentV3Changed &&
           !currentV2Changed &&
           storageSnapshot.crossVersionConflict));
 
     if (
-      currentV3Changed &&
-      currentV2Changed &&
-      storageSnapshot.crossVersionConflict
+      storageSnapshot.crossVersionConflict &&
+      ((currentRecordChanged && storageSnapshot.legacyConflictCandidate !== null) ||
+        ((currentRecordChanged || currentV3Changed) && currentV2Changed))
     ) {
       const message =
         "Both browser storage versions changed, so RubricTrail cannot safely decide which is newer. Download this tab, then explicitly keep it or reopen the other tab before replacing anything.";
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
+      schedulePendingPersistence();
       return;
     }
 
     if (
       !window.confirm(
-        shouldLoadPrevious
+        legacyCandidate !== null || shouldLoadPrevious
           ? "Load and upgrade the project saved by the older RubricTrail tab? Changes kept only in this tab will be replaced. Download this tab first if you may need them."
           : "Load the project version saved by another tab? Changes kept only in this tab will be replaced. Download this tab first if you may need them.",
       )
@@ -871,21 +1004,27 @@ export function RubricTrailApp() {
 
     let result = storageSnapshot;
     let loadedFromPreviousVersion = false;
-    if (shouldLoadPrevious && storageSnapshot.previousStoredValue !== null) {
-      const parsedPrevious = parsePreviousProjectStateValue(
-        storageSnapshot.previousStoredValue,
+    if (
+      legacyCandidate !== null ||
+      (shouldLoadPrevious && storageSnapshot.baseline.legacyV2Value !== null)
+    ) {
+      const parsedPrevious = legacyCandidate ?? parsePreviousProjectStateValue(
+        storageSnapshot.baseline.legacyV2Value!,
       );
-      if (!parsedPrevious.ok) {
+      if ("ok" in parsedPrevious && !parsedPrevious.ok) {
         const message =
           "The older-version saved project is incomplete or incompatible, so it was not loaded. Both browser values were left unchanged.";
         setPersistenceWarning({ kind: "write", message });
         showNotice({ tone: "warning", message });
         return;
       }
-      const promoted = writeProjectState(
-        parsedPrevious.state,
-        storageSnapshot.storedValue,
-        storageSnapshot.previousStoredValue,
+      const previousState = parsedPrevious.state;
+      const previousSource = "source" in parsedPrevious
+        ? parsedPrevious.source
+        : "v2";
+      const promoted = await writeProjectState(
+        previousState,
+        storageSnapshot.baseline,
       );
       if (!promoted.ok) {
         const message =
@@ -894,18 +1033,29 @@ export function RubricTrailApp() {
             : promoted.reason === "invalid-state"
               ? "The older-version project failed migration validation, so neither saved value was replaced."
               : "Browser storage could not save the upgraded project, so neither saved value was replaced.";
+        if (
+          promoted.reason === "coordination-unavailable" ||
+          promoted.reason === "unavailable"
+        ) {
+          markDurableSavingUnavailable();
+        } else if (promoted.reason === "storage-error") {
+          setDurableSavingUnavailable(true);
+        }
         setPersistenceWarning({ kind: "write", message });
         showNotice({ tone: "warning", message });
         return;
       }
       result = {
-        state: parsedPrevious.state,
-        source: "v2",
+        state: previousState,
+        source: previousSource,
         recovered: true,
-        storedValue: promoted.serialized,
+        storedValue: promoted.recordValue,
         previousStoredValue: storageSnapshot.previousStoredValue,
         crossVersionConflict: false,
         storageAvailable: true,
+        baseline: promoted.baseline,
+        mutationAvailable: true,
+        legacyConflictCandidate: null,
       };
       loadedFromPreviousVersion = true;
     } else if (
@@ -913,7 +1063,7 @@ export function RubricTrailApp() {
       storageSnapshot.recovered
     ) {
       const message =
-        "The latest browser data is incomplete or incompatible, so it was not loaded. Download this tab before resetting or replacing anything.";
+        "The saved browser data is incomplete or incompatible, so it was not loaded. Download this tab before resetting or replacing anything.";
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
       return;
@@ -931,8 +1081,12 @@ export function RubricTrailApp() {
     draftCheckRunId.current += 1;
     draftCheckActive.current = false;
     latestProject.current = result.state;
-    observedStoredValue.current = result.storedValue;
-    observedPreviousStoredValue.current = result.previousStoredValue;
+    observedStorageBaseline.current = result.baseline;
+    if (result.mutationAvailable) {
+      markDurableSavingAvailable();
+    } else {
+      markDurableSavingUnavailable();
+    }
     hasPendingProjectChange.current = false;
     skipNextPersistenceWrite.current = true;
     clearStorageConflict();
@@ -954,19 +1108,21 @@ export function RubricTrailApp() {
         ? {
             kind: "recovered",
             message:
-              "The latest saved project was loaded with obsolete entries removed. Review its details before continuing.",
+              "The saved project was loaded with obsolete entries removed. Review its details before continuing.",
           }
         : null,
     );
     showNotice({
       tone: "success",
-      message: loadedFromPreviousVersion
-        ? "Older-version saved project loaded and upgraded. Autosave is active again in this tab."
-        : "Latest saved project loaded. Autosave is active again in this tab.",
+      message: result.mutationAvailable
+        ? loadedFromPreviousVersion
+          ? "Older-version saved project loaded and upgraded. Autosave is active again in this tab."
+          : "Saved project loaded. Autosave is active again in this tab."
+        : "Saved project loaded into this tab. Browser saving is unavailable, so download a backup before closing.",
     });
   }
 
-  function keepThisTabProject() {
+  async function keepThisTabProject() {
     if (
       !window.confirm(
         "Make this tab the active saved project? The other browser version will be superseded. Download this tab or the other tab first if either version may be needed.",
@@ -976,19 +1132,18 @@ export function RubricTrailApp() {
     }
 
     cancelPersistenceTimer();
+    if (persistenceInFlight.current) await persistenceInFlight.current;
     const currentStorage = readProjectStateWithStatus();
     if (!currentStorage.storageAvailable) {
       const message =
         "Browser storage could not be read, so this tab did not replace the saved project.";
+      markDurableSavingUnavailable();
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
       return;
     }
-    const result = writeProjectState(
-      latestProject.current,
-      currentStorage.storedValue,
-      currentStorage.previousStoredValue,
-    );
+    const projectToSave = latestProject.current;
+    const result = await writeProjectState(projectToSave, currentStorage.baseline);
     if (!result.ok) {
       const message =
         result.reason === "invalid-state"
@@ -997,13 +1152,22 @@ export function RubricTrailApp() {
             ? "The saved project changed again, so this tab did not replace it. Review the conflict and try again."
             : "Browser storage is unavailable or full, so this tab did not replace the saved project.";
       setPersistenceWarning({ kind: "write", message });
+      if (
+        result.reason === "coordination-unavailable" ||
+        result.reason === "unavailable"
+      ) {
+        markDurableSavingUnavailable();
+      } else if (result.reason === "storage-error") {
+        setDurableSavingUnavailable(true);
+      }
       showNotice({ tone: "warning", message });
       return;
     }
 
-    observedStoredValue.current = result.serialized;
-    observedPreviousStoredValue.current = currentStorage.previousStoredValue;
-    hasPendingProjectChange.current = false;
+    observedStorageBaseline.current = result.baseline;
+    markDurableSavingAvailable();
+    const hasNewerProjectChange = latestProject.current !== projectToSave;
+    hasPendingProjectChange.current = hasNewerProjectChange;
     clearStorageConflict();
     setPersistenceWarning((current) =>
       current?.kind === "write" ? null : current,
@@ -1012,6 +1176,7 @@ export function RubricTrailApp() {
       tone: "success",
       message: "This tab is now the active saved version. Autosave is active again.",
     });
+    if (hasNewerProjectChange) schedulePendingPersistence(0);
   }
 
   async function importProjectBackup(file: File) {
@@ -1039,10 +1204,13 @@ export function RubricTrailApp() {
       );
       if (!confirmed) return;
 
-      const writeResult = writeProjectState(
+      cancelPersistenceTimer();
+      if (persistenceInFlight.current) await persistenceInFlight.current;
+      const baseline = observedStorageBaseline.current;
+      if (!baseline) return;
+      const writeResult = await writeProjectState(
         backup.state,
-        observedStoredValue.current,
-        observedPreviousStoredValue.current,
+        baseline,
       );
       if (!writeResult.ok) {
         if (writeResult.reason === "conflict") {
@@ -1056,9 +1224,18 @@ export function RubricTrailApp() {
         const message = writeResult.reason === "invalid-state"
           ? "The restored project failed final validation. Your current project was not changed."
           : "Browser storage is unavailable or full, so the backup was not restored and your current project was not changed.";
+        if (
+          writeResult.reason === "coordination-unavailable" ||
+          writeResult.reason === "unavailable"
+        ) {
+          markDurableSavingUnavailable();
+        } else if (writeResult.reason === "storage-error") {
+          setDurableSavingUnavailable(true);
+        }
         setBackupError(message);
         setPersistenceWarning({ kind: "write", message });
         showNotice({ tone: "warning", message });
+        schedulePendingPersistence();
         return;
       }
       cancelPersistenceTimer();
@@ -1067,7 +1244,8 @@ export function RubricTrailApp() {
       draftCheckActive.current = false;
       setIsChecking(false);
       latestProject.current = backup.state;
-      observedStoredValue.current = writeResult.serialized;
+      observedStorageBaseline.current = writeResult.baseline;
+      markDurableSavingAvailable();
       hasPendingProjectChange.current = false;
       skipNextPersistenceWrite.current = true;
       clearStorageConflict();
@@ -1279,6 +1457,9 @@ export function RubricTrailApp() {
       onKeepThisTab={keepThisTabProject}
     />
   ) : null;
+  const persistenceUnavailableNotice = durableSavingUnavailable ? (
+    <PersistenceUnavailableBanner onDownloadBackup={exportProjectBackup} />
+  ) : null;
   const persistenceWarningToast = persistenceWarning ? (
     <div className="toast warning persistence-warning" role="alert">
       <AlertTriangle aria-hidden="true" />
@@ -1489,6 +1670,7 @@ export function RubricTrailApp() {
         project={projectMeta}
         evidencePanel={evidencePanel}
       >
+        {persistenceUnavailableNotice}
         {storageConflictNotice}
         {activeView}
       </WorkspaceShell>

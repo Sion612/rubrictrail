@@ -9,18 +9,34 @@ import { AssignmentFileParseError } from "@/lib/files/parse-assignment-files";
 import {
   createDefaultProjectState,
   PREVIOUS_STORAGE_KEY,
+  PROJECT_LOCK_NAME,
+  PROJECT_RECORD_KEY,
   readProjectStateWithStatus,
   serializePersistedProjectStateValue,
   STORAGE_KEY,
+  type ProjectStorageRecordV1,
 } from "@/lib/local-state";
 import { serializeProjectBackup } from "@/lib/project-backup";
 import type { PersistedProjectState, UploadedProject } from "@/lib/ui-types";
+import {
+  createFifoLockManager,
+  holdLock,
+  installLockManager,
+  removeLockManager,
+} from "../../tests/web-locks-mock";
 
 const LEGACY_STORAGE_KEY = "proofline.project.v1";
 
 async function advance(milliseconds: number) {
   await act(async () => {
     vi.advanceTimersByTime(milliseconds);
+    await Promise.resolve();
+  });
+}
+
+async function flushMicrotasks() {
+  await act(async () => {
+    await Promise.resolve();
     await Promise.resolve();
   });
 }
@@ -86,7 +102,7 @@ async function openSavedSampleCheck() {
   fireEvent.click(screen.getAllByRole("button", { name: /Check/i })[0]);
   await advance(250);
 
-  const storedValue = window.localStorage.getItem(STORAGE_KEY);
+  const storedValue = window.localStorage.getItem(PROJECT_RECORD_KEY);
   if (storedValue === null) throw new Error("Expected a saved sample project");
   return {
     draft: screen.getByTestId("draft-text"),
@@ -94,9 +110,37 @@ async function openSavedSampleCheck() {
   };
 }
 
+function projectRecord(storedValue: string): ProjectStorageRecordV1 {
+  return JSON.parse(storedValue) as ProjectStorageRecordV1;
+}
+
+function storedProjectState(storedValue: string): PersistedProjectState {
+  const record = projectRecord(storedValue);
+  if (record.value.kind !== "project") {
+    throw new Error("Expected an active saved project record");
+  }
+  return record.value.state;
+}
+
+function currentStoredProjectState(): PersistedProjectState {
+  const storedValue = window.localStorage.getItem(PROJECT_RECORD_KEY);
+  if (storedValue === null) throw new Error("Expected a saved project record");
+  return storedProjectState(storedValue);
+}
+
 function storedDraftValue(storedValue: string, draftText: string) {
-  const state = JSON.parse(storedValue) as PersistedProjectState;
-  return JSON.stringify({ ...state, draftText }, null, 2);
+  const record = projectRecord(storedValue);
+  if (record.value.kind !== "project") {
+    throw new Error("Expected an active saved project record");
+  }
+  return JSON.stringify({
+    ...record,
+    revision: record.revision + 1,
+    value: {
+      kind: "project",
+      state: { ...record.value.state, draftText },
+    },
+  } satisfies ProjectStorageRecordV1);
 }
 
 function realV2State(
@@ -123,7 +167,7 @@ function realV2State(
 function dispatchExternalStorageUpdate(
   oldValue: string | null,
   newValue: string | null,
-  key = STORAGE_KEY,
+  key = PROJECT_RECORD_KEY,
 ) {
   fireEvent(
     window,
@@ -137,9 +181,14 @@ function dispatchExternalStorageUpdate(
   );
 }
 
+let testLocks: ReturnType<typeof createFifoLockManager>;
+let restoreLockManager: (() => void) | null = null;
+
 beforeEach(() => {
   vi.useFakeTimers();
   window.localStorage.clear();
+  testLocks = createFifoLockManager();
+  restoreLockManager = installLockManager(testLocks.manager);
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn().mockReturnValue({ matches: false }),
@@ -156,6 +205,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  restoreLockManager?.();
+  restoreLockManager = null;
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -164,6 +215,51 @@ afterEach(() => {
 });
 
 describe("RubricTrailApp reliability", () => {
+  it("keeps a no-lock project visibly tab-only and never claims autosave", async () => {
+    restoreLockManager?.();
+    restoreLockManager = null;
+    removeLockManager();
+    render(<RubricTrailApp />);
+    await advance(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Paste text" }));
+    fireEvent.change(screen.getByTestId("pasted-assignment-brief"), {
+      target: {
+        value: [
+          "Assignment title: Tab-only Strategy Report",
+          "Deadline: 24 September 2026",
+          "Word count: 2500 words",
+          "Use APA 7 referencing.",
+        ].join("\n"),
+      },
+    });
+    fireEvent.change(screen.getByTestId("pasted-assignment-rubric"), {
+      target: { value: "Rubric\nAnalysis | 60%\nCommunication | 40%" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review assignment details" }),
+    );
+    await advance(0);
+    fireEvent.click(screen.getByTestId("create-project"));
+
+    expect(
+      screen.getByRole("region", { name: "Browser saving is unavailable" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Download project backup" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "Local project created in this tab",
+    );
+    expect(screen.getByTestId("toast")).not.toHaveTextContent(/autosave/i);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBeNull();
+
+    await advance(4_000);
+    expect(
+      screen.getByRole("region", { name: "Browser saving is unavailable" }),
+    ).toBeInTheDocument();
+  });
+
   it.each([
     {
       code: "PDF_TOO_MANY_PAGES",
@@ -236,7 +332,7 @@ describe("RubricTrailApp reliability", () => {
     );
   });
 
-  it("writes a recovered legacy project to v3 once hydration succeeds", async () => {
+  it("writes a recovered legacy project to the canonical record once hydration succeeds", async () => {
     window.localStorage.setItem(
       LEGACY_STORAGE_KEY,
       JSON.stringify({ sampleLoaded: false }),
@@ -247,16 +343,18 @@ describe("RubricTrailApp reliability", () => {
     expect(
       screen.getByText(/An older local project was recovered/),
     ).toBeInTheDocument();
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBeNull();
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
 
     await advance(250);
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")).toMatchObject({
+    expect(currentStoredProjectState()).toMatchObject({
       version: 3,
       projectKind: "none",
     });
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
-  it("promotes a v2 project to v3 only after both storage baselines still match", async () => {
+  it("promotes a v2 project to the canonical record only after all baselines still match", async () => {
     const previous = realV2State(createDefaultProjectState());
     const previousRaw = JSON.stringify(previous);
     window.localStorage.setItem(
@@ -271,14 +369,13 @@ describe("RubricTrailApp reliability", () => {
     );
 
     await advance(250);
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")).toMatchObject({
+    expect(currentStoredProjectState()).toMatchObject({
       version: 3,
       projectKind: "none",
     });
     expect(window.localStorage.getItem(PREVIOUS_STORAGE_KEY)).toBe(previousRaw);
     expect(
-      JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")
-        .supersededV2Fingerprint,
+      currentStoredProjectState().supersededV2Fingerprint,
     ).toMatch(/^v1:/);
     expect(readProjectStateWithStatus().crossVersionConflict).toBe(false);
   });
@@ -290,6 +387,7 @@ describe("RubricTrailApp reliability", () => {
 
     await advance(1_000);
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe(malformed);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBeNull();
     expect(
       screen.getByText(/recovered with safe defaults/),
     ).toBeInTheDocument();
@@ -306,12 +404,97 @@ describe("RubricTrailApp reliability", () => {
     fireEvent.change(draft, {
       target: { value: "A last-second draft edit that must reach local storage." },
     });
-    window.dispatchEvent(new Event("pagehide"));
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")).toMatchObject({
+    expect(currentStoredProjectState()).toMatchObject({
       projectKind: "sample",
       draftText: "A last-second draft edit that must reach local storage.",
     });
+  });
+
+  it("queues a pagehide flush behind the project lock and preserves a newer revision", async () => {
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
+    await act(async () => {
+      await holder.entered;
+    });
+
+    fireEvent.change(draft, {
+      target: { value: "This close-time edit must wait for the project lock." },
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+
+    expect(testLocks.pendingCount()).toBe(1);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(storedValue);
+
+    const newerExternalValue = storedDraftValue(
+      storedValue,
+      "A newer revision committed before the held lock was released.",
+    );
+    window.localStorage.setItem(PROJECT_RECORD_KEY, newerExternalValue);
+
+    await act(async () => {
+      holder.release();
+      await holder.done;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(
+      newerExternalValue,
+    );
+    expect(
+      screen.getByRole("heading", {
+        name: "Autosave paused: another tab saved changes",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("saves the latest value after rapid edits overlap an in-flight write", async () => {
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const initialRevision = projectRecord(storedValue).revision;
+    const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
+    await act(async () => {
+      await holder.entered;
+    });
+
+    fireEvent.change(draft, {
+      target: { value: "The first rapidly entered draft." },
+    });
+    await advance(250);
+    expect(testLocks.pendingCount()).toBe(1);
+
+    fireEvent.change(draft, {
+      target: { value: "The final rapidly entered draft." },
+    });
+    await act(async () => {
+      holder.release();
+      await holder.done;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const firstCommit = window.localStorage.getItem(PROJECT_RECORD_KEY);
+    if (firstCommit === null) throw new Error("Expected the queued write to commit");
+    expect(projectRecord(firstCommit).revision).toBe(initialRevision + 1);
+    expect(storedProjectState(firstCommit).draftText).toBe(
+      "The first rapidly entered draft.",
+    );
+
+    await advance(0);
+    const finalCommit = window.localStorage.getItem(PROJECT_RECORD_KEY);
+    if (finalCommit === null) throw new Error("Expected the latest write to commit");
+    expect(projectRecord(finalCommit).revision).toBe(initialRevision + 2);
+    expect(storedProjectState(finalCommit).draftText).toBe(
+      "The final rapidly entered draft.",
+    );
   });
 
   it("keeps exact external bytes when a stale tab edits or closes", async () => {
@@ -320,23 +503,26 @@ describe("RubricTrailApp reliability", () => {
       storedValue,
       "The draft saved by the other tab.",
     );
-    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    window.localStorage.setItem(PROJECT_RECORD_KEY, externalValue);
     dispatchExternalStorageUpdate(storedValue, externalValue);
 
     expect(
-      screen.getByRole("heading", { name: "Project changed in another tab" }),
+      screen.getByRole("heading", { name: "Autosave paused: another tab saved changes" }),
     ).toBeInTheDocument();
 
     fireEvent.change(draft, {
       target: { value: "A stale local draft that must not win silently." },
     });
     await advance(250);
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
 
-    window.dispatchEvent(new Event("pagehide"));
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    await act(async () => {
+      window.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
     expect(
-      screen.getByRole("heading", { name: "Project changed in another tab" }),
+      screen.getByRole("heading", { name: "Autosave paused: another tab saved changes" }),
     ).toBeInTheDocument();
   });
 
@@ -346,7 +532,7 @@ describe("RubricTrailApp reliability", () => {
       storedValue,
       "External bytes written before this tab could receive an event.",
     );
-    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    window.localStorage.setItem(PROJECT_RECORD_KEY, externalValue);
     fireEvent.change(draft, {
       target: { value: "A pending local edit flushed immediately on close." },
     });
@@ -356,12 +542,12 @@ describe("RubricTrailApp reliability", () => {
       await Promise.resolve();
     });
 
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
     expect(
-      screen.getByRole("heading", { name: "Project changed in another tab" }),
+      screen.getByRole("heading", { name: "Autosave paused: another tab saved changes" }),
     ).toBeInTheDocument();
     await advance(250);
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
   });
 
   it("refuses a confirmed reset after an unannounced external write", async () => {
@@ -372,22 +558,23 @@ describe("RubricTrailApp reliability", () => {
       storedValue,
       "External bytes that reset must not clear.",
     );
-    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    window.localStorage.setItem(PROJECT_RECORD_KEY, externalValue);
 
     fireEvent.click(screen.getByRole("button", { name: "Reset local project" }));
+    await flushMicrotasks();
 
     expect(window.confirm).toHaveBeenCalledWith(
       expect.stringContaining("Reset this local project?"),
     );
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
     expect(screen.getByTestId("draft-text")).toHaveValue(currentDraft);
     expect(screen.getByRole("button", { name: "Use my assignment" })).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Project changed in another tab" }),
+      screen.getByRole("heading", { name: "Autosave paused: another tab saved changes" }),
     ).toBeInTheDocument();
 
     await advance(250);
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
   });
 
   it("loads the exact saved version after confirmation and clears the conflict", async () => {
@@ -395,7 +582,7 @@ describe("RubricTrailApp reliability", () => {
     const { draft, storedValue } = await openSavedSampleCheck();
     const externalDraft = "The newer draft loaded from browser storage.";
     const externalValue = storedDraftValue(storedValue, externalDraft);
-    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    window.localStorage.setItem(PROJECT_RECORD_KEY, externalValue);
     dispatchExternalStorageUpdate(storedValue, externalValue);
     fireEvent.change(draft, {
       target: { value: "This tab has a pending draft that should be replaced." },
@@ -408,12 +595,12 @@ describe("RubricTrailApp reliability", () => {
     );
     expect(screen.getByTestId("draft-text")).toHaveValue(externalDraft);
     expect(
-      screen.queryByRole("heading", { name: "Project changed in another tab" }),
+      screen.queryByRole("heading", { name: "Autosave paused: another tab saved changes" }),
     ).not.toBeInTheDocument();
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
 
     await advance(250);
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
   });
 
   it("keeps the current tab when browser storage cannot be read during load", async () => {
@@ -424,7 +611,7 @@ describe("RubricTrailApp reliability", () => {
       storedValue,
       "The other tab's saved draft.",
     );
-    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    window.localStorage.setItem(PROJECT_RECORD_KEY, externalValue);
     dispatchExternalStorageUpdate(storedValue, externalValue);
     fireEvent.change(draft, { target: { value: currentDraft } });
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
@@ -435,7 +622,7 @@ describe("RubricTrailApp reliability", () => {
 
     expect(screen.getByTestId("draft-text")).toHaveValue(currentDraft);
     expect(
-      screen.getByRole("heading", { name: "Project changed in another tab" }),
+      screen.getByRole("heading", { name: "Autosave paused: another tab saved changes" }),
     ).toBeInTheDocument();
     expect(
       screen.getAllByText(/Browser storage could not be read, so nothing was replaced/),
@@ -450,22 +637,68 @@ describe("RubricTrailApp reliability", () => {
       storedValue,
       "The newer draft currently saved by the other tab.",
     );
-    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    window.localStorage.setItem(PROJECT_RECORD_KEY, externalValue);
     dispatchExternalStorageUpdate(storedValue, externalValue);
     fireEvent.change(draft, { target: { value: localDraft } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Keep this tab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace saved version with this tab" }));
+    await flushMicrotasks();
 
     const expected = serializePersistedProjectStateValue({
-      ...(JSON.parse(storedValue) as PersistedProjectState),
+      ...storedProjectState(storedValue),
       draftText: localDraft,
     });
     expect(expected.ok).toBe(true);
     if (!expected.ok) throw new Error("Expected the local sample to serialize");
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(expected.serialized);
-    expect(window.localStorage.getItem(STORAGE_KEY)).not.toBe(externalValue);
+    expect(currentStoredProjectState()).toEqual(expected.state);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).not.toBe(externalValue);
     expect(
-      screen.queryByRole("heading", { name: "Project changed in another tab" }),
+      screen.queryByRole("heading", { name: "Autosave paused: another tab saved changes" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("persists an edit made while keep-this-tab waits for the project lock", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { draft, storedValue } = await openSavedSampleCheck();
+    const externalValue = storedDraftValue(
+      storedValue,
+      "The other tab's saved draft before conflict resolution.",
+    );
+    window.localStorage.setItem(PROJECT_RECORD_KEY, externalValue);
+    dispatchExternalStorageUpdate(storedValue, externalValue);
+    fireEvent.change(draft, {
+      target: { value: "The version selected when keep started." },
+    });
+
+    const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
+    await act(async () => {
+      await holder.entered;
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Replace saved version with this tab" }),
+    );
+    await flushMicrotasks();
+    expect(testLocks.pendingCount()).toBe(1);
+
+    fireEvent.change(draft, {
+      target: { value: "The newer edit entered while keep was waiting." },
+    });
+    await act(async () => {
+      holder.release();
+      await holder.done;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await advance(0);
+    await flushMicrotasks();
+
+    expect(currentStoredProjectState().draftText).toBe(
+      "The newer edit entered while keep was waiting.",
+    );
+    expect(
+      screen.queryByRole("heading", {
+        name: "Autosave paused: another tab saved changes",
+      }),
     ).not.toBeInTheDocument();
   });
 
@@ -478,8 +711,14 @@ describe("RubricTrailApp reliability", () => {
     };
     const serialized = serializePersistedProjectStateValue(externalState);
     if (!serialized.ok) throw new Error("Expected external sample state to serialize");
-    window.localStorage.setItem(STORAGE_KEY, serialized.serialized);
-    dispatchExternalStorageUpdate(null, serialized.serialized);
+    const externalRecord = JSON.stringify({
+      formatVersion: 1,
+      revision: 1,
+      value: { kind: "project", state: serialized.state },
+      legacyFingerprints: { v3: null, v2: null, v1: null },
+    } satisfies ProjectStorageRecordV1);
+    window.localStorage.setItem(PROJECT_RECORD_KEY, externalRecord);
+    dispatchExternalStorageUpdate(null, externalRecord);
 
     expect(
       screen.getByRole("button", {
@@ -487,10 +726,10 @@ describe("RubricTrailApp reliability", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Download this tab" }),
+      screen.queryByRole("button", { name: "Download this tab backup" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Keep this tab" }),
+      screen.queryByRole("button", { name: "Replace saved version with this tab" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/intake is not part of a saved project yet/i)).toBeInTheDocument();
   });
@@ -502,16 +741,16 @@ describe("RubricTrailApp reliability", () => {
       storedValue,
       "External bytes written without a storage event.",
     );
-    window.localStorage.setItem(STORAGE_KEY, externalValue);
+    window.localStorage.setItem(PROJECT_RECORD_KEY, externalValue);
 
     await restoreBackup(
       screen.getByTestId("workspace-backup-file-input"),
       uploadedBackupState(),
     );
 
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
     expect(
-      screen.getByRole("heading", { name: "Project changed in another tab" }),
+      screen.getByRole("heading", { name: "Autosave paused: another tab saved changes" }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("toast")).toHaveTextContent(
       "backup was not restored",
@@ -519,7 +758,8 @@ describe("RubricTrailApp reliability", () => {
 
     await advance(250);
     window.dispatchEvent(new Event("pagehide"));
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(externalValue);
+    await flushMicrotasks();
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(externalValue);
   });
 
   it("cancels an in-flight demo check when the draft changes", async () => {
@@ -603,6 +843,7 @@ describe("RubricTrailApp reliability", () => {
     await advance(450);
 
     fireEvent.click(screen.getByRole("button", { name: "Use my assignment" }));
+    await flushMicrotasks();
     await advance(16);
 
     expect(
@@ -667,7 +908,7 @@ describe("RubricTrailApp reliability", () => {
     fireEvent.click(screen.getByTestId("create-project"));
     await advance(250);
 
-    const stored = window.localStorage.getItem(STORAGE_KEY) ?? "";
+    const stored = window.localStorage.getItem(PROJECT_RECORD_KEY) ?? "";
     expect(screen.getByRole("heading", { name: "Pasted Strategy Report" })).toBeInTheDocument();
     expect(stored).not.toContain(privateTail);
     expect(stored).toContain("Pasted assignment brief.txt");
@@ -685,14 +926,14 @@ describe("RubricTrailApp reliability", () => {
     dispatchExternalStorageUpdate(null, previousValue, PREVIOUS_STORAGE_KEY);
 
     expect(
-      screen.getByRole("heading", { name: "Project changed in another tab" }),
+      screen.getByRole("heading", { name: "Autosave paused: another tab saved changes" }),
     ).toBeInTheDocument();
     fireEvent.change(draft, {
       target: { value: "A v3 edit that must wait for conflict resolution." },
     });
     await advance(250);
 
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(storedValue);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(storedValue);
     expect(window.localStorage.getItem(PREVIOUS_STORAGE_KEY)).toBe(previousValue);
   });
 
@@ -700,7 +941,7 @@ describe("RubricTrailApp reliability", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const { storedValue } = await openSavedSampleCheck();
     const previousDraft = "The exact older-version draft the user chose to load.";
-    const currentState = JSON.parse(storedValue) as PersistedProjectState;
+    const currentState = storedProjectState(storedValue);
     const previousValue = JSON.stringify(
       realV2State(currentState, { draftText: previousDraft }),
     );
@@ -708,17 +949,16 @@ describe("RubricTrailApp reliability", () => {
     dispatchExternalStorageUpdate(null, previousValue, PREVIOUS_STORAGE_KEY);
 
     fireEvent.click(screen.getByRole("button", { name: "Load saved version" }));
+    await flushMicrotasks();
 
     expect(window.confirm).toHaveBeenCalledWith(
       expect.stringContaining("older RubricTrail tab"),
     );
     expect(screen.getByTestId("draft-text")).toHaveValue(previousDraft);
     expect(
-      screen.queryByRole("heading", { name: "Project changed in another tab" }),
+      screen.queryByRole("heading", { name: "Autosave paused: another tab saved changes" }),
     ).not.toBeInTheDocument();
-    const promoted = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEY) ?? "{}",
-    ) as PersistedProjectState;
+    const promoted = currentStoredProjectState();
     expect(promoted.version).toBe(3);
     expect(promoted.draftText).toBe(previousDraft);
     expect(promoted.supersededV2Fingerprint).toMatch(/^v1:/);
@@ -757,9 +997,7 @@ describe("RubricTrailApp reliability", () => {
     fireEvent.click(screen.getByTestId("create-project"));
     await advance(250);
 
-    const stored = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEY) ?? "{}",
-    ) as PersistedProjectState;
+    const stored = currentStoredProjectState();
     expect(stored.version).toBe(3);
     expect(stored.uploadedProject?.weightingStatus).toBe("none");
     expect(
@@ -818,9 +1056,7 @@ describe("RubricTrailApp reliability", () => {
     fireEvent.click(screen.getByTestId("create-project"));
     await advance(250);
 
-    const stored = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEY) ?? "{}",
-    ) as PersistedProjectState;
+    const stored = currentStoredProjectState();
     expect(stored.uploadedProject?.weightingStatus).toBe("incomplete");
     expect(
       stored.uploadedProject?.criteria.map((criterion) => criterion.weight),
@@ -853,7 +1089,7 @@ describe("RubricTrailApp reliability", () => {
       "aria-invalid",
       "true",
     );
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBeNull();
 
     fireEvent.change(screen.getByTestId("pasted-assignment-brief"), {
       target: { value: "Assignment title: Recoverable text" },
@@ -929,13 +1165,13 @@ describe("RubricTrailApp reliability", () => {
     fireEvent.click(screen.getByTestId("create-project"));
     await advance(250);
 
-    const stored = window.localStorage.getItem(STORAGE_KEY) ?? "";
+    const stored = window.localStorage.getItem(PROJECT_RECORD_KEY) ?? "";
     expect(screen.getByRole("heading", { name: "Partial Strategy Report" })).toBeInTheDocument();
     expect(stored).toContain("brief.txt");
     expect(stored).not.toContain("legacy-rubric.doc");
     expect(stored).not.toContain(omittedTail);
     const backup = serializeProjectBackup(
-      JSON.parse(stored) as PersistedProjectState,
+      storedProjectState(stored),
       "2026-08-12T08:00:00.000Z",
     );
     expect(backup).toContain("brief.txt");
@@ -956,7 +1192,7 @@ describe("RubricTrailApp reliability", () => {
     expect(
       screen.getByRole("heading", { name: "Restored Strategy Report" }),
     ).toBeInTheDocument();
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")).toMatchObject({
+    expect(currentStoredProjectState()).toMatchObject({
       projectKind: "uploaded",
       uploadedProject: { title: "Restored Strategy Report" },
     });
@@ -971,7 +1207,7 @@ describe("RubricTrailApp reliability", () => {
     await advance(0);
     fireEvent.click(screen.getByTestId("try-sample"));
     await advance(700);
-    const before = window.localStorage.getItem(STORAGE_KEY);
+    const before = window.localStorage.getItem(PROJECT_RECORD_KEY);
 
     await restoreBackup(
       screen.getByTestId("workspace-backup-file-input"),
@@ -979,7 +1215,7 @@ describe("RubricTrailApp reliability", () => {
     );
 
     expect(screen.getByRole("button", { name: "Use my assignment" })).toBeInTheDocument();
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe(before);
+    expect(window.localStorage.getItem(PROJECT_RECORD_KEY)).toBe(before);
     expect(screen.getByLabelText("Project backup options")).toHaveFocus();
   });
 
@@ -1017,7 +1253,7 @@ describe("RubricTrailApp reliability", () => {
       "backup was not restored",
     );
     await advance(250);
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}")).toMatchObject({
+    expect(currentStoredProjectState()).toMatchObject({
       projectKind: "sample",
       draftText: "A pending edit that still needs its normal autosave.",
     });

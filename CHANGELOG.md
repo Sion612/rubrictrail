@@ -4,6 +4,19 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-08-12
+
+### Fixed
+
+- Revalidates confirmed reset, sample handoff, backup restore and older-version
+  promotion inside the exclusive browser-storage lock, so edits made while an
+  operation waits cannot be silently replaced.
+- Gives every confirmed project replacement a monotonic intent revision, so a
+  later reset, restore, load or keep-this-tab choice supersedes an older queued
+  choice instead of leaving lock order to decide the outcome.
+- Cancels stale replacement operations without changing browser-storage bytes
+  and suppresses obsolete warnings when a newer confirmed choice succeeds.
+
 ## [0.3.8] - 2026-08-12
 
 ### Fixed

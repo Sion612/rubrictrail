@@ -273,6 +273,14 @@ export interface ProjectStateReadResult {
   legacyConflictCandidate: LegacyConflictCandidate | null;
 }
 
+export interface ProjectMutationOptions {
+  /**
+   * Revalidates the caller's in-memory intent after the exclusive project lock
+   * is acquired. This callback must be synchronous and side-effect free.
+   */
+  intentGuard?: () => boolean;
+}
+
 export type ProjectStateWriteResult =
   | {
       ok: true;
@@ -288,6 +296,7 @@ export type ProjectStateWriteResult =
         | "invalid-state"
         | "invalid-record"
         | "storage-error"
+        | "intent-changed"
         | "conflict";
     };
 
@@ -322,6 +331,7 @@ export type ProjectStatePurgeResult =
         | "coordination-unavailable"
         | "invalid-record"
         | "storage-error"
+        | "intent-changed"
         | "conflict";
     };
 
@@ -1153,9 +1163,18 @@ async function requestExclusiveProjectLock<T>(
   }
 }
 
+function mutationIntentIsCurrent(options: ProjectMutationOptions): boolean {
+  try {
+    return options.intentGuard?.() ?? true;
+  } catch {
+    return false;
+  }
+}
+
 export async function writeProjectState(
   state: PersistedProjectState,
   expected: ProjectStorageBaseline,
+  options: ProjectMutationOptions = {},
 ): Promise<ProjectStateWriteResult> {
   if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
   if (getProjectLockManager() === null) {
@@ -1201,6 +1220,9 @@ export async function writeProjectState(
     };
     const recordValue = serializeProjectStorageRecord(record);
     if (recordValue === null) return { ok: false, reason: "invalid-state" };
+    if (!mutationIntentIsCurrent(options)) {
+      return { ok: false, reason: "intent-changed" };
+    }
 
     try {
       window.localStorage.setItem(PROJECT_RECORD_KEY, recordValue);
@@ -1316,6 +1338,7 @@ export async function clearProjectState(
 
 export async function purgeProjectState(
   expected: ProjectStorageBaseline,
+  options: ProjectMutationOptions = {},
 ): Promise<ProjectStatePurgeResult> {
   if (typeof window === "undefined") return { ok: false, reason: "unavailable" };
   if (getProjectLockManager() === null) {
@@ -1351,6 +1374,9 @@ export async function purgeProjectState(
     });
     if (guardRecordValue === null) {
       return { ok: false, reason: "invalid-record" };
+    }
+    if (!mutationIntentIsCurrent(options)) {
+      return { ok: false, reason: "intent-changed" };
     }
 
     try {

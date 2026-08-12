@@ -276,6 +276,9 @@ interface PersistenceWarningState {
 
 type PersistenceFlushOutcome = "saved" | "blocked" | "failed";
 
+const REPLACEMENT_INTENT_CHANGED_MESSAGE =
+  "Your project changed in this tab after you confirmed the replacement. RubricTrail cancelled it so the newer changes were kept. Review them, then try again.";
+
 function sampleStepStates(
   project: PersistedProjectState,
   completion: number,
@@ -384,6 +387,7 @@ export function RubricTrailApp() {
   const focusWelcomeIntake = useRef<AssignmentIntakeMode | null>(null);
   const observedStorageBaseline = useRef<ProjectStorageBaseline | null>(null);
   const storageConflictActive = useRef(false);
+  const replacementIntentRevision = useRef(0);
 
   const markDurableSavingUnavailable = useCallback(() => {
     persistenceDisabled.current = true;
@@ -693,6 +697,20 @@ export function RubricTrailApp() {
     noticeTimer.current = window.setTimeout(() => setNotice(null), 3600);
   }, []);
 
+  const reportReplacementIntentChanged = useCallback(
+    (surface: "project" | "backup" = "project") => {
+      if (surface === "backup") {
+        setBackupError(REPLACEMENT_INTENT_CHANGED_MESSAGE);
+      }
+      showNotice({
+        tone: "warning",
+        message: REPLACEMENT_INTENT_CHANGED_MESSAGE,
+      });
+      schedulePendingPersistence();
+    },
+    [schedulePendingPersistence, showNotice],
+  );
+
   useEffect(
     () => () => {
       if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
@@ -862,18 +880,27 @@ export function RubricTrailApp() {
     });
   }
 
-  async function purgeSavedProjectForReplacement(): Promise<boolean> {
+  async function purgeSavedProjectForReplacement(
+    intentGuard: () => boolean,
+    intentRevision: number,
+  ): Promise<boolean> {
     cancelPersistenceTimer();
     if (persistenceInFlight.current) await persistenceInFlight.current;
     const baseline = observedStorageBaseline.current;
     if (!baseline) return false;
-    const purgeResult = await purgeProjectState(baseline);
+    const purgeResult = await purgeProjectState(baseline, { intentGuard });
     if (purgeResult.ok) {
       observedStorageBaseline.current = purgeResult.baseline;
       markDurableSavingAvailable();
       hasPendingProjectChange.current = false;
       clearStorageConflict();
       return true;
+    }
+    if (purgeResult.reason === "intent-changed") {
+      if (replacementIntentRevision.current === intentRevision) {
+        reportReplacementIntentChanged();
+      }
+      return false;
     }
     if (purgeResult.reason === "conflict" || purgeResult.reason === "invalid-record") {
       markStorageConflict();
@@ -898,8 +925,17 @@ export function RubricTrailApp() {
   }
 
   async function resetProject() {
+    const confirmedProject = latestProject.current;
     if (!window.confirm("Reset this local project? This clears saved draft excerpts, checks, results and task progress from this browser.")) return;
-    if (!(await purgeSavedProjectForReplacement())) return;
+    const intentRevision = ++replacementIntentRevision.current;
+    if (
+      !(await purgeSavedProjectForReplacement(
+        () =>
+          replacementIntentRevision.current === intentRevision &&
+          latestProject.current === confirmedProject,
+        intentRevision,
+      ))
+    ) return;
     intakeRunId.current += 1;
     backupImportActive.current = false;
     setIsImportingBackup(false);
@@ -922,8 +958,17 @@ export function RubricTrailApp() {
   }
 
   async function startOwnProject() {
+    const confirmedProject = latestProject.current;
     if (!window.confirm("Leave the sample demo and use your own assignment? Demo changes and progress will be cleared from this browser.")) return;
-    if (!(await purgeSavedProjectForReplacement())) return;
+    const intentRevision = ++replacementIntentRevision.current;
+    if (
+      !(await purgeSavedProjectForReplacement(
+        () =>
+          replacementIntentRevision.current === intentRevision &&
+          latestProject.current === confirmedProject,
+        intentRevision,
+      ))
+    ) return;
     intakeRunId.current += 1;
     backupImportActive.current = false;
     setIsImportingBackup(false);
@@ -1016,6 +1061,7 @@ export function RubricTrailApp() {
       return;
     }
 
+    const confirmedProject = latestProject.current;
     if (
       !window.confirm(
         legacyCandidate !== null || shouldLoadPrevious
@@ -1025,6 +1071,7 @@ export function RubricTrailApp() {
     ) {
       return;
     }
+    const intentRevision = ++replacementIntentRevision.current;
 
     let result = storageSnapshot;
     let loadedFromPreviousVersion = false;
@@ -1049,8 +1096,19 @@ export function RubricTrailApp() {
       const promoted = await writeProjectState(
         previousState,
         storageSnapshot.baseline,
+        {
+          intentGuard: () =>
+            replacementIntentRevision.current === intentRevision &&
+            latestProject.current === confirmedProject,
+        },
       );
       if (!promoted.ok) {
+        if (promoted.reason === "intent-changed") {
+          if (replacementIntentRevision.current === intentRevision) {
+            reportReplacementIntentChanged();
+          }
+          return;
+        }
         const message =
           promoted.reason === "conflict"
             ? "The saved project changed again while the older version was being upgraded. Nothing was selected; review the conflict and try again."
@@ -1154,6 +1212,7 @@ export function RubricTrailApp() {
     ) {
       return;
     }
+    const intentRevision = ++replacementIntentRevision.current;
 
     cancelPersistenceTimer();
     if (persistenceInFlight.current) await persistenceInFlight.current;
@@ -1167,8 +1226,16 @@ export function RubricTrailApp() {
       return;
     }
     const projectToSave = latestProject.current;
-    const result = await writeProjectState(projectToSave, currentStorage.baseline);
+    const result = await writeProjectState(projectToSave, currentStorage.baseline, {
+      intentGuard: () => replacementIntentRevision.current === intentRevision,
+    });
     if (!result.ok) {
+      if (result.reason === "intent-changed") {
+        if (replacementIntentRevision.current === intentRevision) {
+          reportReplacementIntentChanged();
+        }
+        return;
+      }
       const message =
         result.reason === "invalid-state"
           ? "This tab failed local validation, so it did not replace the saved project."
@@ -1227,6 +1294,7 @@ export function RubricTrailApp() {
         `Restore “${incomingTitle}”?\n${backupProjectDetails(backup.state)}\nExported: ${backupDateLabel(backup.exportedAt)}\n\n${replacement}\n\nThe backup may contain course details, source labels or file names, short excerpts, draft text, self-checks and progress. Original files and full intake text are not included.`,
       );
       if (!confirmed) return;
+      const intentRevision = ++replacementIntentRevision.current;
 
       cancelPersistenceTimer();
       if (persistenceInFlight.current) await persistenceInFlight.current;
@@ -1235,8 +1303,19 @@ export function RubricTrailApp() {
       const writeResult = await writeProjectState(
         backup.state,
         baseline,
+        {
+          intentGuard: () =>
+            replacementIntentRevision.current === intentRevision &&
+            latestProject.current === current,
+        },
       );
       if (!writeResult.ok) {
+        if (writeResult.reason === "intent-changed") {
+          if (replacementIntentRevision.current === intentRevision) {
+            reportReplacementIntentChanged("backup");
+          }
+          return;
+        }
         if (writeResult.reason === "conflict") {
           const message =
             "The project changed in another tab, so the backup was not restored. Resolve the tab conflict first; neither saved version was overwritten.";

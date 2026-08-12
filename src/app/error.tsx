@@ -28,6 +28,8 @@ const CLEAR_FAILURE_MESSAGES: Record<ClearFailureReason, string> = {
     "The local project record cannot accept another safe revision, so RubricTrail refused to delete it.",
   "storage-error":
     "Browser storage failed during reset, so RubricTrail could not confirm complete deletion. Some browser data may remain; reload before trying again.",
+  "intent-changed":
+    "The reset request changed before deletion began, so RubricTrail kept the saved project. Reload before trying again.",
   conflict:
     "The saved project changed after this recovery page opened, so RubricTrail could not confirm complete deletion. Reload before deciding whether to reset the current saved version.",
 };

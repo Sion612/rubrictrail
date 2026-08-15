@@ -8,8 +8,9 @@ Browser method: local Playwright projects at desktop 1440×900 and narrow
 plus the generated static demo served at `/rubrictrail`. The bilingual scenario
 also narrows the live viewport to 320×700 after restoring a saved project.
 
-This report describes the v0.6.0 branch candidate before remote CI. It is not a
-public deployment or release evidence. The last published exact-main
+This report describes the v0.6.0 pull-request candidate while its remote release
+gate is still in progress. It is not public deployment or release evidence. The
+last published exact-main
 baseline remains the [v0.5.0 run for commit
 `b8d80b0`](https://github.com/Sion612/rubrictrail/actions/runs/31593393903);
 future v0.6.0 publication must replace this paragraph with the exact merged
@@ -27,7 +28,7 @@ candidate SHA and remote run links.
 | `pnpm build:demo` equivalent local CLI | Static export for `/rubrictrail` completed successfully |
 | `pnpm audit:demo` equivalent local CLI | Passed for all 44 exported files; no Live API path, OpenAI endpoint or Live credential/configuration marker found; 14 initial JS/CSS files totalled 1,234,982 raw bytes and 346,655 gzip bytes, below the 357,000-byte gzip budget |
 | `pnpm test:e2e:demo --workers=1` equivalent local CLI | Earlier local v0.6.0 candidate: 30/30 executions passed against the static `/rubrictrail` artifact (15 scenarios × 2 Chromium projects); not rerun after the final hardening edits |
-| `pnpm audit --audit-level high` | Not rerun for this branch candidate; dependency pins and lockfile are unchanged from the published zero-known-vulnerability baseline |
+| `pnpm audit --audit-level high` | Passed after raising the transitive `nanoid@3` override to patched version 3.3.18; no known vulnerabilities found |
 
 The final language-preference, notification, narrow-screen, accessibility and
 phase-splitting changes were rechecked with unit/component tests, lint, type

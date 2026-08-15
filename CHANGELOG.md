@@ -42,6 +42,8 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
   current local candidate without changing project or backup data.
 - Uses explicit labels for confirmation fields and exposes short self-check
   guidance to assistive technology when saving is unavailable.
+- Raises the transitive `nanoid@3` security override from 3.3.17 to the patched
+  3.3.18 release after advisory GHSA-2v37-7h3g-55p8.
 
 ### Limitations
 

@@ -104,6 +104,45 @@ describe("ErrorPage recovery", () => {
     expect(reloadPage).not.toHaveBeenCalled();
   });
 
+  it("reports a queued reset failure in the language selected when it finishes", async () => {
+    const seeded = await seedProject();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+    render(
+      <ErrorPage
+        error={new Error("test failure")}
+        reset={vi.fn()}
+        reloadPage={vi.fn()}
+      />,
+    );
+    const language = await screen.findByRole("combobox", {
+      name: /Interface language|界面语言/,
+    });
+    fireEvent.change(language, { target: { value: "en" } });
+    const held = holdLock(lockManager, PROJECT_LOCK_NAME);
+    await held.entered;
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset local project" }));
+    const record = JSON.parse(seeded.recordValue) as {
+      revision: number;
+      value: unknown;
+    };
+    window.localStorage.setItem(
+      PROJECT_RECORD_KEY,
+      JSON.stringify({ ...record, revision: record.revision + 1 }),
+    );
+    fireEvent.change(language, { target: { value: "zh-CN" } });
+    held.release();
+    await held.done;
+
+    await waitFor(() =>
+      expect(alert).toHaveBeenCalledWith(
+        expect.stringContaining("此恢复页面打开后，保存的项目发生了变化"),
+      ),
+    );
+    fireEvent.change(language, { target: { value: "en" } });
+  });
+
   it("does not clear anything when safe tab coordination is unavailable", async () => {
     const seeded = await seedProject();
     vi.spyOn(window, "confirm").mockReturnValue(true);

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider } from "@/components/locale-provider";
 import { UploadSummaryView } from "@/components/upload-summary-view";
 import { buildUploadedAssignmentSummary } from "@/lib/files/parse-assignment-files";
 import { draftFromUpload } from "@/lib/uploaded-project";
@@ -161,6 +162,23 @@ describe("UploadSummaryView provenance and recovery", () => {
     expect(screen.queryByText("Found in the uploaded source")).not.toBeInTheDocument();
   });
 
+  it("does not translate a real uploaded file whose name resembles a pasted source", () => {
+    const result = {
+      ...completeUpload(),
+      intakeMethod: "files" as const,
+      fileNames: ["Pasted assignment brief.txt"],
+    };
+    render(
+      <LocaleProvider>
+        <UploadSummaryView result={result} onBack={vi.fn()} onCreateProject={vi.fn()} />
+      </LocaleProvider>,
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "zh-CN" } });
+    expect(screen.getByText("Pasted assignment brief.txt")).toBeInTheDocument();
+    expect(screen.queryByText("粘贴的作业说明")).not.toBeInTheDocument();
+  });
+
   it("marks edits as manual and restores source provenance after an exact revert", () => {
     const result = completeUpload();
     const initial = draftFromUpload(result);
@@ -183,7 +201,7 @@ describe("UploadSummaryView provenance and recovery", () => {
     });
 
     const title = screen.getByTestId("confirm-title");
-    const titleField = title.closest("label") as HTMLElement;
+    const titleField = title.closest(".confirm-field") as HTMLElement;
     fireEvent.change(title, { target: { value: "Edited title" } });
     expect(
       within(titleField).getByText(
@@ -220,6 +238,36 @@ describe("UploadSummaryView provenance and recovery", () => {
     expect(
       within(criterionRow as HTMLElement).getByText(/Source: source text/),
     ).toBeInTheDocument();
+  });
+
+  it("keeps evidence disclosures outside explicit field labels", () => {
+    const { container } = render(
+      <UploadSummaryView
+        result={completeUpload()}
+        onBack={vi.fn()}
+        onCreateProject={vi.fn()}
+      />,
+    );
+
+    const expectedNames = new Map([
+      ["confirm-title", "Assignment title"],
+      ["confirm-course", "Course or module Optional"],
+      ["confirm-deadline", "Deadline"],
+      ["confirm-word-count", "Word count"],
+      ["confirm-citation-style", "Citation style"],
+    ]);
+
+    expectedNames.forEach((name, id) => {
+      const control = container.querySelector<HTMLElement>(`#${id}`);
+      const label = container.querySelector<HTMLLabelElement>(`label[for="${id}"]`);
+      expect(control).not.toBeNull();
+      expect(label).not.toBeNull();
+      expect(control).toHaveAccessibleName(name);
+    });
+
+    container.querySelectorAll(".source-evidence-note").forEach((details) => {
+      expect(details.closest("label")).toBeNull();
+    });
   });
 
   it("links the error summary to specific invalid controls", () => {
@@ -290,5 +338,30 @@ describe("UploadSummaryView provenance and recovery", () => {
     expect(reviewButtons).toHaveLength(2);
     fireEvent.click(reviewButtons[0]);
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("keeps edited and source data intact while switching the confirmation view to Chinese", () => {
+    render(
+      <LocaleProvider>
+        <UploadSummaryView
+          result={completeUpload()}
+          onBack={vi.fn()}
+          onCreateProject={vi.fn()}
+        />
+      </LocaleProvider>,
+    );
+
+    const language = screen.getByRole("combobox");
+    fireEvent.change(language, { target: { value: "en" } });
+    fireEvent.change(screen.getByTestId("confirm-title"), {
+      target: { value: "PRIVATE-EDITED-TITLE" },
+    });
+    fireEvent.change(language, { target: { value: "zh-CN" } });
+
+    expect(screen.getByRole("heading", { name: "确认作业要求。" })).toBeInTheDocument();
+    expect(screen.getByTestId("confirm-title")).toHaveValue("PRIVATE-EDITED-TITLE");
+    expect(screen.getByTestId("criterion-name-0")).toHaveValue("Analysis");
+    expect(screen.getByText("brief.txt")).toBeInTheDocument();
+    expect(screen.getByText("已手动编辑 — 请与原文摘录核对")).toBeInTheDocument();
   });
 });

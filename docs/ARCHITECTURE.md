@@ -45,6 +45,7 @@ flowchart LR
 | Data portability | Versioned UTF-8 JSON export/import with conflict-aware restore | `src/lib/project-backup.ts` |
 | Optional Live boundary | Authenticated, bounded, disabled-by-default routes | `src/lib/ai/*`, `src/app/api/live/*` |
 | Static demo boundary | Separate browser-only export that reuses the product UI without compiling Node-only routes | `demo/`, `scripts/audit-static-demo.mjs` |
+| Interface locale | Client-side English/Simplified Chinese dictionaries with an independent versioned preference | `src/lib/i18n/`, `src/components/locale-provider.tsx` |
 
 ## Static demo boundary
 
@@ -66,6 +67,15 @@ Project persistence remains browser `localStorage`. Storage isolation follows
 the page origin, not the `/rubrictrail` path, so unrelated scripts hosted on the
 same origin would share that boundary. Project backups are validated portable
 JSON, not encrypted or signed archives.
+
+The interface locale is deliberately outside the project protocol. The
+`rubrictrail.preferences.v1` value stores only `en` or `zh-CN`, is not included
+in project backups, does not participate in project Web Locks or revisions and
+is not removed by a project reset. An inline bootstrap selects the saved locale
+or a supported browser preference before hydration; the React provider then
+updates product copy, `html[lang]`, dates, numbers and client metadata without
+keying or remounting the application. User-provided project and source data is
+never passed through the translation dictionaries.
 
 ## Trust boundary for user sources
 

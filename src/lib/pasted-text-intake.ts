@@ -16,6 +16,7 @@ export function validatePastedAssignmentText(
   const combinedCharacters = value.brief.length + value.rubric.length;
   if (combinedCharacters > PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS) {
     return {
+      code: "too-many-characters",
       target: "combined",
       message: `Keep the pasted brief and rubric at or below ${PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS.toLocaleString("en-US")} characters combined.`,
     };
@@ -23,12 +24,14 @@ export function validatePastedAssignmentText(
   const combinedLines = countLines(value.brief) + countLines(value.rubric);
   if (combinedLines > PASTED_ASSIGNMENT_TEXT_MAX_LINES) {
     return {
+      code: "too-many-lines",
       target: "combined",
       message: `Keep the pasted brief and rubric at or below ${PASTED_ASSIGNMENT_TEXT_MAX_LINES.toLocaleString("en-US")} lines combined. Remove repeated or unrelated content, then try again.`,
     };
   }
   if (!value.brief.replace(/^\uFEFF/, "").replace(/\u0000/g, "").trim()) {
     return {
+      code: "brief-required",
       target: "brief",
       message: "Paste the assignment brief or instructions before continuing.",
     };

@@ -23,6 +23,7 @@ export interface AssignmentFileIntakeError {
 }
 
 export interface PastedTextIntakeError {
+  code?: "brief-required" | "unreadable" | "too-many-characters" | "too-many-lines" | "too-large" | "unknown";
   target: "brief" | "combined" | "unknown";
   message: string;
 }

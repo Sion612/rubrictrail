@@ -17,9 +17,6 @@ if (
 const nextConfig: NextConfig = {
   output: "export",
   basePath: pagesBasePath,
-  experimental: {
-    optimizePackageImports: ["lucide-react"],
-  },
   turbopack: {
     root: repositoryRoot,
   },

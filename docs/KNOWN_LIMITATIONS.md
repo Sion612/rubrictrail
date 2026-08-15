@@ -72,8 +72,15 @@
 12. **Local-first is not complete offline support.** Files and project content are
     processed in the browser after the app loads, but there is no service worker
     guarantee that the application can be loaded or reopened without its host.
-13. **English-first.** Date parsing intentionally leaves ambiguous numeric dates
-    blank; language, grading and citation conventions are not universal yet.
+13. **Bilingual interface is not source translation.** The single application
+    URL supports English and Simplified Chinese product controls and stores that
+    preference separately from projects and backups. Uploaded or pasted source
+    content, project titles, course names, criteria, excerpts and draft notes
+    remain exactly as entered. Automatic field extraction is still optimized
+    for English materials, and date parsing intentionally leaves ambiguous
+    numeric dates blank. Chinese materials require manual confirmation. There is
+    no separate `/zh-CN` route or language-specific server-rendered page, and the
+    optional Live API's machine-readable errors remain English.
 14. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal
     demo, not semantic evaluation or a predicted grade.
 15. **No public Live service.** The optional server adapter lacks the full rate,

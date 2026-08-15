@@ -2,6 +2,8 @@
 
 import { useId } from "react";
 import { AlertTriangle, Download } from "lucide-react";
+import { useLocalizedMessages } from "@/components/locale-provider";
+import { workspaceEn, workspaceZhCN } from "@/lib/i18n/messages/workspace";
 
 export interface PersistenceUnavailableBannerProps {
   onDownloadBackup: () => void;
@@ -10,6 +12,7 @@ export interface PersistenceUnavailableBannerProps {
 export function PersistenceUnavailableBanner({
   onDownloadBackup,
 }: PersistenceUnavailableBannerProps) {
+  const messages = useLocalizedMessages(workspaceEn, workspaceZhCN);
   const titleId = useId();
   const descriptionId = useId();
   const warningId = useId();
@@ -17,7 +20,7 @@ export function PersistenceUnavailableBanner({
   return (
     <>
       <span className="visually-hidden" role="status" aria-atomic="true">
-        Browser saving is unavailable. Download a project backup before closing this tab.
+        {messages.persistenceStatus}
       </span>
       <section
         className="storage-conflict-banner persistence-unavailable-banner"
@@ -27,12 +30,12 @@ export function PersistenceUnavailableBanner({
       >
         <AlertTriangle aria-hidden="true" />
         <div className="storage-conflict-banner__copy">
-          <h2 id={titleId}>Browser saving is unavailable</h2>
+          <h2 id={titleId}>{messages.persistenceTitle}</h2>
           <p id={descriptionId}>
-            RubricTrail cannot safely write this project in this browser. New changes remain only in this tab.
+            {messages.persistenceDescription}
           </p>
           <p className="storage-conflict-banner__warning" id={warningId}>
-            Download a backup before refreshing or closing this tab. Keep the JSON file private because it can contain notes and short excerpts.
+            {messages.persistenceWarning}
           </p>
         </div>
         <div className="storage-conflict-banner__actions">
@@ -42,7 +45,7 @@ export function PersistenceUnavailableBanner({
             onClick={onDownloadBackup}
           >
             <Download aria-hidden="true" />
-            Download project backup
+            {messages.downloadProjectBackup}
           </button>
         </div>
       </section>

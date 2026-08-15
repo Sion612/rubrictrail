@@ -1,9 +1,10 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   friendlyFileError,
   RubricTrailApp,
 } from "@/components/rubrictrail-app";
+import { LocaleProvider } from "@/components/locale-provider";
 import { assignmentFileIssueReason } from "@/lib/file-intake-messages";
 import {
   AssignmentFileBatchParseError,
@@ -41,6 +42,13 @@ async function advance(milliseconds: number) {
 async function flushMicrotasks() {
   await act(async () => {
     await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+async function loadDeferredModule(loader: () => Promise<unknown>) {
+  await act(async () => {
+    await loader();
     await Promise.resolve();
   });
 }
@@ -104,6 +112,7 @@ async function openSavedSampleCheck() {
   fireEvent.click(screen.getByTestId("try-sample"));
   await advance(700);
   fireEvent.click(screen.getAllByRole("button", { name: /Check/i })[0]);
+  await loadDeferredModule(() => import("@/components/views/draft-check-view"));
   await advance(250);
 
   const storedValue = window.localStorage.getItem(PROJECT_RECORD_KEY);
@@ -219,6 +228,88 @@ afterEach(() => {
 });
 
 describe("RubricTrailApp reliability", () => {
+  it("keeps a deferred evidence load inside a non-interactive fixed drawer shell", async () => {
+    render(
+      <LocaleProvider>
+        <RubricTrailApp />
+      </LocaleProvider>,
+    );
+    await advance(0);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "en" } });
+    fireEvent.click(screen.getByTestId("try-sample"));
+    await advance(700);
+    await loadDeferredModule(() => import("@/components/views/overview-view"));
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Open source 1 for/i })[0]);
+
+    const shell = screen.getByTestId("deferred-evidence-shell");
+    expect(shell).toHaveClass("evidence-panel-shell");
+    expect(shell.parentElement).toHaveClass("app-shell");
+    expect(shell.querySelector(".evidence-panel-shell__backdrop")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(
+      within(shell).getByRole("status", { name: "Loading RubricTrail" }),
+    ).toBeInTheDocument();
+    expect(within(shell).queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("relocalizes an active notice without rerunning the completed action", async () => {
+    render(
+      <LocaleProvider>
+        <RubricTrailApp />
+      </LocaleProvider>,
+    );
+    await advance(0);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "en" } });
+    fireEvent.click(screen.getByTestId("try-sample"));
+    await advance(450);
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "Sample mapped with traceable evidence links",
+    );
+
+    fireEvent.change(screen.getByLabelText("Interface language"), {
+      target: { value: "zh-CN" },
+    });
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "示例已映射到可追溯的原文依据",
+    );
+  });
+
+  it("keeps an unsaved draft edit when the interface language changes", async () => {
+    window.localStorage.setItem(
+      "rubrictrail.preferences.v1",
+      JSON.stringify({ version: 1, locale: "en" }),
+    );
+    render(
+      <LocaleProvider>
+        <RubricTrailApp />
+      </LocaleProvider>,
+    );
+    await advance(0);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "en" } });
+    fireEvent.click(screen.getByTestId("try-sample"));
+    await advance(700);
+    fireEvent.click(screen.getAllByRole("button", { name: /Check/i })[0]);
+    await loadDeferredModule(() => import("@/components/views/draft-check-view"));
+
+    const pendingDraft = "This edit must survive an immediate language switch.";
+    fireEvent.change(screen.getByTestId("draft-text"), {
+      target: { value: pendingDraft },
+    });
+    fireEvent.change(screen.getByLabelText("Interface language"), {
+      target: { value: "zh-CN" },
+    });
+    await advance(0);
+
+    expect(screen.getByTestId("draft-text")).toHaveValue(pendingDraft);
+    expect(screen.getByLabelText("界面语言")).toHaveValue("zh-CN");
+    await advance(250);
+    await flushMicrotasks();
+    expect(currentStoredProjectState().draftText).toBe(pendingDraft);
+  });
+
   it("keeps a no-lock project visibly tab-only and never claims autosave", async () => {
     restoreLockManager?.();
     restoreLockManager = null;
@@ -244,6 +335,7 @@ describe("RubricTrailApp reliability", () => {
       screen.getByRole("button", { name: "Review assignment details" }),
     );
     await advance(0);
+    await loadDeferredModule(() => import("@/components/upload-summary-view"));
     fireEvent.click(screen.getByTestId("create-project"));
 
     expect(
@@ -528,6 +620,7 @@ describe("RubricTrailApp reliability", () => {
       uploadedBackupState(),
     );
     fireEvent.click(screen.getAllByRole("button", { name: /Check/i })[0]);
+    await loadDeferredModule(() => import("@/components/views/uploaded-project-views"));
 
     const holder = holdLock(testLocks.manager, PROJECT_LOCK_NAME);
     await act(async () => {
@@ -736,7 +829,11 @@ describe("RubricTrailApp reliability", () => {
     ).toBeInTheDocument();
     expect(
       screen.getAllByText(/Browser storage could not be read, so nothing was replaced/),
-    ).not.toHaveLength(0);
+    ).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss storage warning" }));
+    expect(
+      screen.queryAllByText(/Browser storage could not be read, so nothing was replaced/),
+    ).toHaveLength(0);
   });
 
   it("keeps this tab after confirmation and replaces the external bytes", async () => {
@@ -989,14 +1086,23 @@ describe("RubricTrailApp reliability", () => {
   });
 
   it("rebalances by planning depth without presenting a grade target", async () => {
-    render(<RubricTrailApp />);
+    render(
+      <LocaleProvider>
+        <RubricTrailApp />
+      </LocaleProvider>,
+    );
     await advance(0);
+    fireEvent.change(
+      screen.getByRole("combobox", { name: /Interface language|界面语言/ }),
+      { target: { value: "en" } },
+    );
     fireEvent.click(screen.getByTestId("try-sample"));
     await advance(450);
     expect(
       screen.getByRole("button", { name: "RubricTrail: open project brief" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: /Plan/i })[0]);
+    await loadDeferredModule(() => import("@/components/views/action-plan-view"));
 
     const planningDepth = screen.getByTestId("planning-depth");
     expect(planningDepth).toHaveValue("standard");
@@ -1027,7 +1133,16 @@ describe("RubricTrailApp reliability", () => {
       "Plan updated for 10 hours per week with Thorough planning depth.",
     );
     expect(screen.getByTestId("toast")).not.toHaveTextContent("%");
+    expect(screen.getByTestId("toast").parentElement).toHaveClass("toast-stack");
     expect(rebalance).toHaveFocus();
+
+    fireEvent.change(screen.getByLabelText("Interface language"), {
+      target: { value: "zh-CN" },
+    });
+    expect(screen.getByTestId("toast")).toHaveTextContent(
+      "行动计划已按每周 10 小时和“深入”计划深度更新。",
+    );
+    expect(screen.getByTestId("toast")).not.toHaveTextContent("Thorough");
   });
 
   it("gives sample users a direct, explicit path to their own files", async () => {
@@ -1253,6 +1368,7 @@ describe("RubricTrailApp reliability", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Review assignment details" }));
     await advance(0);
+    await loadDeferredModule(() => import("@/components/upload-summary-view"));
 
     const noPublishedWeights = screen.getByRole("radio", {
       name: /No — no complete percentage breakdown is published/,
@@ -1263,6 +1379,7 @@ describe("RubricTrailApp reliability", () => {
     expect(screen.getByTestId("criterion-weight-1")).toHaveValue(null);
     fireEvent.click(screen.getByTestId("create-project"));
     await advance(250);
+    await loadDeferredModule(() => import("@/components/views/uploaded-project-views"));
 
     const stored = currentStoredProjectState();
     expect(stored.version).toBe(3);
@@ -1277,17 +1394,21 @@ describe("RubricTrailApp reliability", () => {
     fireEvent.click(
       screen.getAllByRole("button", { name: /RubricConfirmed/i })[0],
     );
+    await loadDeferredModule(() => import("@/components/views/uploaded-project-views"));
     expect(screen.getAllByText("Not recorded")).toHaveLength(2);
     expect(screen.getByText(/No grading percentages were recorded/)).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /Plan/i })[0]);
+    await loadDeferredModule(() => import("@/components/views/action-plan-view"));
     expect(screen.getByText(/Give every criterion the same planning baseline/)).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /Check/i })[0]);
+    await loadDeferredModule(() => import("@/components/views/uploaded-project-views"));
     expect(screen.getByRole("option", { name: "Analysis" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Communication" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Open progress" }));
+    await loadDeferredModule(() => import("@/components/views/uploaded-project-views"));
     expect(screen.getAllByText("No published weight recorded")).toHaveLength(2);
     expect(screen.queryByText(/\d+% of rubric/)).not.toBeInTheDocument();
   });
@@ -1332,6 +1453,7 @@ describe("RubricTrailApp reliability", () => {
     fireEvent.click(
       screen.getAllByRole("button", { name: /RubricConfirmed/i })[0],
     );
+    await loadDeferredModule(() => import("@/components/views/uploaded-project-views"));
     expect(screen.getByText("Not recorded")).toBeInTheDocument();
     expect(screen.getByText("40%")).toBeInTheDocument();
     expect(
@@ -1339,6 +1461,7 @@ describe("RubricTrailApp reliability", () => {
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /Plan/i })[0]);
+    await loadDeferredModule(() => import("@/components/views/action-plan-view"));
     expect(
       screen.getByText(/Give every criterion the same planning baseline/),
     ).toBeInTheDocument();

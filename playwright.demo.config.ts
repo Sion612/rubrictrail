@@ -5,7 +5,7 @@ const appPath = process.env.PLAYWRIGHT_APP_PATH || "/rubrictrail/";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: ["core-flow.spec.ts", "static-export.spec.ts"],
+  testMatch: ["core-flow.spec.ts", "i18n.spec.ts", "static-export.spec.ts"],
   fullyParallel: false,
   forbidOnly: isCi,
   retries: 0,
@@ -38,7 +38,7 @@ export default defineConfig({
       STATIC_DEMO_ROOT: "demo/out",
     },
     url: `http://127.0.0.1:3101${appPath.endsWith("/") ? appPath : `${appPath}/`}`,
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === "true",
     timeout: 30_000,
   },
 });

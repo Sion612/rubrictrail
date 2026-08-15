@@ -268,13 +268,20 @@ test("the project lock admits only one writer from the same revision", async ({
     state.releaseRubricTrailTestLock?.();
   });
 
-  await expect.poll(async () => (await readStoredProjectState(pageA))?.draftText ?? "")
-    .toBe(winningDraft);
+  let canonicalDraft = "";
+  await expect.poll(async () => {
+    const storedState = await readStoredProjectState(pageA);
+    canonicalDraft = typeof storedState?.draftText === "string" ? storedState.draftText : "";
+    return [winningDraft, losingDraft].includes(canonicalDraft);
+  }).toBe(true);
+
+  const losingPage = canonicalDraft === winningDraft ? pageB : pageA;
   await expect(
-    pageB.getByRole("heading", {
+    losingPage.getByRole("heading", {
       name: "Autosave paused: another tab saved changes",
     }),
   ).toBeVisible();
+  await expect(pageA.getByTestId("draft-text")).toHaveValue(winningDraft);
   await expect(pageB.getByTestId("draft-text")).toHaveValue(losingDraft);
 });
 

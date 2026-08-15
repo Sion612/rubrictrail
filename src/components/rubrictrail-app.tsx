@@ -1,25 +1,13 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Info, Route, X } from "lucide-react";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { WorkspaceShell, type WorkspaceProjectMeta } from "@/components/workspace-shell";
-import { UploadSummaryView } from "@/components/upload-summary-view";
-import { EvidencePanel } from "@/components/evidence-panel";
-import { UploadedEvidencePanel } from "@/components/uploaded-evidence-panel";
 import { StorageConflictBanner } from "@/components/storage-conflict-banner";
 import { PersistenceUnavailableBanner } from "@/components/persistence-unavailable-banner";
-import { OverviewView } from "@/components/views/overview-view";
-import { RubricView } from "@/components/views/rubric-view";
-import { ActionPlanView } from "@/components/views/action-plan-view";
-import { DraftCheckView } from "@/components/views/draft-check-view";
-import { ProgressView } from "@/components/views/progress-view";
-import {
-  UploadedBriefView,
-  UploadedDraftReviewView,
-  UploadedProgressView,
-  UploadedRubricView,
-} from "@/components/views/uploaded-project-views";
+import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
 import { BRAND } from "@/lib/brand";
 import type { PlanningDepth } from "@/lib/domain";
 import { SAMPLE_ASSIGNMENT, SAMPLE_DRAFT_TEXT } from "@/lib/sample-data";
@@ -27,10 +15,17 @@ import {
   generateActionPlan,
   legacyTargetGradeForPlanningDepth,
   planningDepthFromLegacyTargetGrade,
-  PLANNING_DEPTH_OPTIONS,
 } from "@/lib/plan";
 import { runMockDraftCheck } from "@/lib/mock-service";
 import { UPLOADED_READINESS } from "@/lib/readiness";
+import {
+  appEn,
+  appZhCN,
+  formatAppMessage,
+  localizeStoredAppMessage,
+  type AppMessageKey,
+} from "@/lib/i18n/messages/app";
+import type { Locale } from "@/lib/i18n/types";
 import {
   ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS,
   ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES,
@@ -84,95 +79,204 @@ import type {
   WorkspaceView,
 } from "@/lib/ui-types";
 
+function DeferredPhaseFallback() {
+  const { t } = useI18n();
+
+  return (
+    <div
+      className="checking-state"
+      role="status"
+      aria-live="polite"
+      aria-label={t("app.loading")}
+    >
+      <Route aria-hidden="true" />
+      <h2>{t("app.loading")}</h2>
+      <div className="loading-line" aria-hidden="true"><span /></div>
+    </div>
+  );
+}
+
+function DeferredEvidenceFallback() {
+  const { t } = useI18n();
+
+  return (
+    <div className="evidence-panel-shell" data-testid="deferred-evidence-shell">
+      <div className="evidence-panel-shell__backdrop" aria-hidden="true" />
+      <div className="evidence-panel" aria-busy="true">
+        <div
+          className="checking-state"
+          role="status"
+          aria-live="polite"
+          aria-label={t("app.loading")}
+        >
+          <Route aria-hidden="true" />
+          <h2>{t("app.loading")}</h2>
+          <div className="loading-line" aria-hidden="true"><span /></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const UploadSummaryView = dynamic(
+  () => import("@/components/upload-summary-view").then((module) => module.UploadSummaryView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+const EvidencePanel = dynamic(
+  () => import("@/components/evidence-panel").then((module) => module.EvidencePanel),
+  { loading: DeferredEvidenceFallback, ssr: false },
+);
+const UploadedEvidencePanel = dynamic(
+  () => import("@/components/uploaded-evidence-panel").then((module) => module.UploadedEvidencePanel),
+  { loading: DeferredEvidenceFallback, ssr: false },
+);
+const OverviewView = dynamic(
+  () => import("@/components/views/overview-view").then((module) => module.OverviewView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+const RubricView = dynamic(
+  () => import("@/components/views/rubric-view").then((module) => module.RubricView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+const ActionPlanView = dynamic(
+  () => import("@/components/views/action-plan-view").then((module) => module.ActionPlanView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+const DraftCheckView = dynamic(
+  () => import("@/components/views/draft-check-view").then((module) => module.DraftCheckView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+const ProgressView = dynamic(
+  () => import("@/components/views/progress-view").then((module) => module.ProgressView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+const UploadedBriefView = dynamic(
+  () => import("@/components/views/uploaded-project-views").then((module) => module.UploadedBriefView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+const UploadedRubricView = dynamic(
+  () => import("@/components/views/uploaded-project-views").then((module) => module.UploadedRubricView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+const UploadedDraftReviewView = dynamic(
+  () => import("@/components/views/uploaded-project-views").then((module) => module.UploadedDraftReviewView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+const UploadedProgressView = dynamic(
+  () => import("@/components/views/uploaded-project-views").then((module) => module.UploadedProgressView),
+  { loading: DeferredPhaseFallback, ssr: false },
+);
+
 function wait(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-const FILE_ERROR_RECOVERY: Record<
+type AppNoticeState = NoticeState | {
+  kind: "plan-updated";
+  tone: NoticeState["tone"];
+  weeklyHours: number;
+  planningDepth: PlanningDepth;
+};
+
+function fileErrorRecovery(locale: Locale): Record<
   AssignmentFileParseError["code"],
   Pick<AssignmentFileIntakeError, "title" | "message" | "preferredRecovery">
-> = {
+> {
+  const messages = locale === "zh-CN" ? appZhCN : appEn;
+  const numberLocale = locale === "zh-CN" ? "zh-CN" : "en-US";
+  return {
   UNSUPPORTED_FILE_TYPE: {
-    title: "This file type is not supported yet.",
-    message: "Choose a PDF, DOCX or TXT file, or paste the assignment text.",
+    title: messages["file.unsupported.title"],
+    message: messages["file.unsupported.message"],
     preferredRecovery: "files",
   },
   INVALID_FILE_NAME: {
-    title: "A file needs a shorter, usable name.",
-    message: "Rename the file to 255 characters or fewer, then choose it again.",
+    title: messages["file.name.title"],
+    message: messages["file.name.message"],
     preferredRecovery: "files",
   },
   FILE_TOO_LARGE: {
-    title: "There is too much to process at once.",
-    message: "Choose a file at or below 10 MiB, or paste only the assignment instructions.",
+    title: messages["file.large.title"],
+    message: messages["file.large.message"],
     preferredRecovery: "files",
   },
   TOO_MANY_FILES: {
-    title: "There is too much to process at once.",
-    message: "Choose no more than 10 files, keeping only the brief and rubric.",
+    title: messages["file.many.title"],
+    message: messages["file.many.message"],
     preferredRecovery: "files",
   },
   TOTAL_FILE_SIZE_TOO_LARGE: {
-    title: "There is too much to process at once.",
-    message: "Keep the combined upload at or below 25 MiB, or paste only the relevant text.",
+    title: messages["file.totalSize.title"],
+    message: messages["file.totalSize.message"],
     preferredRecovery: "files",
   },
   EXTRACTED_TEXT_TOO_LARGE: {
-    title: "The selected files contain too much text to process at once.",
-    message: `Choose fewer or shorter files with ${ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS.toLocaleString("en-US")} characters or fewer combined, or paste only the brief and rubric.`,
+    title: messages["file.characters.title"],
+    message: formatAppMessage(messages["file.characters.message"], {
+      count: ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS.toLocaleString(numberLocale),
+    }),
     preferredRecovery: "paste",
   },
   EXTRACTED_TEXT_TOO_MANY_LINES: {
-    title: "The selected files contain too many lines to process at once.",
-    message: `Choose fewer or shorter files with ${ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES.toLocaleString("en-US")} lines or fewer combined, or paste only the brief and rubric.`,
+    title: messages["file.lines.title"],
+    message: formatAppMessage(messages["file.lines.message"], {
+      count: ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES.toLocaleString(numberLocale),
+    }),
     preferredRecovery: "paste",
   },
   EXTRACTED_TEXT_TOO_MANY_WORDS: {
-    title: "The selected files contain too many words to process at once.",
-    message: `Choose fewer or shorter files with ${ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS.toLocaleString("en-US")} words or fewer combined, or paste only the brief and rubric.`,
+    title: messages["file.words.title"],
+    message: formatAppMessage(messages["file.words.message"], {
+      count: ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS.toLocaleString(numberLocale),
+    }),
     preferredRecovery: "paste",
   },
   PDF_TOO_MANY_PAGES: {
-    title: "This PDF has too many pages to process at once.",
-    message: `Choose a PDF with ${ASSIGNMENT_PDF_MAX_PAGES.toLocaleString("en-US")} pages or fewer, split out only the relevant pages, or paste only the brief and rubric.`,
+    title: messages["file.pdfPages.title"],
+    message: formatAppMessage(messages["file.pdfPages.message"], {
+      count: ASSIGNMENT_PDF_MAX_PAGES.toLocaleString(numberLocale),
+    }),
     preferredRecovery: "paste",
   },
   TOTAL_PDF_PAGES_TOO_LARGE: {
-    title: "The selected PDFs have too many pages to process at once.",
-    message: `Choose fewer or shorter PDFs with ${ASSIGNMENT_PDFS_MAX_TOTAL_PAGES.toLocaleString("en-US")} pages or fewer combined, or paste only the brief and rubric.`,
+    title: messages["file.totalPdfPages.title"],
+    message: formatAppMessage(messages["file.totalPdfPages.message"], {
+      count: ASSIGNMENT_PDFS_MAX_TOTAL_PAGES.toLocaleString(numberLocale),
+    }),
     preferredRecovery: "paste",
   },
   EMPTY_FILE: {
-    title: "This file has no readable text.",
-    message: "Open it, copy the assignment instructions, then paste them here.",
+    title: messages["file.empty.title"],
+    message: messages["file.empty.message"],
     preferredRecovery: "paste",
   },
   INVALID_TEXT_ENCODING: {
-    title: "This TXT file is not valid UTF-8.",
-    message: "Save it as UTF-8 text, choose a fresh copy, or paste the assignment text.",
+    title: messages["file.encoding.title"],
+    message: messages["file.encoding.message"],
     preferredRecovery: "files",
   },
   SCANNED_NO_TEXT: {
-    title: "This file has no selectable text.",
-    message: "Open the scan, copy or transcribe the assignment instructions, then paste them here.",
+    title: messages["file.scanned.title"],
+    message: messages["file.scanned.message"],
     preferredRecovery: "paste",
   },
   ENCRYPTED_PDF: {
-    title: "This PDF needs a password.",
-    message: "Open it with the password and save an unlocked copy, or paste the text.",
+    title: messages["file.encrypted.title"],
+    message: messages["file.encrypted.message"],
     preferredRecovery: "paste",
   },
   PARSER_UNAVAILABLE: {
-    title: "The local document reader is unavailable.",
-    message: "Try again, choose a TXT file, or paste the assignment text.",
+    title: messages["file.parser.title"],
+    message: messages["file.parser.message"],
     preferredRecovery: "paste",
   },
   CORRUPT_DOCUMENT: {
-    title: "We could not open this file.",
-    message: "Download or save a fresh copy, choose another file, or paste the text.",
+    title: messages["file.corrupt.title"],
+    message: messages["file.corrupt.message"],
     preferredRecovery: "files",
   },
-};
+  };
+}
 
 const BATCH_WIDE_FILE_ERROR_CODES = new Set<AssignmentFileParseError["code"]>([
   "TOO_MANY_FILES",
@@ -183,25 +287,30 @@ const BATCH_WIDE_FILE_ERROR_CODES = new Set<AssignmentFileParseError["code"]>([
   "TOTAL_PDF_PAGES_TOO_LARGE",
 ]);
 
-export function friendlyFileError(error: unknown): AssignmentFileIntakeError {
+export function friendlyFileError(
+  error: unknown,
+  locale: Locale = "en",
+): AssignmentFileIntakeError {
+  const recovery = fileErrorRecovery(locale);
+  const messages = locale === "zh-CN" ? appZhCN : appEn;
   if (error instanceof AssignmentFileBatchParseError) {
     if (error.failures.length === 1) {
       const failure = error.failures[0];
       return {
         code: failure.code,
         fileName: failure.fileName,
-        ...FILE_ERROR_RECOVERY[failure.code],
+        ...recovery[failure.code],
         fileIssues: [],
       };
     }
     const preferPaste = error.failures.every(
-      (failure) => FILE_ERROR_RECOVERY[failure.code].preferredRecovery === "paste",
+      (failure) => recovery[failure.code].preferredRecovery === "paste",
     );
     return {
       code: "NO_READABLE_FILES",
       fileName: null,
-      title: "None of these files could be read.",
-      message: "Review each file below, then choose replacements or paste the assignment text.",
+      title: messages["file.none.title"],
+      message: messages["file.none.message"],
       preferredRecovery: preferPaste ? "paste" : "files",
       fileIssues: [...error.failures],
     };
@@ -212,62 +321,101 @@ export function friendlyFileError(error: unknown): AssignmentFileIntakeError {
       fileName: BATCH_WIDE_FILE_ERROR_CODES.has(error.code)
         ? null
         : error.fileName,
-      ...FILE_ERROR_RECOVERY[error.code],
+      ...recovery[error.code],
       fileIssues: [],
     };
   }
   return {
     code: "UNKNOWN",
     fileName: null,
-    title: "We could not prepare these files.",
-    message: "Try a text-based PDF, DOCX or TXT file, or paste the assignment text.",
+    title: messages["file.unknown.title"],
+    message: messages["file.unknown.message"],
     preferredRecovery: "files",
     fileIssues: [],
   };
 }
 
-function friendlyBackupError(error: unknown): string {
-  return error instanceof ProjectBackupError
-    ? error.message
-    : "The backup could not be read safely. Your current project was not changed.";
+function friendlyBackupError(error: unknown, locale: Locale = "en"): string {
+  const messages = locale === "zh-CN" ? appZhCN : appEn;
+  if (error instanceof ProjectBackupError) {
+    return messages[`backup.error.${error.code}` as keyof typeof messages];
+  }
+  return messages["backup.readFailed"];
 }
 
-function friendlyPastedParseError(error: unknown): PastedTextIntakeError {
+function localizeFileIntakeError(
+  error: AssignmentFileIntakeError | null,
+  locale: Locale,
+): AssignmentFileIntakeError | null {
+  if (!error) return null;
+  const messages = locale === "zh-CN" ? appZhCN : appEn;
+  if (error.code === "NO_READABLE_FILES") {
+    return {
+      ...error,
+      title: messages["file.none.title"],
+      message: messages["file.none.message"],
+    };
+  }
+  if (error.code === "UNKNOWN") {
+    return {
+      ...error,
+      title: messages["file.unknown.title"],
+      message: messages["file.unknown.message"],
+    };
+  }
+  return { ...error, ...fileErrorRecovery(locale)[error.code] };
+}
+
+function friendlyPastedParseError(
+  error: unknown,
+  locale: Locale = "en",
+): PastedTextIntakeError {
+  const messages = locale === "zh-CN" ? appZhCN : appEn;
   if (error instanceof AssignmentFileParseError) {
     if (error.code === "EMPTY_FILE" || error.code === "SCANNED_NO_TEXT") {
       return {
+        code: "unreadable",
         target: "brief",
-        message: "The pasted brief does not contain readable text. Paste the assignment instructions, then try again.",
+        message: messages["paste.empty"],
       };
     }
     if (error.code === "EXTRACTED_TEXT_TOO_LARGE") {
       return {
+        code: "too-large",
         target: "combined",
-        message: "The pasted source is too large to prepare safely. Remove unrelated text, then try again.",
+        message: messages["paste.large"],
       };
     }
   }
   return {
+    code: "unknown",
     target: "unknown",
-    message: "The pasted source could not be prepared locally. Your current project was not changed.",
+    message: messages["paste.failed"],
   };
 }
 
-function backupDateLabel(value: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function backupDateLabel(value: string, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale === "zh-CN" ? "zh-CN" : "en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
 }
 
-function backupProjectDetails(state: PersistedProjectState): string {
+function backupProjectDetails(
+  state: PersistedProjectState,
+  locale: Locale,
+): string {
+  const messages = locale === "zh-CN" ? appZhCN : appEn;
   const course = state.uploadedProject?.course ?? SAMPLE_ASSIGNMENT.course;
   const dueDate =
     state.uploadedProject?.dueDate ?? SAMPLE_ASSIGNMENT.dueAt.slice(0, 10);
-  const dueLabel = new Intl.DateTimeFormat("en-GB", {
+  const dueLabel = new Intl.DateTimeFormat(locale === "zh-CN" ? "zh-CN" : "en-GB", {
     dateStyle: "medium",
   }).format(new Date(`${dueDate}T12:00:00`));
-  return `Course: ${course}\nDue: ${dueLabel}`;
+  return [
+    formatAppMessage(messages["backup.detail.course"], { course }),
+    formatAppMessage(messages["backup.detail.due"], { due: dueLabel }),
+  ].join("\n");
 }
 
 function planStartFor(dueDate: string, today: string): string {
@@ -280,9 +428,6 @@ interface PersistenceWarningState {
 }
 
 type PersistenceFlushOutcome = "saved" | "blocked" | "failed";
-
-const REPLACEMENT_INTENT_CHANGED_MESSAGE =
-  "Your project changed in this tab after you confirmed the replacement. RubricTrail cancelled it so the newer changes were kept. Review them, then try again.";
 
 function sampleStepStates(
   project: PersistedProjectState,
@@ -349,6 +494,14 @@ function uploadedStepStates(project: PersistedProjectState, completion: number) 
 }
 
 export function RubricTrailApp() {
+  const { locale } = useI18n();
+  const appCopy = useLocalizedMessages(appEn, appZhCN);
+  const appText = useCallback(
+    (key: AppMessageKey, values?: Record<string, string | number>) =>
+      formatAppMessage(appCopy[key], values),
+    [appCopy],
+  );
+  const appTextRef = useRef(appText);
   const [hydrated, setHydrated] = useState(false);
   const [project, setProjectState] = useState<PersistedProjectState>(() => createDefaultProjectState());
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
@@ -368,7 +521,7 @@ export function RubricTrailApp() {
   const [isLoadingSample, setIsLoadingSample] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [checkingStage, setCheckingStage] = useState(0);
-  const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [notice, setNotice] = useState<AppNoticeState | null>(null);
   const [persistenceWarning, setPersistenceWarning] =
     useState<PersistenceWarningState | null>(null);
   const [storageConflict, setStorageConflict] = useState(false);
@@ -393,6 +546,12 @@ export function RubricTrailApp() {
   const observedStorageBaseline = useRef<ProjectStorageBaseline | null>(null);
   const storageConflictActive = useRef(false);
   const replacementIntentRevision = useRef(0);
+  const localeRef = useRef(locale);
+
+  useEffect(() => {
+    appTextRef.current = appText;
+    localeRef.current = locale;
+  }, [appText, locale]);
 
   const markDurableSavingUnavailable = useCallback(() => {
     persistenceDisabled.current = true;
@@ -478,23 +637,22 @@ export function RubricTrailApp() {
           return "blocked";
         }
         const invalidState = result.reason === "invalid-state";
-        const message = invalidState
-          ? "This project failed local validation, so recent changes are only in this tab. Reset the local project if the warning continues."
-          : "Browser storage is unavailable or full. Recent changes are only in this tab and may be lost when it closes.";
+        const warningMessage = invalidState
+          ? appText("persistence.invalid")
+          : appText("persistence.storage");
         if (result.reason === "unavailable") {
           markDurableSavingUnavailable();
         } else if (result.reason === "storage-error") {
           setDurableSavingUnavailable(true);
         }
-        setPersistenceWarning({ kind: "write", message });
+        setPersistenceWarning({ kind: "write", message: warningMessage });
         return "failed";
       })
       .catch((): PersistenceFlushOutcome => {
         setDurableSavingUnavailable(true);
         setPersistenceWarning({
           kind: "write",
-          message:
-            "RubricTrail could not finish the local save. Recent changes are only in this tab; download a backup before closing.",
+          message: appText("persistence.saveFailed"),
         });
         return "failed";
       })
@@ -526,6 +684,7 @@ export function RubricTrailApp() {
     markDurableSavingAvailable,
     markDurableSavingUnavailable,
     markStorageConflict,
+    appText,
     schedulePendingPersistence,
   ]);
 
@@ -574,14 +733,14 @@ export function RubricTrailApp() {
       if (result.recovered && result.mutationAvailable) {
         setPersistenceWarning({
           kind: "recovered",
-          message:
-            result.source === "legacy"
-              ? "An older local project was recovered and is ready to upgrade. Review its details before continuing."
-              : result.source === "v2"
-                ? "An earlier RubricTrail project was recovered and is ready to upgrade. Review its details before continuing."
-                : result.source === "v3"
-                  ? "Obsolete entries were removed from this saved project. Review its details before continuing."
-                  : "Saved browser data was incomplete or incompatible, so RubricTrail recovered with safe defaults. Review the project before continuing.",
+            message:
+              result.source === "legacy"
+                ? appTextRef.current("recovery.legacy")
+                : result.source === "v2"
+                  ? appTextRef.current("recovery.v2")
+                  : result.source === "v3"
+                    ? appTextRef.current("recovery.v3")
+                    : appTextRef.current("recovery.default"),
         });
       }
       setHydrated(true);
@@ -696,7 +855,7 @@ export function RubricTrailApp() {
     return () => window.cancelAnimationFrame(frame);
   }, [hydrated, project.projectKind, uploadResult]);
 
-  const showNotice = useCallback((nextNotice: NoticeState) => {
+  const showNotice = useCallback((nextNotice: AppNoticeState) => {
     setNotice(nextNotice);
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setNotice(null), 3600);
@@ -704,16 +863,17 @@ export function RubricTrailApp() {
 
   const reportReplacementIntentChanged = useCallback(
     (surface: "project" | "backup" = "project") => {
+      const intentMessage = appText("replace.changed");
       if (surface === "backup") {
-        setBackupError(REPLACEMENT_INTENT_CHANGED_MESSAGE);
+        setBackupError(intentMessage);
       }
       showNotice({
         tone: "warning",
-        message: REPLACEMENT_INTENT_CHANGED_MESSAGE,
+        message: intentMessage,
       });
       schedulePendingPersistence();
     },
-    [schedulePendingPersistence, showNotice],
+    [appText, schedulePendingPersistence, showNotice],
   );
 
   useEffect(
@@ -798,7 +958,7 @@ export function RubricTrailApp() {
       draftText: SAMPLE_DRAFT_TEXT,
     });
     setIsLoadingSample(false);
-    showNotice({ tone: "success", message: "Sample mapped with traceable evidence links. No API request was sent." });
+    showNotice({ tone: "success", message: appText("notice.sampleLoaded") });
   }
 
   async function handleFiles(
@@ -841,9 +1001,9 @@ export function RubricTrailApp() {
       if (operationId !== intakeRunId.current) return;
       setUploadStatus("error");
       if (intakeMethod === "paste") {
-        setPastedTextError(friendlyPastedParseError(error));
+        setPastedTextError(friendlyPastedParseError(error, locale));
       } else {
-        setUploadError(friendlyFileError(error));
+        setUploadError(friendlyFileError(error, locale));
       }
     }
   }
@@ -880,8 +1040,8 @@ export function RubricTrailApp() {
     showNotice({
       tone: "success",
       message: persistenceDisabled.current
-        ? "Local project created in this tab. Full source text was not retained. Browser saving is unavailable, so download a backup before closing this tab."
-        : "Local project created in this session. Full source text was not retained; confirmed fields and short excerpts are set to autosave.",
+        ? appText("notice.projectCreatedTab")
+        : appText("notice.projectCreated"),
     });
   }
 
@@ -911,10 +1071,10 @@ export function RubricTrailApp() {
       markStorageConflict();
       return false;
     }
-    const message =
+    const purgeMessage =
       purgeResult.reason === "coordination-unavailable"
-        ? "Safe multi-tab storage coordination is unavailable, so RubricTrail did not delete the saved project and this tab was left unchanged."
-        : "RubricTrail could not confirm complete deletion of the saved project. Some browser data may remain; reload before trying again.";
+        ? appText("purge.coordination")
+        : appText("purge.failed");
     if (
       purgeResult.reason === "coordination-unavailable" ||
       purgeResult.reason === "unavailable"
@@ -923,15 +1083,15 @@ export function RubricTrailApp() {
     } else {
       setDurableSavingUnavailable(true);
     }
-    setPersistenceWarning({ kind: "write", message });
-    showNotice({ tone: "warning", message });
+    setPersistenceWarning({ kind: "write", message: purgeMessage });
+    showNotice({ tone: "warning", message: purgeMessage });
     schedulePendingPersistence();
     return false;
   }
 
   async function resetProject() {
     const confirmedProject = latestProject.current;
-    if (!window.confirm("Reset this local project? This clears saved draft excerpts, checks, results and task progress from this browser.")) return;
+    if (!window.confirm(appText("confirm.reset"))) return;
     const intentRevision = ++replacementIntentRevision.current;
     if (
       !(await purgeSavedProjectForReplacement(
@@ -964,7 +1124,7 @@ export function RubricTrailApp() {
 
   async function startOwnProject() {
     const confirmedProject = latestProject.current;
-    if (!window.confirm("Leave the sample demo and use your own assignment? Demo changes and progress will be cleared from this browser.")) return;
+    if (!window.confirm(appText("confirm.leaveSample"))) return;
     const intentRevision = ++replacementIntentRevision.current;
     if (
       !(await purgeSavedProjectForReplacement(
@@ -1013,10 +1173,10 @@ export function RubricTrailApp() {
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
       showNotice({
         tone: "success",
-        message: "Project backup downloaded. It contains saved notes and excerpts, so keep the JSON file private.",
+        message: appText("notice.backupDownloaded"),
       });
     } catch (error) {
-      showNotice({ tone: "warning", message: friendlyBackupError(error) });
+      showNotice({ tone: "warning", message: friendlyBackupError(error, locale) });
     }
   }
 
@@ -1025,8 +1185,7 @@ export function RubricTrailApp() {
     if (persistenceInFlight.current) await persistenceInFlight.current;
     const storageSnapshot = readProjectStateWithStatus();
     if (!storageSnapshot.storageAvailable) {
-      const message =
-        "Browser storage could not be read, so nothing was replaced. This tab and its conflict warning were left unchanged.";
+      const message = appText("load.readFailed");
       markDurableSavingUnavailable();
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
@@ -1058,8 +1217,7 @@ export function RubricTrailApp() {
       ((currentRecordChanged && storageSnapshot.legacyConflictCandidate !== null) ||
         ((currentRecordChanged || currentV3Changed) && currentV2Changed))
     ) {
-      const message =
-        "Both browser storage versions changed, so RubricTrail cannot safely decide which is newer. Download this tab, then explicitly keep it or reopen the other tab before replacing anything.";
+      const message = appText("load.bothChanged");
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
       schedulePendingPersistence();
@@ -1070,8 +1228,8 @@ export function RubricTrailApp() {
     if (
       !window.confirm(
         legacyCandidate !== null || shouldLoadPrevious
-          ? "Load and upgrade the project saved by the older RubricTrail tab? Changes kept only in this tab will be replaced. Download this tab first if you may need them."
-          : "Load the project version saved by another tab? Changes kept only in this tab will be replaced. Download this tab first if you may need them.",
+          ? appText("confirm.loadLegacy")
+          : appText("confirm.loadSaved"),
       )
     ) {
       return;
@@ -1088,8 +1246,7 @@ export function RubricTrailApp() {
         storageSnapshot.baseline.legacyV2Value!,
       );
       if ("ok" in parsedPrevious && !parsedPrevious.ok) {
-        const message =
-          "The older-version saved project is incomplete or incompatible, so it was not loaded. Both browser values were left unchanged.";
+        const message = appText("load.legacyInvalid");
         setPersistenceWarning({ kind: "write", message });
         showNotice({ tone: "warning", message });
         return;
@@ -1116,10 +1273,10 @@ export function RubricTrailApp() {
         }
         const message =
           promoted.reason === "conflict"
-            ? "The saved project changed again while the older version was being upgraded. Nothing was selected; review the conflict and try again."
+            ? appText("load.changedAgain")
             : promoted.reason === "invalid-state"
-              ? "The older-version project failed migration validation, so neither saved value was replaced."
-              : "Browser storage could not save the upgraded project, so neither saved value was replaced.";
+              ? appText("load.migrationFailed")
+              : appText("load.upgradeSaveFailed");
         if (
           promoted.reason === "coordination-unavailable" ||
           promoted.reason === "unavailable"
@@ -1149,14 +1306,12 @@ export function RubricTrailApp() {
       storageSnapshot.source === "default" &&
       storageSnapshot.recovered
     ) {
-      const message =
-        "The saved browser data is incomplete or incompatible, so it was not loaded. Download this tab before resetting or replacing anything.";
+      const message = appText("load.savedInvalid");
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
       return;
     } else if (storageSnapshot.crossVersionConflict) {
-      const message =
-        "Two different browser storage versions are present, so RubricTrail did not guess which one to load. Download this tab or explicitly keep it before replacing either version.";
+      const message = appText("load.versionConflict");
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
       return;
@@ -1194,8 +1349,7 @@ export function RubricTrailApp() {
       result.recovered
         ? {
             kind: "recovered",
-            message:
-              "The saved project was loaded with obsolete entries removed. Review its details before continuing.",
+            message: appText("load.recovered"),
           }
         : null,
     );
@@ -1203,17 +1357,15 @@ export function RubricTrailApp() {
       tone: "success",
       message: result.mutationAvailable
         ? loadedFromPreviousVersion
-          ? "Older-version saved project loaded and upgraded. Autosave is active again in this tab."
-          : "Saved project loaded. Autosave is active again in this tab."
-        : "Saved project loaded into this tab. Browser saving is unavailable, so download a backup before closing.",
+          ? appText("notice.loadedUpgraded")
+          : appText("notice.loaded")
+        : appText("notice.loadedTabOnly"),
     });
   }
 
   async function keepThisTabProject() {
     if (
-      !window.confirm(
-        "Make this tab the active saved project? The other browser version will be superseded. Download this tab or the other tab first if either version may be needed.",
-      )
+      !window.confirm(appText("confirm.keepTab"))
     ) {
       return;
     }
@@ -1223,8 +1375,7 @@ export function RubricTrailApp() {
     if (persistenceInFlight.current) await persistenceInFlight.current;
     const currentStorage = readProjectStateWithStatus();
     if (!currentStorage.storageAvailable) {
-      const message =
-        "Browser storage could not be read, so this tab did not replace the saved project.";
+      const message = appText("keep.readFailed");
       markDurableSavingUnavailable();
       setPersistenceWarning({ kind: "write", message });
       showNotice({ tone: "warning", message });
@@ -1243,10 +1394,10 @@ export function RubricTrailApp() {
       }
       const message =
         result.reason === "invalid-state"
-          ? "This tab failed local validation, so it did not replace the saved project."
+          ? appText("keep.invalid")
           : result.reason === "conflict"
-            ? "The saved project changed again, so this tab did not replace it. Review the conflict and try again."
-            : "Browser storage is unavailable or full, so this tab did not replace the saved project.";
+            ? appText("keep.conflict")
+            : appText("keep.storage");
       setPersistenceWarning({ kind: "write", message });
       if (
         result.reason === "coordination-unavailable" ||
@@ -1270,7 +1421,7 @@ export function RubricTrailApp() {
     );
     showNotice({
       tone: "success",
-      message: "This tab is now the active saved version. Autosave is active again.",
+      message: appText("notice.kept"),
     });
     if (hasNewerProjectChange) schedulePendingPersistence(0);
   }
@@ -1290,13 +1441,20 @@ export function RubricTrailApp() {
     try {
       const backup = await readProjectBackupFile(file);
       if (operationId !== intakeRunId.current) return;
+      const currentLocale = localeRef.current;
+      const currentText = appTextRef.current;
       const incomingTitle = projectBackupTitle(backup.state);
       const current = latestProject.current;
       const replacement = current.projectKind === "none"
-        ? "No existing project will be removed."
-        : `This will replace the local project “${projectBackupTitle(current)}”.`;
+        ? currentText("backup.noReplacement")
+        : currentText("backup.willReplace", { title: projectBackupTitle(current) });
       const confirmed = window.confirm(
-        `Restore “${incomingTitle}”?\n${backupProjectDetails(backup.state)}\nExported: ${backupDateLabel(backup.exportedAt)}\n\n${replacement}\n\nThe backup may contain course details, source labels or file names, short excerpts, draft text, self-checks and progress. Original files and full intake text are not included.`,
+        currentText("backup.restorePrompt", {
+          title: incomingTitle,
+          details: backupProjectDetails(backup.state, currentLocale),
+          exported: backupDateLabel(backup.exportedAt, currentLocale),
+          replacement,
+        }),
       );
       if (!confirmed) return;
       const intentRevision = ++replacementIntentRevision.current;
@@ -1322,16 +1480,15 @@ export function RubricTrailApp() {
           return;
         }
         if (writeResult.reason === "conflict") {
-          const message =
-            "The project changed in another tab, so the backup was not restored. Resolve the tab conflict first; neither saved version was overwritten.";
+          const message = appText("backup.tabConflict");
           markStorageConflict();
           setBackupError(message);
           showNotice({ tone: "warning", message });
           return;
         }
         const message = writeResult.reason === "invalid-state"
-          ? "The restored project failed final validation. Your current project was not changed."
-          : "Browser storage is unavailable or full, so the backup was not restored and your current project was not changed.";
+          ? appText("backup.invalid")
+          : appText("backup.storage");
         if (
           writeResult.reason === "coordination-unavailable" ||
           writeResult.reason === "unavailable"
@@ -1370,12 +1527,12 @@ export function RubricTrailApp() {
       showNotice({
         tone: backup.recovered ? "info" : "success",
         message: backup.recovered
-          ? "Project restored. Obsolete entries were safely removed during import."
-          : "Project restored from backup and saved in this browser.",
+          ? appText("notice.restoredRecovered")
+          : appText("notice.restored"),
       });
     } catch (error) {
       if (operationId !== intakeRunId.current) return;
-      const message = friendlyBackupError(error);
+      const message = friendlyBackupError(error, localeRef.current);
       setBackupError(message);
       if (latestProject.current.projectKind !== "none") {
         showNotice({ tone: "warning", message });
@@ -1394,12 +1551,11 @@ export function RubricTrailApp() {
       weeklyHours,
       targetGrade: legacyTargetGradeForPlanningDepth(planningDepth),
     }));
-    const planningDepthLabel = PLANNING_DEPTH_OPTIONS.find(
-      (option) => option.value === planningDepth,
-    )?.label ?? "Standard";
     showNotice({
+      kind: "plan-updated",
       tone: weeklyHours <= 5 ? "warning" : "success",
-      message: `Plan updated for ${weeklyHours} hours per week with ${planningDepthLabel} planning depth.`,
+      weeklyHours,
+      planningDepth,
     });
   }
 
@@ -1413,7 +1569,7 @@ export function RubricTrailApp() {
       (id) => !plan.tasks.find((candidate) => candidate.id === id)?.completed,
     );
     if (!task.completed && incompleteDependencies.length) {
-      showNotice({ tone: "warning", message: "Finish the prerequisite task before marking this one complete." });
+      showNotice({ tone: "warning", message: appText("notice.prerequisite") });
       return;
     }
     if (task.completed) {
@@ -1443,7 +1599,12 @@ export function RubricTrailApp() {
       if (reopenedTaskCount > 0) {
         showNotice({
           tone: "warning",
-          message: `${reopenedTaskCount} dependent ${reopenedTaskCount === 1 ? "task was" : "tasks were"} reopened with this prerequisite.`,
+          message: appText(
+            reopenedTaskCount === 1
+              ? "notice.tasksReopened.one"
+              : "notice.tasksReopened.many",
+            { count: reopenedTaskCount },
+          ),
         });
       }
       return;
@@ -1493,7 +1654,7 @@ export function RubricTrailApp() {
       if (draftCheckRunId.current === runId) {
         showNotice({
           tone: "warning",
-          message: "The demo signal check could not finish. Your draft was not changed; try again.",
+          message: appText("notice.checkFailed"),
         });
       }
     } finally {
@@ -1503,7 +1664,7 @@ export function RubricTrailApp() {
       }
     }
     if (committed) {
-      showNotice({ tone: "info", message: "Deterministic demo check complete. Treat the signals as prompts, not a grade." });
+      showNotice({ tone: "info", message: appText("notice.checkComplete") });
     }
   }
 
@@ -1542,15 +1703,13 @@ export function RubricTrailApp() {
     if (outcome === "saved") {
       showNotice({
         tone: "success",
-        message:
-          "Self-check saved in this browser. It counts as complete only when the draft note and all three evidence checks are present.",
+        message: appText("notice.selfCheckSaved"),
       });
       return;
     }
     showNotice({
       tone: "warning",
-      message:
-        "Self-check is only in this tab because browser saving was not confirmed. Resolve the storage warning or download a backup before closing.",
+      message: appText("notice.selfCheckTabOnly"),
     });
   }
 
@@ -1562,6 +1721,14 @@ export function RubricTrailApp() {
         : [...current.readinessChecks, id],
     }));
   }
+
+  const localizedUploadError = useMemo(
+    () => localizeFileIntakeError(uploadError, locale),
+    [locale, uploadError],
+  );
+  const localizedBackupError = backupError
+    ? localizeStoredAppMessage(backupError, locale)
+    : null;
 
   const storageConflictNotice = storageConflict ? (
     <StorageConflictBanner
@@ -1581,24 +1748,70 @@ export function RubricTrailApp() {
   const persistenceUnavailableNotice = durableSavingUnavailable ? (
     <PersistenceUnavailableBanner onDownloadBackup={exportProjectBackup} />
   ) : null;
+  const localizedPersistenceWarningMessage = persistenceWarning
+    ? localizeStoredAppMessage(persistenceWarning.message, locale)
+    : null;
+  const localizedNoticeMessage = notice
+    ? "message" in notice
+      ? localizeStoredAppMessage(notice.message, locale)
+      : appText("notice.planUpdated", {
+          hours: notice.weeklyHours,
+          depth: appText(`planning.${notice.planningDepth}` as AppMessageKey),
+        })
+    : null;
+  const duplicateWarningNotice = Boolean(
+    notice?.tone === "warning" &&
+    localizedNoticeMessage === localizedPersistenceWarningMessage,
+  );
   const persistenceWarningToast = persistenceWarning ? (
     <div className="toast warning persistence-warning" role="alert">
       <AlertTriangle aria-hidden="true" />
-      <span>{persistenceWarning.message}</span>
+      <span>{localizedPersistenceWarningMessage}</span>
       <button
         className="icon-button"
         type="button"
-        onClick={() => setPersistenceWarning(null)}
-        aria-label="Dismiss storage warning"
+        onClick={() => {
+          setPersistenceWarning(null);
+          if (duplicateWarningNotice) {
+            if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+            noticeTimer.current = null;
+            setNotice(null);
+          }
+        }}
+        aria-label={appText("storage.dismiss")}
       >
         <X aria-hidden="true" />
       </button>
     </div>
   ) : null;
+  const transientNoticeToast = notice && !duplicateWarningNotice ? (
+    <div className={`toast ${notice.tone}`} role="status" data-testid="toast">
+      {notice.tone === "warning" ? <AlertTriangle aria-hidden="true" /> : notice.tone === "info" ? <Info aria-hidden="true" /> : <Check aria-hidden="true" />}
+      <span>{localizedNoticeMessage}</span>
+      <button
+        type="button"
+        className="toast-dismiss"
+        aria-label={appText("notice.dismiss")}
+        onClick={() => {
+          if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+          noticeTimer.current = null;
+          setNotice(null);
+        }}
+      >
+        <X aria-hidden="true" />
+      </button>
+    </div>
+  ) : null;
+  const toastStack = persistenceWarningToast || transientNoticeToast ? (
+    <div className="toast-stack">
+      {persistenceWarningToast}
+      {transientNoticeToast}
+    </div>
+  ) : null;
 
   if (!hydrated) {
     return (
-      <main className="app-loading" aria-label="Loading RubricTrail">
+      <main className="app-loading" aria-label={appText("loading.label")}>
         <span className="brand-mark" aria-hidden="true"><Route /></span>
         <strong>{BRAND.name}</strong>
         <div className="loading-line"><span /></div>
@@ -1656,10 +1869,10 @@ export function RubricTrailApp() {
           pastedTextError={pastedTextError}
           isLoadingSample={isLoadingSample}
           uploadStatus={uploadStatus}
-          uploadError={uploadError}
+          uploadError={localizedUploadError}
           onImportBackup={importProjectBackup}
           isImportingBackup={isImportingBackup}
-          backupError={backupError}
+          backupError={localizedBackupError}
         />
         {persistenceWarningToast}
       </>
@@ -1773,9 +1986,11 @@ export function RubricTrailApp() {
   const stepStates = uploaded
     ? uploadedStepStates(project, plan.completionPercent)
     : sampleStepStates(project, plan.completionPercent, currentDraftResult !== null);
-  const evidencePanel = uploaded
-    ? <UploadedEvidencePanel project={uploaded} criterionId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />
-    : <EvidencePanel analysis={SAMPLE_ASSIGNMENT} evidenceId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />;
+  const evidencePanel = selectedEvidenceId
+    ? uploaded
+      ? <UploadedEvidencePanel project={uploaded} criterionId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />
+      : <EvidencePanel analysis={SAMPLE_ASSIGNMENT} evidenceId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />
+    : null;
 
   return (
     <>
@@ -1796,13 +2011,7 @@ export function RubricTrailApp() {
         {storageConflictNotice}
         {activeView}
       </WorkspaceShell>
-      {persistenceWarningToast}
-      {notice ? (
-        <div className={`toast ${notice.tone}`} role="status" data-testid="toast">
-          {notice.tone === "warning" ? <AlertTriangle aria-hidden="true" /> : notice.tone === "info" ? <Info aria-hidden="true" /> : <Check aria-hidden="true" />}
-          {notice.message}
-        </div>
-      ) : null}
+      {toastStack}
     </>
   );
 }

@@ -16,7 +16,10 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { CommunityLinks } from "@/components/community-links";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
 import { BRAND } from "@/lib/brand";
+import { workspaceEn, workspaceZhCN } from "@/lib/i18n/messages/workspace";
 import type { WorkflowState, WorkspaceView } from "@/lib/ui-types";
 
 export interface WorkspaceProjectMeta {
@@ -44,31 +47,23 @@ interface WorkspaceShellProps {
 
 const NAV_ITEMS: Array<{
   id: WorkspaceView;
-  label: string;
-  helper: string;
+  label: keyof typeof workspaceEn;
+  helper: keyof typeof workspaceEn;
   icon: typeof FileSearch;
 }> = [
-  { id: "overview", label: "Brief", helper: "Understand", icon: FileSearch },
-  { id: "rubric", label: "Rubric", helper: "Confirm", icon: Route },
-  { id: "plan", label: "Plan", helper: "Build", icon: ListChecks },
-  { id: "draft", label: "Check", helper: "Review", icon: ClipboardCheck },
-  { id: "progress", label: "Progress", helper: "Finish", icon: BookOpenCheck },
+  { id: "overview", label: "navOverview", helper: "navOverviewHelper", icon: FileSearch },
+  { id: "rubric", label: "navRubric", helper: "navRubricHelper", icon: Route },
+  { id: "plan", label: "navPlan", helper: "navPlanHelper", icon: ListChecks },
+  { id: "draft", label: "navDraft", helper: "navDraftHelper", icon: ClipboardCheck },
+  { id: "progress", label: "navProgress", helper: "navProgressHelper", icon: BookOpenCheck },
 ];
 
-const STATE_LABEL: Record<WorkflowState, string> = {
-  complete: "Confirmed",
-  in_progress: "In progress",
-  needs_review: "Needs review",
-  not_started: "Not started",
+const STATE_LABEL: Record<WorkflowState, keyof typeof workspaceEn> = {
+  complete: "stateComplete",
+  in_progress: "stateInProgress",
+  needs_review: "stateNeedsReview",
+  not_started: "stateNotStarted",
 };
-
-function dateLabel(value: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(`${value}T12:00:00`));
-}
 
 function closeDetailsMenu(
   menu: HTMLDetailsElement | null,
@@ -96,9 +91,16 @@ export function WorkspaceShell({
   children,
   evidencePanel,
 }: WorkspaceShellProps) {
+  const messages = useLocalizedMessages(workspaceEn, workspaceZhCN);
+  const { formatDate, formatNumber } = useI18n();
   const backupInputRef = useRef<HTMLInputElement>(null);
   const backupMenuRef = useRef<HTMLDetailsElement>(null);
   const communityMenuRef = useRef<HTMLDetailsElement>(null);
+  const dueDate = formatDate(new Date(`${project.dueDate}T12:00:00`), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 
   useEffect(() => {
     function handleDetailsMenuDismiss(event: PointerEvent | KeyboardEvent) {
@@ -135,12 +137,12 @@ export function WorkspaceShell({
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#workspace-main">Skip to main content</a>
+      <a className="skip-link" href="#workspace-main">{messages.skipToMain}</a>
       <header className="app-header">
         <button
           className="brand-lockup brand-button"
           type="button"
-          aria-label={`${BRAND.name}: open project brief`}
+          aria-label={messages.openProjectBrief.replace("{brand}", BRAND.name)}
           onClick={() => onNavigate("overview")}
         >
           <span className="brand-mark" aria-hidden="true"><Route /></span>
@@ -151,27 +153,29 @@ export function WorkspaceShell({
           <strong>{project.title}</strong>
         </div>
         <div className="header-actions">
-          <span className="due-label"><span>Due</span> {dateLabel(project.dueDate)}</span>
+          <LanguageSwitcher compact />
+          <span className="due-label"><span>{messages.due}</span> {dueDate}</span>
           {project.mode === "sample" ? (
             <button
               className="start-own-project-button"
               type="button"
+              aria-label={messages.useMyAssignment}
               onClick={onStartOwnProject}
-            title="Leave the sample demo and use your own assignment"
+              title={messages.leaveSample}
             >
               <UploadCloud aria-hidden="true" />
-            <span>Use my assignment</span>
+              <span>{messages.useMyAssignment}</span>
             </button>
           ) : (
-            <div className="mode-indicator" title="Confirmed fields are saved only in this browser.">
-              <span aria-hidden="true" />Local-only
+            <div className="mode-indicator" title={messages.localOnlyTitle}>
+              <span aria-hidden="true" />{messages.localOnly}
             </div>
           )}
           <details className="project-backup-menu" ref={backupMenuRef}>
             <summary
               className="icon-button"
-              aria-label="Project backup options"
-              title="Project backup options"
+              aria-label={messages.backupOptions}
+              title={messages.backupOptions}
               onClick={() => {
                 if (!backupMenuRef.current?.open) {
                   closeDetailsMenu(communityMenuRef.current);
@@ -181,8 +185,8 @@ export function WorkspaceShell({
               <ArchiveRestore aria-hidden="true" />
             </summary>
             <div className="project-backup-popover">
-              <strong>Project backup</strong>
-            <p>Contains saved project details, excerpts, draft text, self-checks and progress — never original files or full intake text.</p>
+              <strong>{messages.projectBackup}</strong>
+              <p>{messages.backupDescription}</p>
               <button
                 className="backup-menu-action"
                 type="button"
@@ -192,7 +196,7 @@ export function WorkspaceShell({
                 }}
               >
                 <Download aria-hidden="true" />
-                <span><strong>Download backup</strong><small>Keep the JSON file private.</small></span>
+                <span><strong>{messages.downloadBackup}</strong><small>{messages.downloadBackupDetail}</small></span>
               </button>
               <button
                 className="backup-menu-action"
@@ -201,27 +205,27 @@ export function WorkspaceShell({
                 onClick={() => backupInputRef.current?.click()}
               >
                 <Upload aria-hidden="true" />
-                <span><strong>{isImportingBackup ? "Reading backup…" : "Restore backup"}</strong><small>Confirm before replacing this project.</small></span>
+                <span><strong>{isImportingBackup ? messages.readingBackup : messages.restoreBackup}</strong><small>{messages.restoreBackupDetail}</small></span>
               </button>
               <input
                 ref={backupInputRef}
                 className="visually-hidden"
                 type="file"
                 accept=".rubrictrail.json,.json,application/json"
-                aria-label="Choose a RubricTrail project backup"
+                aria-label={messages.chooseBackup}
                 disabled={isImportingBackup}
                 onChange={handleBackupInput}
                 data-testid="workspace-backup-file-input"
               />
             </div>
           </details>
-          <button className="icon-button" type="button" onClick={onReset} aria-label="Reset local project" title="Reset local project">
+          <button className="icon-button" type="button" onClick={onReset} aria-label={messages.resetProject} title={messages.resetProject}>
             <RotateCcw aria-hidden="true" />
           </button>
         </div>
       </header>
 
-      <nav className="mobile-workflow" aria-label="Project workflow">
+      <nav className="mobile-workflow" aria-label={messages.workflowLabel}>
         {NAV_ITEMS.map((item, index) => (
           <button
             type="button"
@@ -231,14 +235,14 @@ export function WorkspaceShell({
             onClick={() => onNavigate(item.id)}
           >
             <span>{stepStates[item.id] === "complete" ? <Check aria-hidden="true" /> : index + 1}</span>
-            <b>{item.label}</b>
-            <small>{STATE_LABEL[stepStates[item.id]]}</small>
+            <b>{messages[item.label]}</b>
+            <small>{messages[STATE_LABEL[stepStates[item.id]]]}</small>
           </button>
         ))}
       </nav>
 
       <aside className="workflow-rail">
-        <p className="rail-label">Workflow</p>
+        <p className="rail-label">{messages.workflow}</p>
         <ol>
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -255,9 +259,9 @@ export function WorkspaceShell({
                 >
                   <span className="rail-step" aria-hidden="true">{state === "complete" ? <Check /> : <Icon />}</span>
                   <span>
-                    <small>{item.helper}</small>
-                    <strong>{item.label}</strong>
-                    <em>{STATE_LABEL[state]}</em>
+                    <small>{messages[item.helper]}</small>
+                    <strong>{messages[item.label]}</strong>
+                    <em>{messages[STATE_LABEL[state]]}</em>
                   </span>
                 </button>
               </li>
@@ -265,22 +269,22 @@ export function WorkspaceShell({
           })}
         </ol>
         <div className="rail-progress">
-          <div><span>Task progress</span><strong>{Math.round(progress)}%</strong></div>
+          <div><span>{messages.taskProgress}</span><strong>{Math.round(progress)}%</strong></div>
           <div
             className="progress-track"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(progress)}
-            aria-label="Action-plan work complete"
+            aria-label={messages.progressAria}
           >
             <span style={{ width: `${progress}%` }} />
           </div>
-          <p>Progress reflects completed work, not a predicted grade.</p>
+          <p>{messages.progressExplanation}</p>
         </div>
         <div className="integrity-note rail-integrity">
           <BookOpenCheck aria-hidden="true" />
-          <p><strong>Learning stays yours.</strong> Plan, check, improve — never invent.</p>
+          <p><strong>{messages.learningYours}</strong> {messages.integrityLine}</p>
         </div>
       </aside>
 
@@ -289,12 +293,12 @@ export function WorkspaceShell({
           <FileSearch aria-hidden="true" />
           <strong>{project.title}</strong>
           <span>·</span>
-          <span>Due {dateLabel(project.dueDate)}</span>
+          <span>{messages.due} {dueDate}</span>
           <span>·</span>
-          <span>{project.wordCount.toLocaleString()} words</span>
+          <span>{messages.wordCount.replace("{count}", formatNumber(project.wordCount))}</span>
           <details className="workspace-community-menu" ref={communityMenuRef}>
             <summary
-              aria-label="Open-source project links"
+              aria-label={messages.openSourceLinks}
               onClick={() => {
                 if (!communityMenuRef.current?.open) {
                   closeDetailsMenu(backupMenuRef.current);
@@ -302,15 +306,15 @@ export function WorkspaceShell({
               }}
             >
               <Code2 aria-hidden="true" />
-              <span>Open source</span>
+              <span>{messages.openSource}</span>
             </summary>
             <div className="workspace-community-popover">
-              <strong>RubricTrail is open source</strong>
-              <p>View the code, report a problem, or make a contribution. Never include real coursework in a public report.</p>
+              <strong>{messages.openSourceHeading}</strong>
+              <p>{messages.openSourceDescription}</p>
               <CommunityLinks />
             </div>
           </details>
-          <small>{project.mode === "sample" ? "sample project" : "local project"}</small>
+          <small>{project.mode === "sample" ? messages.sampleProject : messages.localProject}</small>
         </div>
         {children}
       </main>

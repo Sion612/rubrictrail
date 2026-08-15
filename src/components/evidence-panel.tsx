@@ -3,7 +3,9 @@
 import { useEffect, useRef } from "react";
 import { FileText, MapPin, Quote, X } from "lucide-react";
 
+import { useLocalizedMessages } from "@/components/locale-provider";
 import type { AssignmentAnalysis } from "@/lib/domain";
+import { workspaceEn, workspaceZhCN } from "@/lib/i18n/messages/workspace";
 
 interface EvidencePanelProps {
   analysis: AssignmentAnalysis;
@@ -17,14 +19,25 @@ interface SourceContext {
   after: string;
 }
 
-function formatLocator(locator: AssignmentAnalysis["evidence"][number]["locator"]): string {
+type WorkspaceMessages = Record<keyof typeof workspaceEn, string>;
+
+function withValue(template: string, key: "name" | "number", value: string | number) {
+  return template.replace(`{${key}}`, String(value));
+}
+
+function formatLocator(
+  locator: AssignmentAnalysis["evidence"][number]["locator"],
+  messages: WorkspaceMessages,
+): string {
   const parts: string[] = [];
 
-  if (locator.page) parts.push(`Page ${locator.page}`);
+  if (locator.page) parts.push(withValue(messages.page, "number", locator.page));
   if (locator.section) parts.push(locator.section);
-  if (locator.paragraph) parts.push(`Paragraph ${locator.paragraph}`);
+  if (locator.paragraph) {
+    parts.push(withValue(messages.paragraph, "number", locator.paragraph));
+  }
 
-  return parts.length > 0 ? parts.join(" · ") : "Location not specified";
+  return parts.length > 0 ? parts.join(" · ") : messages.locationUnspecified;
 }
 
 function findSourceContext(content: string, excerpt: string): SourceContext | null {
@@ -45,6 +58,7 @@ function findSourceContext(content: string, excerpt: string): SourceContext | nu
 }
 
 export function EvidencePanel({ analysis, evidenceId, onClose }: EvidencePanelProps) {
+  const messages = useLocalizedMessages(workspaceEn, workspaceZhCN);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -99,13 +113,21 @@ export function EvidencePanel({ analysis, evidenceId, onClose }: EvidencePanelPr
   const context = evidence && sourceDocument
     ? findSourceContext(sourceDocument.content, evidence.excerpt)
     : null;
+  const sourceKind = sourceDocument
+    ? {
+        brief: messages.sourceKindBrief,
+        rubric: messages.sourceKindRubric,
+        case: messages.sourceKindCase,
+        student_draft: messages.sourceKindStudentDraft,
+      }[sourceDocument.kind]
+    : messages.sourceDocument;
 
   return (
     <div className="evidence-panel-shell">
       <button
         type="button"
         className="evidence-panel-shell__backdrop"
-        aria-label="Close evidence panel"
+        aria-label={messages.closeEvidencePanel}
         onClick={onClose}
       />
 
@@ -118,16 +140,16 @@ export function EvidencePanel({ analysis, evidenceId, onClose }: EvidencePanelPr
       >
         <header className="evidence-panel__header">
           <div className="evidence-panel__heading-group">
-            <span className="evidence-panel__eyebrow">Source evidence</span>
+            <span className="evidence-panel__eyebrow">{messages.sourceEvidence}</span>
             <h2 id="evidence-panel-title" className="evidence-panel__title">
-              {sourceDocument?.name ?? "Evidence unavailable"}
+              {sourceDocument?.name ?? messages.evidenceUnavailable}
             </h2>
           </div>
           <button
             ref={closeButtonRef}
             type="button"
             className="evidence-panel__close"
-            aria-label="Close evidence panel"
+            aria-label={messages.closeEvidencePanel}
             onClick={onClose}
           >
             <X aria-hidden="true" />
@@ -137,36 +159,36 @@ export function EvidencePanel({ analysis, evidenceId, onClose }: EvidencePanelPr
         {!evidence ? (
           <div className="evidence-panel__empty" role="status">
             <FileText aria-hidden="true" />
-            <h3>Evidence link not found</h3>
-            <p>This finding no longer matches an evidence item in the assignment analysis.</p>
+            <h3>{messages.evidenceLinkMissing}</h3>
+            <p>{messages.evidenceLinkMissingDescription}</p>
           </div>
         ) : (
           <div className="evidence-panel__body">
             <div className="evidence-panel__source-meta">
               <span className="evidence-panel__source-kind">
                 <FileText aria-hidden="true" />
-                {sourceDocument?.kind.replaceAll("_", " ") ?? "source document"}
+                {sourceKind}
               </span>
               <span className="evidence-panel__locator">
                 <MapPin aria-hidden="true" />
-                {formatLocator(evidence.locator)}
+                {formatLocator(evidence.locator, messages)}
               </span>
             </div>
 
             <section className="evidence-panel__section" aria-labelledby="evidence-excerpt-title">
               <div className="evidence-panel__section-heading">
                 <Quote aria-hidden="true" />
-                <h3 id="evidence-excerpt-title">Exact excerpt</h3>
+                <h3 id="evidence-excerpt-title">{messages.exactExcerpt}</h3>
               </div>
               <blockquote className="evidence-panel__quote">{evidence.excerpt}</blockquote>
               <p className="evidence-panel__explanation">
-                This is the original passage used to support the linked requirement or finding.
+                {messages.exactExcerptDescription}
               </p>
             </section>
 
             {context ? (
               <section className="evidence-panel__section" aria-labelledby="evidence-context-title">
-                <h3 id="evidence-context-title">In source context</h3>
+                <h3 id="evidence-context-title">{messages.inSourceContext}</h3>
                 <p className="evidence-panel__context">
                   {context.before}
                   <mark>{context.match}</mark>
@@ -176,7 +198,7 @@ export function EvidencePanel({ analysis, evidenceId, onClose }: EvidencePanelPr
             ) : null}
 
             <footer className="evidence-panel__footer">
-              <span>Evidence ID</span>
+              <span>{messages.evidenceId}</span>
               <code>{evidence.id}</code>
             </footer>
           </div>

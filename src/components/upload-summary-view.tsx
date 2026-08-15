@@ -1,6 +1,13 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -11,14 +18,24 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
 import {
   createUploadedProject,
   draftFromUpload,
   validateUploadedProjectDraftIssues,
   type UploadedProjectDraftIssue,
 } from "@/lib/uploaded-project";
-import { assignmentFileIssueReason } from "@/lib/file-intake-messages";
-import type { UploadedSummaryFieldStatus } from "@/lib/files/parse-assignment-files";
+import type {
+  AssignmentFileErrorCode,
+  UploadedSummaryFieldStatus,
+} from "@/lib/files/parse-assignment-files";
+import {
+  formatIntakeMessage,
+  intakeEn,
+  intakeZhCN,
+  type IntakeMessages,
+} from "@/lib/i18n/messages/intake";
 import type {
   UploadFlowResult,
   UploadedProject,
@@ -31,19 +48,64 @@ interface UploadSummaryViewProps {
   onCreateProject: (project: UploadedProject) => void;
 }
 
-function sourceDisplayName(value: string): string {
-  return /^Pasted (?:assignment brief|rubric)\.txt$/i.test(value)
-    ? value.replace(/\.txt$/i, "")
-    : value;
+const FILE_ISSUE_MESSAGE_KEY: Record<AssignmentFileErrorCode, keyof IntakeMessages> = {
+  UNSUPPORTED_FILE_TYPE: "issueUnsupportedType",
+  INVALID_FILE_NAME: "issueInvalidName",
+  FILE_TOO_LARGE: "issueFileTooLarge",
+  TOO_MANY_FILES: "issueTooManyFiles",
+  TOTAL_FILE_SIZE_TOO_LARGE: "issueTotalSize",
+  EXTRACTED_TEXT_TOO_LARGE: "issueTextTooLarge",
+  EXTRACTED_TEXT_TOO_MANY_LINES: "issueTooManyLines",
+  EXTRACTED_TEXT_TOO_MANY_WORDS: "issueTooManyWords",
+  PDF_TOO_MANY_PAGES: "issuePdfTooLong",
+  TOTAL_PDF_PAGES_TOO_LARGE: "issuePdfsTooLong",
+  EMPTY_FILE: "issueEmpty",
+  INVALID_TEXT_ENCODING: "issueEncoding",
+  SCANNED_NO_TEXT: "issueScanned",
+  ENCRYPTED_PDF: "issueEncrypted",
+  PARSER_UNAVAILABLE: "issueParser",
+  CORRUPT_DOCUMENT: "issueCorrupt",
+};
+
+function fileIssueReason(code: AssignmentFileErrorCode, messages: IntakeMessages): string {
+  return messages[FILE_ISSUE_MESSAGE_KEY[code]];
 }
 
-function EvidenceNote({ evidence }: { evidence: UploadedProjectDraft["criteria"][number]["evidence"] }) {
-  if (!evidence) return <small>No source excerpt was retained for this field.</small>;
+const CONFIRM_FIELD_STYLE = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 7,
+  minWidth: 0,
+} satisfies CSSProperties;
+
+function sourceDisplayName(value: string, messages: IntakeMessages, isPasted: boolean): string {
+  if (!isPasted) return value;
+  if (/^Pasted assignment brief\.txt$/i.test(value)) return messages.pastedBriefSource;
+  if (/^Pasted rubric\.txt$/i.test(value)) return messages.pastedRubricSource;
+  return value;
+}
+
+function EvidenceNote({
+  evidence,
+  messages,
+  isPasted,
+}: {
+  evidence: UploadedProjectDraft["criteria"][number]["evidence"];
+  messages: IntakeMessages;
+  isPasted: boolean;
+}) {
+  if (!evidence) return <small>{messages.evidenceNone}</small>;
   return (
     <details className="source-evidence-note">
       <summary>
-        Source: {evidence.fileName ? sourceDisplayName(evidence.fileName) : "source text"}
-        {evidence.page ? ` · page ${evidence.page}` : ""}
+        {formatIntakeMessage(messages.evidenceSource, {
+          source: evidence.fileName
+            ? sourceDisplayName(evidence.fileName, messages, isPasted)
+            : messages.evidenceSourceText,
+        })}
+        {evidence.page
+          ? formatIntakeMessage(messages.evidencePage, { page: evidence.page })
+          : ""}
       </summary>
       <blockquote>{evidence.excerpt}</blockquote>
     </details>
@@ -54,20 +116,22 @@ function FieldStatus({
   status,
   edited,
   isPasted,
+  messages,
 }: {
   status: UploadedSummaryFieldStatus;
   edited: boolean;
   isPasted: boolean;
+  messages: IntakeMessages;
 }) {
   if (edited) {
-    return <small className="field-source-status manual">Edited manually — compare with the source excerpt</small>;
+    return <small className="field-source-status manual">{messages.statusEdited}</small>;
   }
   const message = {
-    found: isPasted ? "Found in pasted text" : "Found in the uploaded source",
+    found: isPasted ? messages.statusFoundPasted : messages.statusFoundUpload,
     inferred: isPasted
-      ? "Inferred from pasted text — verify this"
-      : "Inferred from a heading — verify this",
-    missing: "Not detected — enter this manually",
+      ? messages.statusInferredPasted
+      : messages.statusInferredUpload,
+    missing: messages.statusMissing,
   }[status];
   return <small className={`field-source-status ${status}`}>{message}</small>;
 }
@@ -81,11 +145,109 @@ function FieldError({ issue }: { issue: UploadedProjectDraftIssue | undefined })
   );
 }
 
+function localizedParserMessage(message: string, messages: IntakeMessages): string {
+  const fixedMessages: Record<string, string> = {
+    "Assignment title was not found in the uploaded text.": messages.warningTitleMissing,
+    "The title was inferred from the first heading; verify it against the brief.":
+      messages.warningTitleInferred,
+    "Due date was not found; add it before relying on the plan.":
+      messages.warningDeadlineMissing,
+    "Word count was not found in the uploaded text.": messages.warningWordsMissing,
+    "Citation or referencing style was not found.": messages.warningCitationMissing,
+    "No reliable rubric section was detected. Rubric analysis is incomplete; no weights were assumed.":
+      messages.rubricNone,
+    "A rubric heading was found, but no reliable criteria were extracted. Rubric analysis is incomplete; no weights were assumed.":
+      messages.rubricHeadingOnly,
+  };
+  if (fixedMessages[message]) return fixedMessages[message];
+
+  const missingWeights = message.match(
+    /^Detected (\d+) rubric criteria, but (\d+) (?:weight was|weights were) not explicit\. Missing weights remain blank\.$/,
+  );
+  if (missingWeights) {
+    return formatIntakeMessage(
+      Number(missingWeights[2]) === 1
+        ? messages.rubricMissingWeight
+        : messages.rubricMissingWeights,
+      { criteria: missingWeights[1], missing: missingWeights[2] },
+    );
+  }
+
+  const wrongTotal = message.match(
+    /^Explicit rubric weights total ([\d.]+)%, not 100%\. Verify whether criteria are missing\.$/,
+  );
+  if (wrongTotal) {
+    return formatIntakeMessage(messages.rubricWrongTotal, { total: wrongTotal[1] });
+  }
+
+  const complete = message.match(
+    /^Detected (\d+) rubric criteria with explicit weights totalling 100%\.$/,
+  );
+  if (complete) {
+    return formatIntakeMessage(messages.rubricComplete, { criteria: complete[1] });
+  }
+
+  return message;
+}
+
+function localizedDraftIssue(
+  issue: UploadedProjectDraftIssue,
+  messages: IntakeMessages,
+): UploadedProjectDraftIssue {
+  const fixedMessages: Record<string, string> = {
+    "Add an assignment title.": messages.errorTitleRequired,
+    "Keep the assignment title under 300 characters.": messages.errorTitleLength,
+    "Use a single-line assignment title without control or bidirectional formatting characters.":
+      messages.errorTitleUnsafe,
+    "Keep the course or module under 200 characters.": messages.errorCourseLength,
+    "Use a single-line course or module name without control or bidirectional formatting characters.":
+      messages.errorCourseUnsafe,
+    "Add a real calendar deadline.": messages.errorDeadlineReal,
+    "Choose a deadline within the next four years.": messages.errorDeadlineRange,
+    "Add a positive whole-number word count.": messages.errorWordsPositive,
+    "Keep the word count at or below 50,000 words.": messages.errorWordsMaximum,
+    "Add a citation style, or enter “Not specified”.": messages.errorCitationRequired,
+    "Keep the citation style under 160 characters.": messages.errorCitationLength,
+    "Add at least one rubric criterion.": messages.errorCriterionRequired,
+    "Keep the rubric to 50 criteria or fewer.": messages.errorCriterionMaximum,
+    "Choose whether the official rubric provides a complete percentage breakdown.":
+      messages.errorWeightingChoice,
+  };
+  let localizedMessage = fixedMessages[issue.message];
+  const criterionNumber = Number(issue.targetId.match(/-(\d+)$/)?.[1] ?? -1) + 1;
+
+  if (!localizedMessage && issue.targetId.startsWith("criterion-name-")) {
+    localizedMessage = formatIntakeMessage(
+      issue.message.includes("under 300")
+        ? messages.errorCriterionNameLength
+        : messages.errorCriterionName,
+      { number: criterionNumber },
+    );
+  }
+  if (!localizedMessage && issue.targetId.startsWith("criterion-weight-")) {
+    if (issue.message.startsWith("Published rubric weights must total")) {
+      const total = issue.message.match(/currently total ([\d.]+)%/)?.[1] ?? "0";
+      localizedMessage = formatIntakeMessage(messages.errorWeightTotal, { total });
+    } else {
+      localizedMessage = formatIntakeMessage(
+        issue.message.includes("greater than 0")
+          ? messages.errorCriterionWeightRange
+          : messages.errorCriterionWeight,
+        { number: criterionNumber },
+      );
+    }
+  }
+
+  return { ...issue, message: localizedMessage ?? issue.message };
+}
+
 export function UploadSummaryView({
   result,
   onBack,
   onCreateProject,
 }: UploadSummaryViewProps) {
+  const { locale, formatNumber } = useI18n();
+  const messages = useLocalizedMessages<IntakeMessages>(intakeEn, intakeZhCN);
   const initialDraft = useMemo(() => draftFromUpload(result), [result]);
   const [draft, setDraft] = useState<UploadedProjectDraft>(() => initialDraft);
   const [showErrors, setShowErrors] = useState(false);
@@ -101,15 +263,19 @@ export function UploadSummaryView({
   const errorSummaryRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const issues = useMemo(() => validateUploadedProjectDraftIssues(draft), [draft]);
+  const displayedIssues = useMemo(
+    () => issues.map((issue) => localizedDraftIssue(issue, messages)),
+    [issues, messages],
+  );
   const issueByTarget = useMemo(() => {
     const firstIssueByTarget = new Map<string, UploadedProjectDraftIssue>();
-    issues.forEach((issue) => {
+    displayedIssues.forEach((issue) => {
       if (!firstIssueByTarget.has(issue.targetId)) {
         firstIssueByTarget.set(issue.targetId, issue);
       }
     });
     return firstIssueByTarget;
-  }, [issues]);
+  }, [displayedIssues]);
   const totalWeight = draft.criteria.reduce(
     (total, criterion) => total + (Number(criterion.weight) || 0),
     0,
@@ -211,11 +377,18 @@ export function UploadSummaryView({
     <main className="uploaded-summary" id="main-content">
       <header className="summary-header">
         <button className="button button-ghost" type="button" onClick={onBack}>
-          <ArrowLeft aria-hidden="true" />Back
+          <ArrowLeft aria-hidden="true" />{messages.summaryBack}
         </button>
-        <div className="mode-indicator">
-          <span aria-hidden="true" />
-          {isPasted ? "Pasted text ready" : isPartial ? "Partial parse ready" : "Local parse complete"}
+        <div className="header-actions">
+          <LanguageSwitcher compact />
+          <div className="mode-indicator">
+            <span aria-hidden="true" />
+            {isPasted
+              ? messages.summaryStatusPasted
+              : isPartial
+                ? messages.summaryStatusPartial
+                : messages.summaryStatusComplete}
+          </div>
         </div>
       </header>
 
@@ -223,14 +396,18 @@ export function UploadSummaryView({
         <div className="summary-intro">
           <CheckCircle2 aria-hidden="true" />
           <div>
-            <p className="eyebrow">Review before saving</p>
-            <h1 ref={headingRef} tabIndex={-1}>Confirm what the assignment says.</h1>
-            <p>
-              RubricTrail filled only what it could locate in the source. Edit anything that is missing or
-              ambiguous; your confirmation, not a guess, creates the project.
-            </p>
+            <p className="eyebrow">{messages.summaryEyebrow}</p>
+            <h1 ref={headingRef} tabIndex={-1}>{messages.summaryTitle}</h1>
+            <p>{messages.summaryIntro}</p>
           </div>
         </div>
+
+        {locale === "zh-CN" ? (
+          <div className="inline-alert warning compact-alert" role="note">
+            <AlertTriangle aria-hidden="true" />
+            <p>{messages.chineseReviewWarning}</p>
+          </div>
+        ) : null}
 
         {isPartial ? (
           <section
@@ -240,16 +417,19 @@ export function UploadSummaryView({
             <AlertTriangle aria-hidden="true" />
             <div>
               <h2 id="partial-summary-title">
-                This preview uses {result.fileNames.length} of the {selectedFileCount} selected files.
+                {formatIntakeMessage(messages.partialSummaryTitle, {
+                  ready: result.fileNames.length,
+                  selected: selectedFileCount,
+                })}
               </h2>
               <p>
-                Files listed below were not included in any detected field or source excerpt. Check anything marked missing before creating the project.
+                {messages.partialSummaryBody}
               </p>
               <ul className="intake-file-list issue-list">
                 {result.skippedFiles.map((issue) => (
                   <li key={`${issue.inputIndex}-${issue.code}`}>
                     <strong>{issue.fileName}</strong>
-                    <span>{assignmentFileIssueReason(issue.code)}</span>
+                    <span>{fileIssueReason(issue.code, messages)}</span>
                   </li>
                 ))}
               </ul>
@@ -258,7 +438,7 @@ export function UploadSummaryView({
                 type="button"
                 onClick={onBack}
               >
-                Review file selection
+                {messages.reviewFileSelection}
               </button>
             </div>
           </section>
@@ -267,9 +447,17 @@ export function UploadSummaryView({
         <div className="source-strip">
           <FileText aria-hidden="true" />
           <div>
-            <strong>{result.fileNames.map(sourceDisplayName).join(", ")}</strong>
+            <strong>{result.fileNames.map((name) => sourceDisplayName(name, messages, isPasted)).join(", ")}</strong>
             <span>
-              {result.fileNames.length} readable {result.fileNames.length === 1 ? "source" : "sources"} · {result.totalWords.toLocaleString()} source words · processed locally for this preview; full source text is not stored
+              {formatIntakeMessage(
+                result.fileNames.length === 1
+                  ? messages.readableSourceOne
+                  : messages.readableSourceMany,
+                {
+                  count: formatNumber(result.fileNames.length),
+                  words: formatNumber(result.totalWords),
+                },
+              )}
             </span>
           </div>
         </div>
@@ -278,8 +466,12 @@ export function UploadSummaryView({
           <section className="inline-alert warning" aria-labelledby="parse-warning-title">
             <AlertTriangle aria-hidden="true" />
             <div>
-              <strong id="parse-warning-title">Items that need your confirmation</strong>
-              <ul>{result.summary.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+              <strong id="parse-warning-title">{messages.confirmationItems}</strong>
+              <ul>
+                {result.summary.warnings.map((warning) => (
+                  <li key={warning}>{localizedParserMessage(warning, messages)}</li>
+                ))}
+              </ul>
             </div>
           </section>
         ) : null}
@@ -287,103 +479,116 @@ export function UploadSummaryView({
         <section className="confirm-fields" aria-labelledby="project-details-title">
           <div className="section-heading compact-heading">
             <div>
-              <p className="eyebrow">Project details</p>
-              <h2 id="project-details-title">Check the planning inputs</h2>
+              <p className="eyebrow">{messages.detailsEyebrow}</p>
+              <h2 id="project-details-title">{messages.detailsTitle}</h2>
             </div>
           </div>
           <div className="confirm-field-grid">
-            <label>
-              <span>Assignment title</span>
-              <input
-                {...errorAttributes("confirm-title")}
-                value={draft.title}
-                onChange={(event) => updateField("title", event.target.value)}
-                placeholder="e.g. Strategy report"
-                maxLength={300}
-                data-testid="confirm-title"
-              />
-              <FieldStatus status={result.summary.title.status} edited={draft.title !== initialDraft.title} isPasted={isPasted} />
-              <EvidenceNote evidence={result.summary.title.evidence} />
+            <div className="confirm-field" style={CONFIRM_FIELD_STYLE}>
+              <label htmlFor="confirm-title">
+                <span>{messages.assignmentTitle}</span>
+                <input
+                  {...errorAttributes("confirm-title")}
+                  value={draft.title}
+                  onChange={(event) => updateField("title", event.target.value)}
+                  placeholder={messages.assignmentPlaceholder}
+                  maxLength={300}
+                  data-testid="confirm-title"
+                />
+              </label>
+              <FieldStatus status={result.summary.title.status} edited={draft.title !== initialDraft.title} isPasted={isPasted} messages={messages} />
+              <EvidenceNote evidence={result.summary.title.evidence} messages={messages} isPasted={isPasted} />
               <FieldError issue={showErrors ? issueByTarget.get("confirm-title") : undefined} />
-            </label>
-            <label>
-              <span>Course or module <small>optional</small></span>
-              <input
-                {...errorAttributes("confirm-course")}
-                value={draft.course}
-                onChange={(event) => updateField("course", event.target.value)}
-                placeholder="e.g. BUS302"
-                maxLength={200}
-              />
-              <small>Used only to label this local project.</small>
+            </div>
+            <div className="confirm-field" style={CONFIRM_FIELD_STYLE}>
+              <label htmlFor="confirm-course">
+                <span>{messages.courseLabel} <small>{messages.optional}</small></span>
+                <input
+                  {...errorAttributes("confirm-course")}
+                  value={draft.course}
+                  onChange={(event) => updateField("course", event.target.value)}
+                  placeholder={messages.coursePlaceholder}
+                  maxLength={200}
+                />
+              </label>
+              <small>{messages.courseHint}</small>
               <FieldError issue={showErrors ? issueByTarget.get("confirm-course") : undefined} />
-            </label>
-            <label>
-              <span>Deadline</span>
-              <input
-                {...errorAttributes("confirm-deadline")}
-                type="date"
-                value={draft.dueDate}
-                onChange={(event) => updateField("dueDate", event.target.value)}
-                data-testid="confirm-deadline"
-              />
-              <FieldStatus status={result.summary.dueDate.status} edited={draft.dueDate !== initialDraft.dueDate} isPasted={isPasted} />
-              <EvidenceNote evidence={result.summary.dueDate.evidence} />
+            </div>
+            <div className="confirm-field" style={CONFIRM_FIELD_STYLE}>
+              <label htmlFor="confirm-deadline">
+                <span>{messages.deadline}</span>
+                <input
+                  {...errorAttributes("confirm-deadline")}
+                  type="date"
+                  value={draft.dueDate}
+                  onChange={(event) => updateField("dueDate", event.target.value)}
+                  data-testid="confirm-deadline"
+                />
+              </label>
+              <FieldStatus status={result.summary.dueDate.status} edited={draft.dueDate !== initialDraft.dueDate} isPasted={isPasted} messages={messages} />
+              <EvidenceNote evidence={result.summary.dueDate.evidence} messages={messages} isPasted={isPasted} />
               <FieldError issue={showErrors ? issueByTarget.get("confirm-deadline") : undefined} />
-            </label>
-            <label>
-              <span>Word count</span>
-              <input
-                {...errorAttributes("confirm-word-count")}
-                type="number"
-                min="1"
-                max="50000"
-                step="1"
-                value={draft.wordCount}
-                onChange={(event) => updateField("wordCount", event.target.value)}
-                placeholder="2500"
-                data-testid="confirm-word-count"
-              />
-              <FieldStatus status={result.summary.wordCount.status} edited={draft.wordCount !== initialDraft.wordCount} isPasted={isPasted} />
-              <EvidenceNote evidence={result.summary.wordCount.evidence} />
+            </div>
+            <div className="confirm-field" style={CONFIRM_FIELD_STYLE}>
+              <label htmlFor="confirm-word-count">
+                <span>{messages.wordCount}</span>
+                <input
+                  {...errorAttributes("confirm-word-count")}
+                  type="number"
+                  min="1"
+                  max="50000"
+                  step="1"
+                  value={draft.wordCount}
+                  onChange={(event) => updateField("wordCount", event.target.value)}
+                  placeholder="2500"
+                  data-testid="confirm-word-count"
+                />
+              </label>
+              <FieldStatus status={result.summary.wordCount.status} edited={draft.wordCount !== initialDraft.wordCount} isPasted={isPasted} messages={messages} />
+              <EvidenceNote evidence={result.summary.wordCount.evidence} messages={messages} isPasted={isPasted} />
               <FieldError issue={showErrors ? issueByTarget.get("confirm-word-count") : undefined} />
-            </label>
-            <label className="confirm-field-wide">
-              <span>Citation style</span>
-              <input
-                {...errorAttributes("confirm-citation-style")}
-                value={draft.citationStyle}
-                onChange={(event) => updateField("citationStyle", event.target.value)}
-                placeholder="e.g. APA 7, Harvard, or Not specified"
-                maxLength={160}
-                data-testid="confirm-citation-style"
-              />
-              <FieldStatus status={result.summary.citationStyle.status} edited={draft.citationStyle !== initialDraft.citationStyle} isPasted={isPasted} />
-              <EvidenceNote evidence={result.summary.citationStyle.evidence} />
+            </div>
+            <div className="confirm-field confirm-field-wide" style={CONFIRM_FIELD_STYLE}>
+              <label htmlFor="confirm-citation-style">
+                <span>{messages.citationStyle}</span>
+                <input
+                  {...errorAttributes("confirm-citation-style")}
+                  value={draft.citationStyle}
+                  onChange={(event) => updateField("citationStyle", event.target.value)}
+                  placeholder={messages.citationPlaceholder}
+                  maxLength={160}
+                  data-testid="confirm-citation-style"
+                />
+              </label>
+              <FieldStatus status={result.summary.citationStyle.status} edited={draft.citationStyle !== initialDraft.citationStyle} isPasted={isPasted} messages={messages} />
+              <EvidenceNote evidence={result.summary.citationStyle.evidence} messages={messages} isPasted={isPasted} />
               <FieldError issue={showErrors ? issueByTarget.get("confirm-citation-style") : undefined} />
-            </label>
+            </div>
           </div>
         </section>
 
         <section className="rubric-detection rubric-editor" aria-labelledby="rubric-detection-title">
           <div className="section-heading compact-heading">
             <div>
-              <p className="eyebrow">Rubric</p>
-              <h2 id="rubric-detection-title" tabIndex={-1}>Confirm what earns marks</h2>
-              <p>{result.summary.rubric.message}</p>
+              <p className="eyebrow">{messages.rubricEyebrow}</p>
+              <h2 id="rubric-detection-title" tabIndex={-1}>{messages.rubricReviewTitle}</h2>
+              <p>{localizedParserMessage(result.summary.rubric.message, messages)}</p>
             </div>
             {draft.weightingMode === "complete" ? (
               <span className={`text-status ${Math.abs(totalWeight - 100) < 0.01 ? "complete" : "incomplete"}`}>
-                Published total: {totalWeight}%
+                {formatIntakeMessage(messages.publishedTotal, { total: totalWeight })}
               </span>
             ) : draft.weightingMode === "not_complete" ? (
               <span className={`text-status ${recordedWeightCount > 0 ? "incomplete" : "complete"}`}>
                 {recordedWeightCount > 0
-                  ? `Incomplete weights: ${recordedWeightCount} of ${draft.criteria.length} recorded`
-                  : "No published weights recorded"}
+                  ? formatIntakeMessage(messages.incompleteWeights, {
+                      recorded: recordedWeightCount,
+                      total: draft.criteria.length,
+                    })
+                  : messages.noPublishedWeights}
               </span>
             ) : (
-              <span className="text-status incomplete">Weighting choice needed</span>
+              <span className="text-status incomplete">{messages.weightingChoiceNeeded}</span>
             )}
           </div>
 
@@ -391,9 +596,9 @@ export function UploadSummaryView({
             className="weighting-mode-fieldset"
             aria-describedby={`weighting-mode-help${showErrors && issueByTarget.has("rubric-weighting-published") ? " rubric-weighting-published-error" : ""}`}
           >
-            <legend>Does your official rubric provide a complete percentage breakdown?</legend>
+            <legend>{messages.weightingLegend}</legend>
             <p id="weighting-mode-help">
-              Keep only percentages stated by the brief or rubric. RubricTrail will not estimate or complete missing values.
+              {messages.weightingHelp}
             </p>
             <div className="weighting-mode-options">
               <label>
@@ -407,8 +612,8 @@ export function UploadSummaryView({
                   required
                 />
                 <span>
-                  <strong>Yes — use the published percentages</strong>
-                  <small>I can verify a percentage for every criterion in the official brief or rubric.</small>
+                  <strong>{messages.weightingYes}</strong>
+                  <small>{messages.weightingYesHint}</small>
                 </span>
               </label>
               <label>
@@ -422,8 +627,8 @@ export function UploadSummaryView({
                   required
                 />
                 <span>
-                  <strong>No — no complete percentage breakdown is published</strong>
-                  <small>Keep any official percentages you do know and leave missing values blank. Planning stays neutral; this does not mean equal marks.</small>
+                  <strong>{messages.weightingNo}</strong>
+                  <small>{messages.weightingNoHint}</small>
                 </span>
               </label>
             </div>
@@ -433,7 +638,7 @@ export function UploadSummaryView({
           {draft.weightingMode === "not_complete" && sourceContainsPercentageValues ? (
             <div className="inline-alert warning compact-alert" role="status">
               <AlertTriangle aria-hidden="true" />
-              <p>Some percentages were found in your source. Keep the official values below and leave unknown ones blank; none will weight the plan while the breakdown is incomplete.</p>
+              <p>{messages.partialPercentages}</p>
             </div>
           ) : null}
 
@@ -445,23 +650,23 @@ export function UploadSummaryView({
               >
                 <span className="criterion-index" aria-hidden="true">{index + 1}</span>
                 <label>
-                  <span>Criterion</span>
+                  <span>{messages.criterion}</span>
                   <input
                     {...errorAttributes(`criterion-name-${index}`)}
                     value={criterion.name}
                     onChange={(event) => updateCriterion(index, "name", event.target.value)}
-                    placeholder="Criterion name"
+                    placeholder={messages.criterionPlaceholder}
                     maxLength={300}
                     data-testid={`criterion-name-${index}`}
                   />
-                  <small>{criterion.evidence ? "Source-linked criterion" : "Manually entered criterion"}</small>
+                  <small>{criterion.evidence ? messages.sourceLinkedCriterion : messages.manualCriterion}</small>
                   <FieldError issue={showErrors ? issueByTarget.get(`criterion-name-${index}`) : undefined} />
                 </label>
                 <label className="weight-field">
                   <span>
                     {draft.weightingMode === "complete"
-                      ? "Published weight"
-                      : "Published weight (if stated)"}
+                      ? messages.publishedWeight
+                      : messages.publishedWeightOptional}
                   </span>
                   <span className="input-with-suffix">
                     <input
@@ -472,7 +677,7 @@ export function UploadSummaryView({
                       step="0.01"
                       value={criterion.weight}
                       onChange={(event) => updateCriterion(index, "weight", event.target.value)}
-                      aria-label={`Published weight for criterion ${index + 1}`}
+                      aria-label={formatIntakeMessage(messages.weightAria, { number: index + 1 })}
                       data-testid={`criterion-weight-${index}`}
                       required={draft.weightingMode === "complete"}
                     />
@@ -481,12 +686,12 @@ export function UploadSummaryView({
                   <small>
                     {criterionOrigins[index]?.weight &&
                     criterionOrigins[index]?.weight === criterion.weight
-                      ? "Found in source"
+                      ? messages.weightFound
                       : criterion.weight
-                        ? "Entered manually — verify"
+                        ? messages.weightManual
                         : draft.weightingMode === "complete"
-                          ? "Enter the published value from the official rubric"
-                          : "Leave blank when no official percentage is published"}
+                          ? messages.weightRequired
+                          : messages.weightBlank}
                   </small>
                   <FieldError issue={showErrors ? issueByTarget.get(`criterion-weight-${index}`) : undefined} />
                 </label>
@@ -494,11 +699,11 @@ export function UploadSummaryView({
                   className="icon-button"
                   type="button"
                   onClick={() => removeCriterion(index)}
-                  aria-label={`Remove criterion ${index + 1}`}
+                  aria-label={formatIntakeMessage(messages.removeCriterion, { number: index + 1 })}
                 >
                   <Trash2 aria-hidden="true" />
                 </button>
-                <EvidenceNote evidence={criterion.evidence} />
+                <EvidenceNote evidence={criterion.evidence} messages={messages} isPasted={isPasted} />
               </div>
             ))}
           </div>
@@ -510,7 +715,7 @@ export function UploadSummaryView({
             onClick={addCriterion}
             disabled={draft.criteria.length >= 50}
           >
-            <Plus aria-hidden="true" />Add missing criterion
+            <Plus aria-hidden="true" />{messages.addCriterion}
           </button>
           <FieldError issue={showErrors ? issueByTarget.get("add-criterion") : undefined} />
         </section>
@@ -525,9 +730,9 @@ export function UploadSummaryView({
           >
             <AlertTriangle aria-hidden="true" />
             <div>
-              <strong>Finish these checks before creating the project</strong>
+              <strong>{messages.finishChecks}</strong>
               <ul>
-                {issues.map((issue, index) => (
+                {displayedIssues.map((issue, index) => (
                   <li key={`${issue.targetId}-${index}`}>
                     <a
                       href={`#${issue.targetId}`}
@@ -548,17 +753,20 @@ export function UploadSummaryView({
         <div className="integrity-note">
           <ShieldCheck aria-hidden="true" />
           <p>
-            <strong>Compact local save:</strong> confirmed fields, rubric names, your weighting choice and short
-            source excerpts are saved in this browser. Original files and full source text are not.
+            <strong>{messages.compactSaveTitle}</strong> {messages.compactSaveBody}
           </p>
         </div>
 
         <div className="summary-actions">
           <button className="button button-secondary" type="button" onClick={onBack}>
-            {isPasted ? "Edit pasted text" : isPartial ? "Review file selection" : "Choose different files"}
+            {isPasted
+              ? messages.editPastedText
+              : isPartial
+                ? messages.reviewFileSelection
+                : messages.chooseDifferentFiles}
           </button>
           <button className="button button-primary" type="submit" data-testid="create-project">
-            Create local project <ArrowRight aria-hidden="true" />
+            {messages.createProject} <ArrowRight aria-hidden="true" />
           </button>
         </div>
       </form>

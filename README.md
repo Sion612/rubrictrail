@@ -1,5 +1,7 @@
 # RubricTrail
 
+**English** · [简体中文](./README.zh-CN.md)
+
 **Turn the brief into a plan you can prove.**
 
 RubricTrail is a local-first assignment planner that connects an uploaded or
@@ -30,6 +32,27 @@ The production screenshot above and the mobile viewport are reviewed in
 [the visual QA report](./docs/VISUAL_QA_REPORT.md).
 
 ## What works today
+
+### v0.6.0 candidate: English and Simplified Chinese interface
+
+The unreleased v0.6.0 candidate adds **Interface language / 界面语言** on the
+welcome screen and in the workspace header. It supports English and Simplified
+Chinese on one URL, remembers the choice in the separate
+`rubrictrail.preferences.v1` browser preference and updates the document
+language, title, controls, errors, dates and numbers without reopening or
+rewriting the project. On the first visit, Simplified Chinese browser
+preferences select Chinese; other language preferences default to English. The
+public demo remains on v0.5.0 until this candidate is committed, verified and
+deployed.
+
+The switch changes product interface text only. RubricTrail never translates
+uploaded or pasted source content, project titles, course names, rubric
+criteria, excerpts or student draft notes. Automatic field detection remains
+optimized for English assignment materials; Chinese materials can be uploaded
+or pasted locally but every detected field and criterion must be checked against
+the original before saving. There is one canonical URL rather than separate
+`/en` and `/zh-CN` pages, so static crawlers and share previews do not receive a
+language-specific page.
 
 ### Use your own assignment
 
@@ -356,7 +379,9 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
   `/rubrictrail` path.
 - Backup files are unencrypted and unsigned; keep them private and import only
   files from a source you trust.
-- The interface and parser are English-first.
+- The interface supports English and Simplified Chinese. Source content is not
+  translated, and automatic assignment-field extraction remains English-first;
+  Chinese materials require careful manual confirmation.
 - RubricTrail is not a substitute for the actual rubric, university policy,
   tutor advice or final human review.
 
@@ -368,6 +393,7 @@ More detail is in [docs/KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md).
   resource controls;
 - stronger table extraction for real-world rubrics;
 - more date and grading-system formats;
+- Chinese assignment-parser fixtures and stronger multilingual field detection;
 - accessibility review with external users;
 - contributor-authored course templates;
 - opt-in, self-hosted Live support only after consent, cost and abuse controls.

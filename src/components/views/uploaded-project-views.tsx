@@ -29,6 +29,14 @@ import type {
   UploadedProject,
   WorkspaceView,
 } from "@/lib/ui-types";
+import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
+import {
+  interpolateViewMessage,
+  localizeSystemText,
+  uploadedMessagesEn,
+  uploadedMessagesZhCN,
+  uploadedReadinessZhCN,
+} from "@/lib/i18n/messages/views";
 
 interface UploadedBriefViewProps {
   project: UploadedProject;
@@ -36,32 +44,31 @@ interface UploadedBriefViewProps {
 }
 
 export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProps) {
+  const messages = useLocalizedMessages(uploadedMessagesEn, uploadedMessagesZhCN);
+  const { formatDate, formatNumber } = useI18n();
   const hasCompletePublishedWeights = hasPublishedRubricWeights(project);
   const weightingSummary =
     project.weightingStatus === "complete"
-      ? "complete published percentages"
+      ? messages.completeWeights
       : project.weightingStatus === "incomplete"
-        ? "incomplete published breakdown"
-        : "no published percentages recorded";
+        ? messages.incompleteWeights
+        : messages.noWeights;
   return (
     <div className="view-stack uploaded-brief-view">
       <header className="view-header">
-        <p className="eyebrow">Brief</p>
+        <p className="eyebrow">{messages.brief}</p>
         <h1>{project.title}</h1>
-        <p>
-          These are the planning inputs you confirmed. RubricTrail keeps the trail honest by
-          separating source-backed fields from anything you entered yourself.
-        </p>
+        <p>{messages.briefDescription}</p>
       </header>
 
       <div className="project-fact-grid">
-        <div><span>Deadline</span><strong>{new Intl.DateTimeFormat("en-GB", { dateStyle: "long" }).format(new Date(`${project.dueDate}T12:00:00`))}</strong></div>
-        <div><span>Word count</span><strong>{project.wordCount.toLocaleString()} words</strong></div>
-        <div><span>Citation style</span><strong>{project.citationStyle}</strong></div>
+        <div><span>{messages.deadline}</span><strong>{formatDate(new Date(`${project.dueDate}T12:00:00`), { dateStyle: "long" })}</strong></div>
+        <div><span>{messages.wordCount}</span><strong>{interpolateViewMessage(messages.words, { count: formatNumber(project.wordCount) })}</strong></div>
+        <div><span>{messages.citationStyle}</span><strong>{project.citationStyle}</strong></div>
         <div>
-          <span>Rubric</span>
+          <span>{messages.rubric}</span>
           <strong>
-            {project.criteria.length} confirmed criteria · {weightingSummary}
+            {interpolateViewMessage(messages.criteriaSummary, { count: formatNumber(project.criteria.length), weighting: weightingSummary })}
           </strong>
         </div>
       </div>
@@ -69,14 +76,14 @@ export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProp
       <section className="uploaded-source-register" aria-labelledby="source-register-title">
         <div className="section-heading compact-heading">
           <div>
-            <p className="eyebrow">Source register</p>
-            <h2 id="source-register-title">Sources used for this project</h2>
+            <p className="eyebrow">{messages.sourceRegister}</p>
+            <h2 id="source-register-title">{messages.sourcesTitle}</h2>
           </div>
-          <span>{project.extractedWordCount.toLocaleString()} source words</span>
+          <span>{interpolateViewMessage(messages.sourceWords, { count: formatNumber(project.extractedWordCount) })}</span>
         </div>
         <ul>
           {project.fileNames.map((fileName) => (
-            <li key={fileName}><FileText aria-hidden="true" /><span><strong>{fileName}</strong><small>Full source text not stored</small></span></li>
+            <li key={fileName}><FileText aria-hidden="true" /><span><strong>{fileName}</strong><small>{messages.sourceNotStored}</small></span></li>
           ))}
         </ul>
       </section>
@@ -84,44 +91,41 @@ export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProp
       <section className="trace-explainer" aria-labelledby="trace-title">
         <div>
           <span className="trace-node"><FileText aria-hidden="true" /></span>
-          <h2 id="trace-title">Brief</h2>
-          <p>Confirmed constraints</p>
+          <h2 id="trace-title">{messages.brief}</h2>
+          <p>{messages.confirmedConstraints}</p>
         </div>
         <i aria-hidden="true" />
         <div>
           <span className="trace-node"><Quote aria-hidden="true" /></span>
-          <h2>Rubric</h2>
-          <p>Recorded excerpts to re-check</p>
+          <h2>{messages.rubric}</h2>
+          <p>{messages.recordedExcerpts}</p>
         </div>
         <i aria-hidden="true" />
         <div>
           <span className="trace-node"><CheckCircle2 aria-hidden="true" /></span>
-          <h2>Plan</h2>
-          <p>Work with a definition of done</p>
+          <h2>{messages.plan}</h2>
+          <p>{messages.definitionDone}</p>
         </div>
       </section>
 
       <div className="integrity-note">
         <LockKeyhole aria-hidden="true" />
-        <p>
-          <strong>Local-only project.</strong> Confirmed fields and short excerpts remain in this
-          browser until you reset. On a shared computer, reset when you finish.
-        </p>
+        <p><strong>{messages.localProject}</strong> {messages.localDescription}</p>
       </div>
 
       <div className="view-next-action">
         <div>
-          <span>Next</span>
+          <span>{messages.next}</span>
           <strong>
             {hasCompletePublishedWeights
-              ? "Check every criterion and published percentage against the original rubric."
+              ? messages.nextCompleteWeights
               : project.weightingStatus === "incomplete"
-                ? "Check every recorded percentage and every missing value against the original rubric. Planning remains neutral until the breakdown is complete."
-                : "Check every criterion against the original rubric. No percentage weights were recorded."}
+                ? messages.nextIncompleteWeights
+                : messages.nextNoWeights}
           </strong>
         </div>
         <button className="button button-primary" type="button" onClick={() => onNavigate("rubric")}>
-          Review rubric <ArrowRight aria-hidden="true" />
+          {messages.reviewRubric} <ArrowRight aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -139,6 +143,8 @@ export function UploadedRubricView({
   onOpenEvidence,
   onNavigate,
 }: UploadedRubricViewProps) {
+  const messages = useLocalizedMessages(uploadedMessagesEn, uploadedMessagesZhCN);
+  const { formatNumber } = useI18n();
   const hasCompletePublishedWeights = hasPublishedRubricWeights(project);
   const recordedWeightCount = project.criteria.filter(
     (criterion) => criterion.weight !== null,
@@ -147,72 +153,72 @@ export function UploadedRubricView({
     <div className="view-stack uploaded-rubric-view">
       <header className="view-header split-header">
         <div>
-          <p className="eyebrow">Rubric</p>
-          <h1>Confirm what earns marks.</h1>
-          <p>Each criterion remains attached to its retained source excerpt. Manually added rows are clearly marked.</p>
+          <p className="eyebrow">{messages.rubric}</p>
+          <h1>{messages.rubricTitle}</h1>
+          <p>{messages.rubricDescription}</p>
         </div>
         <div className="header-progress">
           <strong>
             {hasCompletePublishedWeights
               ? "100%"
               : project.weightingStatus === "incomplete"
-                ? `${recordedWeightCount}/${project.criteria.length}`
-                : project.criteria.length}
+                ? `${formatNumber(recordedWeightCount)}/${formatNumber(project.criteria.length)}`
+                : formatNumber(project.criteria.length)}
           </strong>
           <span>
             {hasCompletePublishedWeights
-              ? "published total"
-              : project.weightingStatus === "incomplete"
-                ? "published weights recorded · incomplete"
-                : "criteria · no published weights recorded"}
+                ? messages.publishedTotal
+                : project.weightingStatus === "incomplete"
+                ? messages.recordedIncomplete
+                : messages.criteriaNoWeights}
           </span>
         </div>
       </header>
 
       <div className="rubric-summary-band">
-        <div><strong>{project.criteria.length}</strong><span>criteria</span></div>
-        <div><strong>{project.criteria.filter((item) => item.evidence).length}</strong><span>source-linked</span></div>
-        <div><strong>{project.criteria.filter((item) => !item.evidence).length}</strong><span>manually confirmed</span></div>
+        <div><strong>{formatNumber(project.criteria.length)}</strong><span>{messages.criteria}</span></div>
+        <div><strong>{formatNumber(project.criteria.filter((item) => item.evidence).length)}</strong><span>{messages.sourceLinked}</span></div>
+        <div><strong>{formatNumber(project.criteria.filter((item) => !item.evidence).length)}</strong><span>{messages.manuallyConfirmed}</span></div>
       </div>
 
-      <section className="uploaded-rubric-table" aria-label="Confirmed rubric criteria">
+      <section className="uploaded-rubric-table" aria-label={messages.rubricAria}>
         <div className="uploaded-rubric-head" aria-hidden="true">
-          <span>Criterion</span><span>{project.weightingStatus === "none" ? "Weighting" : "Published weight"}</span><span>Status</span><span>Evidence source</span>
+          <span>{messages.criterion}</span><span>{project.weightingStatus === "none" ? messages.weighting : messages.publishedWeight}</span><span>{messages.status}</span><span>{messages.evidenceSource}</span>
         </div>
         {project.criteria.map((criterion, index) => (
           <article key={criterion.id} className="uploaded-rubric-row">
             <div className="criterion-title">
-              <span>{index + 1}</span>
+              <span>{formatNumber(index + 1)}</span>
               <div>
                 <strong>{criterion.name}</strong>
                 <small>
                   {hasCompletePublishedWeights
-                    ? "Plan effort starts from this published percentage."
+                    ? messages.publishedEffort
                     : project.weightingStatus === "incomplete" && criterion.weight !== null
-                      ? "Official percentage recorded; the plan still uses a neutral starting point."
-                      : "Neutral planning starting point — not an equal mark value."}
+                      ? messages.recordedNeutral
+                      : messages.neutral}
                 </small>
               </div>
             </div>
             <strong className={`criterion-weight ${criterion.weight === null ? "not-published" : ""}`}>
-              {criterion.weight === null ? "Not recorded" : `${criterion.weight}%`}
+              {criterion.weight === null ? messages.notRecorded : `${formatNumber(criterion.weight)}%`}
             </strong>
             <span className={criterion.evidence ? "verified-state" : "manual-state"}>
               {criterion.evidence ? <CheckCircle2 aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
-              {criterion.evidence ? "Source-linked" : "Manual check"}
+              {criterion.evidence ? messages.sourceLinkedState : messages.manualCheck}
             </span>
             <button
               className="evidence-source-button"
               type="button"
               onClick={() => onOpenEvidence(criterion.id)}
-              aria-label={`Open source for ${criterion.name}`}
+              aria-label={interpolateViewMessage(messages.openSource, { criterion: criterion.name })}
             >
               <span>
-                {criterion.evidence?.excerpt ?? "No source excerpt — compare with the original rubric."}
+                {criterion.evidence?.excerpt ?? messages.noExcerpt}
               </span>
               <small>
-                {criterion.evidence?.fileName ?? "Manually entered"}
-                {criterion.evidence?.page ? ` · p.${criterion.evidence.page}` : ""}
+                {criterion.evidence?.fileName ?? messages.manuallyEntered}
+                {criterion.evidence?.page ? ` · ${interpolateViewMessage(messages.page, { page: formatNumber(criterion.evidence.page) })}` : ""}
               </small>
             </button>
           </article>
@@ -222,19 +228,19 @@ export function UploadedRubricView({
       <div className="integrity-note">
         <ShieldCheck aria-hidden="true" />
         <p>
-          <strong>No inferred scoring.</strong>{" "}
+          <strong>{messages.noInferred}</strong>{" "}
           {hasCompletePublishedWeights
-            ? "Published percentages shown here are values you confirmed; none were inferred. RubricTrail does not predict a grade."
+            ? messages.noInferredComplete
             : project.weightingStatus === "incomplete"
-              ? "Known official percentages are retained and missing values remain blank. Because the breakdown is incomplete, every criterion uses the same neutral planning baseline."
-              : "No grading percentages were recorded. Equal planning effort is a scheduling default only."}
+              ? messages.noInferredIncomplete
+              : messages.noInferredNone}
         </p>
       </div>
 
       <div className="view-next-action">
-        <div><span>Next</span><strong>Turn each criterion into visible, scheduled work.</strong></div>
+        <div><span>{messages.next}</span><strong>{messages.scheduledWork}</strong></div>
         <button className="button button-primary" type="button" onClick={() => onNavigate("plan")}>
-          Build action plan <ArrowRight aria-hidden="true" />
+          {messages.buildPlan} <ArrowRight aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -258,6 +264,8 @@ export function UploadedDraftReviewView({
   onSave,
   onNavigate,
 }: UploadedDraftReviewViewProps) {
+  const messages = useLocalizedMessages(uploadedMessagesEn, uploadedMessagesZhCN);
+  const { formatNumber } = useI18n();
   const criteriaKey = project.criteria.map((criterion) => criterion.id).join("\u0000");
   const [selection, setSelection] = useState(() => ({
     criteriaKey,
@@ -309,6 +317,7 @@ export function UploadedDraftReviewView({
       .map((review) => review.criterionId),
   ).size;
   const canSave = activeReview.draftText.trim().length >= 20;
+  const showMinimumWarning = !canSave && Boolean(activeReview.draftText);
 
   async function save() {
     if (!canSave || isSaving) return;
@@ -331,20 +340,17 @@ export function UploadedDraftReviewView({
     <div className="view-stack uploaded-check-view">
       <header className="view-header split-header">
         <div>
-          <p className="eyebrow">Check</p>
-          <h1>Review your evidence — without a fake score.</h1>
-          <p>
-            This local checklist records your own judgment. It does not claim to understand the
-            quality of the argument or predict a mark.
-          </p>
+          <p className="eyebrow">{messages.check}</p>
+          <h1>{messages.checkTitle}</h1>
+          <p>{messages.checkDescription}</p>
         </div>
-        <div className="header-progress"><strong>{completeCount}/{project.criteria.length}</strong><span>criteria self-checked</span></div>
+        <div className="header-progress"><strong>{formatNumber(completeCount)}/{formatNumber(project.criteria.length)}</strong><span>{messages.selfChecked}</span></div>
       </header>
 
       <div className="uploaded-check-grid">
         <section className="draft-review-editor" aria-labelledby="review-editor-title">
           <label>
-            <span>Rubric criterion</span>
+            <span>{messages.rubricCriterion}</span>
             <select
               disabled={isSaving}
               value={criterionId}
@@ -356,71 +362,71 @@ export function UploadedDraftReviewView({
             >
               {project.criteria.map((criterion) => (
                 <option key={criterion.id} value={criterion.id}>
-                  {criterion.name}{criterion.weight !== null ? ` · ${criterion.weight}%` : ""}
+                  {criterion.name}{criterion.weight !== null ? ` · ${formatNumber(criterion.weight)}%` : ""}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            <span id="review-editor-title">Paste the paragraph or notes that support this criterion</span>
+            <span id="review-editor-title">{messages.pasteSupport}</span>
             <textarea
               value={activeReview.draftText}
               disabled={isSaving}
               onChange={(event) => updateActive({ draftText: event.target.value })}
-              placeholder="Paste your own draft text here…"
+              placeholder={messages.pastePlaceholder}
               maxLength={UPLOADED_REVIEW_MAX_CHARACTERS}
-              aria-describedby="uploaded-review-count"
+              aria-describedby={`uploaded-review-count${showMinimumWarning ? " uploaded-review-minimum" : ""}`}
               data-testid="uploaded-review-text"
             />
           </label>
           <p className="editor-meta" id="uploaded-review-count">
-            {activeReview.draftText.length.toLocaleString()} / {UPLOADED_REVIEW_MAX_CHARACTERS.toLocaleString()} characters
+            {interpolateViewMessage(messages.characterCount, { count: formatNumber(activeReview.draftText.length), maximum: formatNumber(UPLOADED_REVIEW_MAX_CHARACTERS) })}
           </p>
-          {!canSave && activeReview.draftText ? <p className="field-message warning">Add at least 20 characters so the saved note is meaningful.</p> : null}
-          <button className="button button-primary button-full" type="button" disabled={!canSave || isSaving} aria-busy={isSaving} onClick={save} data-testid="save-self-check">
-            {isSaving ? "Saving self-check…" : "Save self-check"}
+          {showMinimumWarning ? <p className="field-message warning" id="uploaded-review-minimum">{messages.addTwenty}</p> : null}
+          <button className="button button-primary button-full" type="button" disabled={!canSave || isSaving} aria-busy={isSaving} aria-describedby={showMinimumWarning ? "uploaded-review-minimum" : undefined} onClick={save} data-testid="save-self-check">
+            {isSaving ? messages.saving : messages.save}
           </button>
           <div className="integrity-note compact">
             <LockKeyhole aria-hidden="true" />
-            <p><strong>Save checks browser storage.</strong> The criterion counts complete only when the note and all three checks are present.</p>
+            <p><strong>{messages.storageTitle}</strong> {messages.storageDescription}</p>
           </div>
         </section>
 
         <section className="evidence-self-check" aria-labelledby="evidence-self-check-title">
           <div>
-            <p className="eyebrow">Evidence test</p>
-            <h2 id="evidence-self-check-title">Can a reviewer follow the trail?</h2>
-            <p>Tick only what you can point to in the text above.</p>
+            <p className="eyebrow">{messages.evidenceTest}</p>
+            <h2 id="evidence-self-check-title">{messages.followTrail}</h2>
+            <p>{messages.tickOnly}</p>
           </div>
           <label>
             <input type="checkbox" disabled={isSaving} checked={activeReview.evidenceVisible} onChange={(event) => updateActive({ evidenceVisible: event.target.checked })} />
             <span aria-hidden="true"><Check /></span>
-            <div><strong>Evidence is visible</strong><small>A fact, example, calculation or source appears in the paragraph.</small></div>
+            <div><strong>{messages.visibleTitle}</strong><small>{messages.visibleDescription}</small></div>
           </label>
           <label>
             <input type="checkbox" disabled={isSaving} checked={activeReview.linkExplained} onChange={(event) => updateActive({ linkExplained: event.target.checked })} />
             <span aria-hidden="true"><Check /></span>
-            <div><strong>The link is explained</strong><small>Your words explain why the evidence helps meet this criterion.</small></div>
+            <div><strong>{messages.explainedTitle}</strong><small>{messages.explainedDescription}</small></div>
           </label>
           <label>
             <input type="checkbox" disabled={isSaving} checked={activeReview.sourceTraceable} onChange={(event) => updateActive({ sourceTraceable: event.target.checked })} />
             <span aria-hidden="true"><Check /></span>
-            <div><strong>The source is traceable</strong><small>A reader can find the original source, data or calculation.</small></div>
+            <div><strong>{messages.traceableTitle}</strong><small>{messages.traceableDescription}</small></div>
           </label>
           <div className={`self-check-state ${activeReview.evidenceVisible && activeReview.linkExplained && activeReview.sourceTraceable ? "complete" : "incomplete"}`}>
             {activeReview.evidenceVisible && activeReview.linkExplained && activeReview.sourceTraceable ? <CheckCircle2 aria-hidden="true" /> : <CircleDashed aria-hidden="true" />}
             <div>
-              <strong>{activeReview.evidenceVisible && activeReview.linkExplained && activeReview.sourceTraceable ? "All three trail checks selected" : "Self-check still incomplete"}</strong>
-              <span>Saving records your selections; it does not validate them automatically.</span>
+              <strong>{activeReview.evidenceVisible && activeReview.linkExplained && activeReview.sourceTraceable ? messages.allSelected : messages.incomplete}</strong>
+              <span>{messages.selectionDisclaimer}</span>
             </div>
           </div>
         </section>
       </div>
 
       <div className="view-next-action">
-        <div><span>When every criterion has been checked</span><strong>Review remaining work and final submission gates.</strong></div>
+        <div><span>{messages.everyCriterion}</span><strong>{messages.remainingWork}</strong></div>
         <button className="button button-primary" type="button" onClick={() => onNavigate("progress")}>
-          Open progress <ArrowRight aria-hidden="true" />
+          {messages.openProgress} <ArrowRight aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -436,13 +442,6 @@ interface UploadedProgressViewProps {
   onContinue: (target: "plan" | "draft", criterionId?: string) => void;
 }
 
-function deadlineStatus(dueDate: string): { value: string; label: string; overdue: boolean } {
-  const days = daysBetween(todayIso(), dueDate);
-  if (days < 0) return { value: `${Math.abs(days)} days`, label: "overdue", overdue: true };
-  if (days === 0) return { value: "Today", label: "deadline", overdue: false };
-  return { value: `${days} days`, label: "until deadline", overdue: false };
-}
-
 export function UploadedProgressView({
   project,
   plan,
@@ -451,6 +450,8 @@ export function UploadedProgressView({
   onToggleReadiness,
   onContinue,
 }: UploadedProgressViewProps) {
+  const messages = useLocalizedMessages(uploadedMessagesEn, uploadedMessagesZhCN);
+  const { locale, formatNumber } = useI18n();
   const completedTasks = plan.tasks.filter((task) => task.completed).length;
   const completeReviewIds = new Set(
     reviews
@@ -460,20 +461,25 @@ export function UploadedProgressView({
   const checksComplete = UPLOADED_READINESS.filter(([id]) => readinessChecks.includes(id)).length;
   const allCriteriaReviewed = project.criteria.every((criterion) => completeReviewIds.has(criterion.id));
   const ready = plan.completionPercent === 100 && allCriteriaReviewed && checksComplete === UPLOADED_READINESS.length;
-  const deadline = deadlineStatus(project.dueDate);
+  const deadlineDays = daysBetween(todayIso(), project.dueDate);
+  const deadline = deadlineDays < 0
+    ? { value: interpolateViewMessage(messages.days, { count: formatNumber(Math.abs(deadlineDays)) }), label: messages.overdue, overdue: true }
+    : deadlineDays === 0
+      ? { value: messages.today, label: messages.deadlineLabel, overdue: false }
+      : { value: interpolateViewMessage(messages.days, { count: formatNumber(deadlineDays) }), label: messages.untilDeadline, overdue: false };
   const nextTask = plan.tasks.find((task) => !task.completed);
   const nextUnchecked = project.criteria.find((criterion) => !completeReviewIds.has(criterion.id));
   const checklistIncomplete = checksComplete < UPLOADED_READINESS.length;
-  const nextHeading = nextTask?.title ?? (nextUnchecked
-    ? `Self-check ${nextUnchecked.name}`
+  const nextHeading = nextTask ? localizeSystemText(nextTask.title, locale) : (nextUnchecked
+    ? interpolateViewMessage(messages.selfCheckCriterion, { criterion: nextUnchecked.name })
     : checklistIncomplete
-      ? "Finish the human submission checklist"
-      : "All tracked gates are complete");
-  const nextDescription = nextTask?.doneDefinition[0] ?? (nextUnchecked
-    ? "Paste the relevant draft text and verify its evidence trail."
+      ? messages.finishChecklist
+      : messages.allGates);
+  const nextDescription = nextTask ? localizeSystemText(nextTask.doneDefinition[0], locale) : (nextUnchecked
+    ? messages.pasteVerify
     : checklistIncomplete
-      ? "Confirm each final gate against the actual file you will submit."
-      : "Carry out one final human review of the actual submission file.");
+      ? messages.confirmFinalGate
+      : messages.finalReview);
 
   function continueNextAction() {
     if (nextTask) {
@@ -495,21 +501,21 @@ export function UploadedProgressView({
           {ready ? <Check /> : <CircleDashed />}
         </div>
         <div>
-          <p className="eyebrow">Submission readiness</p>
-          <h1>{ready ? "Ready for final human review." : "Not ready yet — the remaining work is visible below."}</h1>
-          <p>RubricTrail reports only completed tasks, saved self-checks and checklist answers. It does not predict a grade.</p>
+          <p className="eyebrow">{messages.submissionReadiness}</p>
+          <h1>{ready ? messages.ready : messages.notReady}</h1>
+          <p>{messages.readinessDescription}</p>
         </div>
       </header>
 
       <div className="progress-facts">
         <div className={deadline.overdue ? "fact-warning" : ""}><CalendarClock aria-hidden="true" /><span><strong>{deadline.value}</strong>{deadline.label}</span></div>
-        <div><CheckCircle2 aria-hidden="true" /><span><strong>{completedTasks} of {plan.tasks.length}</strong>tasks complete</span></div>
-        <div><ShieldCheck aria-hidden="true" /><span><strong>{completeReviewIds.size} of {project.criteria.length}</strong>criteria self-checked</span></div>
+        <div><CheckCircle2 aria-hidden="true" /><span><strong>{interpolateViewMessage(messages.tasksComplete, { completed: formatNumber(completedTasks), total: formatNumber(plan.tasks.length) })}</strong></span></div>
+        <div><ShieldCheck aria-hidden="true" /><span><strong>{interpolateViewMessage(messages.criteriaChecked, { completed: formatNumber(completeReviewIds.size), total: formatNumber(project.criteria.length) })}</strong></span></div>
       </div>
 
       <section className="uploaded-coverage-section" aria-labelledby="uploaded-coverage-title">
         <div className="section-heading compact-heading">
-          <div><p className="eyebrow">Rubric trail</p><h2 id="uploaded-coverage-title">Plan work and self-checks stay separate</h2></div>
+          <div><p className="eyebrow">{messages.rubricTrail}</p><h2 id="uploaded-coverage-title">{messages.separate}</h2></div>
         </div>
         <div className="uploaded-coverage-cards">
           {project.criteria.map((criterion) => {
@@ -521,20 +527,20 @@ export function UploadedProgressView({
                   <strong>{criterion.name}</strong>
                   <span>
                     {criterion.weight === null
-                      ? "No published weight recorded"
+                      ? messages.noWeightRecorded
                       : project.weightingStatus === "complete"
-                        ? `${criterion.weight}% of rubric`
-                        : `${criterion.weight}% published · neutral plan`}
+                        ? interpolateViewMessage(messages.weightOfRubric, { weight: formatNumber(criterion.weight) })
+                        : interpolateViewMessage(messages.publishedNeutral, { weight: formatNumber(criterion.weight) })}
                   </span>
                 </div>
                 <div className="coverage-metric">
-                  <span>Plan work complete</span>
-                  <progress aria-label={`${criterion.name} plan work complete`} max="100" value={planned}>{Math.round(planned)}%</progress>
-                  <strong>{Math.round(planned)}%</strong>
+                  <span>{messages.planComplete}</span>
+                  <progress aria-label={interpolateViewMessage(messages.planCompleteAria, { criterion: criterion.name })} max="100" value={planned}>{formatNumber(Math.round(planned))}%</progress>
+                  <strong>{formatNumber(Math.round(planned))}%</strong>
                 </div>
                 <div className={`review-state ${reviewed ? "complete" : "not-started"}`}>
                   {reviewed ? <CheckCircle2 aria-hidden="true" /> : <CircleDashed aria-hidden="true" />}
-                  <span>{reviewed ? "Self-check saved" : "Not fully self-checked"}</span>
+                  <span>{reviewed ? messages.selfCheckSaved : messages.notFullyChecked}</span>
                 </div>
               </article>
             );
@@ -544,22 +550,22 @@ export function UploadedProgressView({
 
       <div className="progress-columns">
         <section className="risk-register" aria-labelledby="uploaded-risk-title">
-          <div className="section-heading compact-heading"><div><p className="eyebrow">Open risks</p><h2 id="uploaded-risk-title">What still needs attention</h2></div></div>
+          <div className="section-heading compact-heading"><div><p className="eyebrow">{messages.openRisks}</p><h2 id="uploaded-risk-title">{messages.attention}</h2></div></div>
           <ul>
-            {plan.capacityRisk ? <li><AlertTriangle aria-hidden="true" /><div><strong>Schedule capacity</strong><p>{plan.capacityRisk.message}</p></div></li> : null}
-            {nextUnchecked ? <li><FileCheck2 aria-hidden="true" /><div><strong>{nextUnchecked.name} is not self-checked</strong><p>Save real draft evidence and complete the three trail questions.</p></div></li> : null}
-            {project.criteria.some((criterion) => !criterion.evidence) ? <li><Link2 aria-hidden="true" /><div><strong>Manual rubric entries exist</strong><p>Compare them with the original rubric before final submission.</p></div></li> : null}
-            {!plan.capacityRisk && !nextUnchecked && project.criteria.every((criterion) => criterion.evidence) ? <li><CheckCircle2 aria-hidden="true" /><div><strong>No tracked evidence risks</strong><p>Complete the human checklist before submitting.</p></div></li> : null}
+            {plan.capacityRisk ? <li><AlertTriangle aria-hidden="true" /><div><strong>{messages.scheduleCapacity}</strong><p>{localizeSystemText(plan.capacityRisk.message, locale)}</p></div></li> : null}
+            {nextUnchecked ? <li><FileCheck2 aria-hidden="true" /><div><strong>{interpolateViewMessage(messages.criterionUnchecked, { criterion: nextUnchecked.name })}</strong><p>{messages.saveRealEvidence}</p></div></li> : null}
+            {project.criteria.some((criterion) => !criterion.evidence) ? <li><Link2 aria-hidden="true" /><div><strong>{messages.manualEntries}</strong><p>{messages.compareOriginal}</p></div></li> : null}
+            {!plan.capacityRisk && !nextUnchecked && project.criteria.every((criterion) => criterion.evidence) ? <li><CheckCircle2 aria-hidden="true" /><div><strong>{messages.noEvidenceRisks}</strong><p>{messages.completeHumanChecklist}</p></div></li> : null}
           </ul>
         </section>
 
         <section className="readiness-checklist" aria-labelledby="uploaded-readiness-title">
-          <div className="section-heading compact-heading"><div><p className="eyebrow">Final gate</p><h2 id="uploaded-readiness-title" tabIndex={-1}>Human submission checklist</h2></div><span>{checksComplete}/{UPLOADED_READINESS.length}</span></div>
+          <div className="section-heading compact-heading"><div><p className="eyebrow">{messages.finalGate}</p><h2 id="uploaded-readiness-title" tabIndex={-1}>{messages.humanChecklist}</h2></div><span>{formatNumber(checksComplete)}/{formatNumber(UPLOADED_READINESS.length)}</span></div>
           <div className="checklist-items">
             {UPLOADED_READINESS.map(([id, label]) => (
               <label key={id}>
                 <input type="checkbox" checked={readinessChecks.includes(id)} onChange={() => onToggleReadiness(id)} />
-                <span aria-hidden="true"><Check /></span>{label}
+                <span aria-hidden="true"><Check /></span>{locale === "zh-CN" ? uploadedReadinessZhCN[id] : label}
               </label>
             ))}
           </div>
@@ -569,15 +575,15 @@ export function UploadedProgressView({
       <section className="next-best-action" aria-labelledby="uploaded-next-action-title">
         <span className="next-number">01</span>
         <div>
-          <p className="eyebrow">Next best action</p>
+          <p className="eyebrow">{messages.nextBest}</p>
           <h2 id="uploaded-next-action-title">{nextHeading}</h2>
           <p>{nextDescription}</p>
         </div>
         {!ready ? (
           <button className="button button-primary" type="button" onClick={continueNextAction}>
-            {checklistIncomplete && !nextTask && !nextUnchecked ? "Open final checklist" : "Continue next action"} <ArrowRight aria-hidden="true" />
+            {checklistIncomplete && !nextTask && !nextUnchecked ? messages.openFinalChecklist : messages.continueNext} <ArrowRight aria-hidden="true" />
           </button>
-        ) : <CheckCircle2 aria-label="Tracked gates complete" />}
+        ) : <CheckCircle2 aria-label={messages.gatesComplete} />}
       </section>
     </div>
   );

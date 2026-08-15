@@ -8,13 +8,11 @@ Browser method: local Playwright projects at desktop 1440×900 and narrow
 plus the generated static demo served at `/rubrictrail`. The bilingual scenario
 also narrows the live viewport to 320×700 after restoring a saved project.
 
-This report describes the v0.6.0 pull-request candidate while its remote release
-gate is still in progress. It is not public deployment or release evidence. The
-last published exact-main
-baseline remains the [v0.5.0 run for commit
-`b8d80b0`](https://github.com/Sion612/rubrictrail/actions/runs/31593393903);
-future v0.6.0 publication must replace this paragraph with the exact merged
-candidate SHA and remote run links.
+This report describes the v0.6.0 release candidate at exact main commit
+[`67ff04a`](https://github.com/Sion612/rubrictrail/commit/67ff04a5ec77b847a00393c08414efd63ebc1967).
+[GitHub Actions run 31880978874](https://github.com/Sion612/rubrictrail/actions/runs/31880978874)
+completed the quality, production-browser and static-demo gates successfully on
+that revision.
 
 ## Automated gates
 
@@ -24,21 +22,18 @@ candidate SHA and remote run links.
 | `pnpm typecheck` equivalent local CLI | Passed with `--incremental false` |
 | `pnpm test` equivalent local CLI | 26 files, 298/298 tests passed |
 | `pnpm build` equivalent local CLI | Next.js 16.3.0 production build passed |
-| `pnpm test:e2e --workers=1` equivalent local CLI | Earlier local v0.6.0 candidate: 30/30 executions passed through `next start` (15 scenarios × 2 Chromium projects); not rerun after the final hardening edits |
+| `pnpm test:e2e --workers=1` | Exact-main GitHub Actions: 30/30 executions passed through `next start` (15 scenarios × 2 Chromium projects) |
 | `pnpm build:demo` equivalent local CLI | Static export for `/rubrictrail` completed successfully |
-| `pnpm audit:demo` equivalent local CLI | Passed for all 44 exported files; no Live API path, OpenAI endpoint or Live credential/configuration marker found; 14 initial JS/CSS files totalled 1,234,982 raw bytes and 346,655 gzip bytes, below the 357,000-byte gzip budget |
-| `pnpm test:e2e:demo --workers=1` equivalent local CLI | Earlier local v0.6.0 candidate: 30/30 executions passed against the static `/rubrictrail` artifact (15 scenarios × 2 Chromium projects); not rerun after the final hardening edits |
+| `pnpm audit:demo` | Exact-main GitHub Actions: passed for all 44 exported files; no Live API path, OpenAI endpoint or Live credential/configuration marker found; 14 initial JS/CSS files totalled 1,235,028 raw bytes and 346,687 gzip bytes, below the 357,000-byte gzip budget |
+| `pnpm test:e2e:demo --workers=1` | Exact-main GitHub Actions: 30/30 executions passed against the static `/rubrictrail` artifact (15 scenarios × 2 Chromium projects) |
 | `pnpm audit --audit-level high` | Passed after raising the transitive `nanoid@3` override to patched version 3.3.18; no known vulnerabilities found |
 
-The final language-preference, notification, narrow-screen, accessibility and
-phase-splitting changes were rechecked with unit/component tests, lint, type
-checking, the Node build, the static export and the static-artifact audit.
-Playwright was not rerun for those final edits, so the two browser rows remain
-earlier local-candidate evidence rather than a release gate for the current
-working tree.
+The final language-preference, notification, narrow-screen, accessibility,
+phase-splitting and dependency-security changes were all included in the exact
+main revision tested above.
 
 The initial static JS/CSS measurement fell from the pre-splitting baseline of
-1,318,791 raw / 368,095 gzip bytes to 1,234,982 raw / 346,655 gzip bytes: a
+1,318,791 raw / 368,095 gzip bytes to 1,235,028 raw / 346,687 gzip bytes: a
 6.35% raw and 5.82% gzip reduction. This scoped pass did not meet a separate
 10% target, so the report does not claim that it did; the audit budget gives
 the measured gzip result about 3% build-to-build headroom while remaining below
@@ -46,28 +41,25 @@ the earlier baseline.
 
 ## Deployment evidence
 
-[Deploy Pages run 31593580751](https://github.com/Sion612/rubrictrail/actions/runs/31593580751)
-checked out, rebuilt and audited the same tagged release SHA `b8d80b0`, then completed
-both its build and `github-pages` deployment jobs. The generated artifact, rather
-than the live host, is what passed the 28/28 static CI browser executions.
+[Deploy Pages run 31881113364](https://github.com/Sion612/rubrictrail/actions/runs/31881113364)
+checked out, rebuilt and audited exact main SHA `67ff04a`, then completed both
+its build and `github-pages` deployment jobs. The generated artifact, rather
+than the live host, is what passed the 30/30 static CI browser executions.
 
 A separate live HTTP smoke check observed:
 
 - `https://sion612.github.io/rubrictrail/` at 200 over HTTPS;
-- all 11 static resources linked by the exported HTML at 200;
-- the same-origin `/rubrictrail/_next/static/media/pdf.worker*.mjs` at 200 with a
-  JavaScript content type;
-- both absent `/rubrictrail/api/live/*` routes at 404 for GET and 405 for POST.
+- the expected v0.6.0 bilingual metadata in the deployed HTML;
+- both absent `/rubrictrail/api/live/*` routes at 404 for GET.
 
 GitHub Pages controls the live HTTPS, caching and response-header policy. The
 live smoke check does not claim that Pages ran the complete browser suite or
 inherits the Node runtime's configured headers.
 
-## Current local candidate browser coverage
+## Current release browser coverage
 
-The following scenarios describe the earlier local v0.6.0 candidate runs shown
-in the automated-gates table. They are not evidence for the currently deployed
-v0.5.0 artifact and were not rerun after the final hardening changes.
+The following scenarios describe the exact-main v0.6.0 runs shown in the
+automated-gates table.
 
 Fourteen UI scenarios run at 1440×900 and a narrow responsive 390×844 Chromium
 viewport, with targeted bilingual checks narrowed to 320×700. One request-only

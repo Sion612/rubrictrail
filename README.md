@@ -33,17 +33,16 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ## What works today
 
-### v0.6.0 candidate: English and Simplified Chinese interface
+### v0.6.0: English and Simplified Chinese interface
 
-The unreleased v0.6.0 candidate adds **Interface language / 界面语言** on the
+v0.6.0 adds **Interface language / 界面语言** on the
 welcome screen and in the workspace header. It supports English and Simplified
 Chinese on one URL, remembers the choice in the separate
 `rubrictrail.preferences.v1` browser preference and updates the document
 language, title, controls, errors, dates and numbers without reopening or
 rewriting the project. On the first visit, Simplified Chinese browser
 preferences select Chinese; other language preferences default to English. The
-public demo remains on v0.5.0 until this candidate is committed, verified and
-deployed.
+public demo now serves the verified v0.6.0 build.
 
 The switch changes product interface text only. RubricTrail never translates
 uploaded or pasted source content, project titles, course names, rubric
@@ -250,27 +249,25 @@ browser job creates a separate production build and sets
 `PLAYWRIGHT_PRODUCTION=true`, causing Playwright to exercise that artifact
 through `next start`.
 
-Current v0.5.0 runtime, static-export and test-code verification on 12 August
-2026 ([exact release commit `b8d80b0`, GitHub Actions run
-31593393903](https://github.com/Sion612/rubrictrail/actions/runs/31593393903)):
+Current v0.6.0 runtime, static-export and test-code verification on 15 August
+2026 ([exact main commit `67ff04a`, GitHub Actions run
+31880978874](https://github.com/Sion612/rubrictrail/actions/runs/31880978874)):
 
 | Gate | Result |
 | --- | --- |
 | ESLint | Passed with zero warnings |
 | TypeScript | Passed |
-| Vitest | 261/261 tests passed across 19 files |
+| Vitest | 298/298 tests passed across 26 files |
 | Next.js production build | Passed independently in the quality and browser jobs |
-| Node-runtime Playwright | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 1440×900 and 390×844 Chromium projects), including the configured HTTP security headers, suppressed `X-Powered-By`, disabled Live routes, strict UTF-8 rejection, recorded-evidence trust copy, lock-serialized same-revision writes, confirmed self-check persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
-| Static demo | `/rubrictrail` export built successfully; its 29-file artifact passed the Live/OpenAI-marker audit and 28/28 browser executions (14 scenarios × 2 Chromium projects) |
+| Node-runtime Playwright | GitHub Actions: 30/30 executions passed through `next start` (15 scenarios × 1440×900 and 390×844 Chromium projects), including bilingual switching and reload persistence, configured HTTP security headers, suppressed `X-Powered-By`, disabled Live routes, strict UTF-8 rejection, recorded-evidence trust copy, lock-serialized same-revision writes, confirmed self-check persistence, multi-tab and cross-version recovery, complete/partial/unweighted rubrics, and targeted 320×700 checks |
+| Static demo | `/rubrictrail` export built successfully; its 44-file artifact passed the Live/OpenAI-marker and initial-asset budget audit plus 30/30 browser executions (15 scenarios × 2 Chromium projects) |
 | Full dependency audit | No known vulnerabilities found |
 
-The same exact release SHA was rebuilt, audited and published by [Deploy Pages run
-31593580751](https://github.com/Sion612/rubrictrail/actions/runs/31593580751).
-A live HTTP smoke check observed the public page and all 11 HTML-linked static
-assets at 200, including the exported PDF worker at its same-origin
-`/rubrictrail` path. The absent Live routes returned 404 for GET and were rejected
-by GitHub Pages with 405 for POST. This smoke check is not a claim that the live
-host ran the complete CI browser suite.
+The same exact main SHA was rebuilt, audited and published by [Deploy Pages run
+31881113364](https://github.com/Sion612/rubrictrail/actions/runs/31881113364).
+A live HTTP smoke check observed the public page at 200 with the v0.6.0 bilingual
+metadata. The absent Live routes returned 404 for GET. This smoke check is not a
+claim that the live host ran the complete CI browser suite.
 
 Playwright covers the sample loop, complete and mixed real-file projects,
 explicit omitted-file review, pasted brief and rubric intake, manual repair of a

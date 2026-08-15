@@ -28,6 +28,7 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:deployment-smoke": "node --test scripts/deployment-smoke.test.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:demo": "playwright test --config=playwright.demo.config.ts",

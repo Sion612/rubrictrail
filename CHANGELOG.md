@@ -2,7 +2,7 @@
 
 All notable changes will be recorded here. Versions follow Semantic Versioning.
 
-## [Unreleased]
+## [0.6.0] - 2026-08-15
 
 ### Added
 
@@ -39,7 +39,7 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
   allows long user titles and notification text to wrap without overflowing.
 - Loads confirmation, workspace and evidence phases on demand, reducing the
   static demo's initial JS/CSS payload by 21,440 gzip bytes (5.82%) in the
-  current local candidate without changing project or backup data.
+  verified release build without changing project or backup data.
 - Uses explicit labels for confirmation fields and exposes short self-check
   guidance to assistive technology when saving is unavailable.
 - Raises the transitive `nanoid@3` security override from 3.3.17 to the patched

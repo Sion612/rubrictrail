@@ -1,33 +1,48 @@
 # Verification report
 
-Date: 12 August 2026
-Runtime: Node.js 24 in CI, pnpm 11.9.0
-Browser method: GitHub Actions Playwright projects at desktop and narrow
-responsive Chromium sizes against a fresh production build served by
-`next start`, plus the generated static demo served at `/rubrictrail`; see the
-[v0.5.0 exact-main verification run for commit
-`b8d80b0`](https://github.com/Sion612/rubrictrail/actions/runs/31593393903)
-and the [main-branch CI history](https://github.com/Sion612/rubrictrail/actions/workflows/ci.yml?query=branch%3Amain).
+Date: 15 August 2026
+Runtime: bundled Node.js 24 locally; the repository remains pinned to pnpm 11.9.0
+for CI and contributor installs.
+Browser method: local Playwright projects at desktop 1440×900 and narrow
+390×844 Chromium sizes against a fresh production build served by `next start`,
+plus the generated static demo served at `/rubrictrail`. The bilingual scenario
+also narrows the live viewport to 320×700 after restoring a saved project.
 
-The v0.5.1 candidate adds four component/integration checks for fixed,
-privacy-safe community links and workspace menu focus behavior. A local
-non-browser run passed 21 files and 265/265 tests, ESLint with zero warnings and
-TypeScript. The published, exact-run evidence below remains the v0.5.0 baseline
-until the candidate completes remote CI.
+This report describes the v0.6.0 pull-request candidate while its remote release
+gate is still in progress. It is not public deployment or release evidence. The
+last published exact-main
+baseline remains the [v0.5.0 run for commit
+`b8d80b0`](https://github.com/Sion612/rubrictrail/actions/runs/31593393903);
+future v0.6.0 publication must replace this paragraph with the exact merged
+candidate SHA and remote run links.
 
 ## Automated gates
 
 | Command | Observed result |
 | --- | --- |
-| `pnpm lint` | Passed with zero warnings |
-| `pnpm typecheck` | Passed |
-| `pnpm test` | 19 files, 261/261 tests passed |
-| `pnpm build` | Next.js 16.3.0 production build passed independently in both CI jobs |
-| `pnpm test:e2e --workers=1` | GitHub Actions: 28/28 executions passed through `next start` (14 scenarios × 2 Chromium projects) |
-| `pnpm build:demo` | Static export for `/rubrictrail` completed successfully |
-| `pnpm audit:demo` | Passed for all 29 exported files; no Live API path, OpenAI endpoint or Live credential/configuration marker found |
-| `pnpm test:e2e:demo --workers=1` | GitHub Actions: 28/28 executions passed against the static `/rubrictrail` artifact (14 scenarios × 2 Chromium projects) |
-| `pnpm audit --audit-level high` | No known vulnerabilities found |
+| `pnpm lint` equivalent local CLI | Passed with zero warnings |
+| `pnpm typecheck` equivalent local CLI | Passed with `--incremental false` |
+| `pnpm test` equivalent local CLI | 26 files, 298/298 tests passed |
+| `pnpm build` equivalent local CLI | Next.js 16.3.0 production build passed |
+| `pnpm test:e2e --workers=1` equivalent local CLI | Earlier local v0.6.0 candidate: 30/30 executions passed through `next start` (15 scenarios × 2 Chromium projects); not rerun after the final hardening edits |
+| `pnpm build:demo` equivalent local CLI | Static export for `/rubrictrail` completed successfully |
+| `pnpm audit:demo` equivalent local CLI | Passed for all 44 exported files; no Live API path, OpenAI endpoint or Live credential/configuration marker found; 14 initial JS/CSS files totalled 1,234,982 raw bytes and 346,655 gzip bytes, below the 357,000-byte gzip budget |
+| `pnpm test:e2e:demo --workers=1` equivalent local CLI | Earlier local v0.6.0 candidate: 30/30 executions passed against the static `/rubrictrail` artifact (15 scenarios × 2 Chromium projects); not rerun after the final hardening edits |
+| `pnpm audit --audit-level high` | Passed after raising the transitive `nanoid@3` override to patched version 3.3.18; no known vulnerabilities found |
+
+The final language-preference, notification, narrow-screen, accessibility and
+phase-splitting changes were rechecked with unit/component tests, lint, type
+checking, the Node build, the static export and the static-artifact audit.
+Playwright was not rerun for those final edits, so the two browser rows remain
+earlier local-candidate evidence rather than a release gate for the current
+working tree.
+
+The initial static JS/CSS measurement fell from the pre-splitting baseline of
+1,318,791 raw / 368,095 gzip bytes to 1,234,982 raw / 346,655 gzip bytes: a
+6.35% raw and 5.82% gzip reduction. This scoped pass did not meet a separate
+10% target, so the report does not claim that it did; the audit budget gives
+the measured gzip result about 3% build-to-build headroom while remaining below
+the earlier baseline.
 
 ## Deployment evidence
 
@@ -48,8 +63,14 @@ GitHub Pages controls the live HTTPS, caching and response-header policy. The
 live smoke check does not claim that Pages ran the complete browser suite or
 inherits the Node runtime's configured headers.
 
-Thirteen UI scenarios run at 1440×900 and a narrow responsive 390×844 Chromium
-viewport, with targeted responsive checks narrowed to 320×700. One request-only
+## Current local candidate browser coverage
+
+The following scenarios describe the earlier local v0.6.0 candidate runs shown
+in the automated-gates table. They are not evidence for the currently deployed
+v0.5.0 artifact and were not rerun after the final hardening changes.
+
+Fourteen UI scenarios run at 1440×900 and a narrow responsive 390×844 Chromium
+viewport, with targeted bilingual checks narrowed to 320×700. One request-only
 HTTP-contract scenario runs once per Chromium project without rendering a page.
 The narrow project does not emulate a mobile user agent or touch device:
 
@@ -59,6 +80,8 @@ The narrow project does not emulate a mobile user agent or touch device:
 - direct sample-to-own-assignment handoff with focus restoration;
 - complete TXT upload, editable confirmation and local project creation;
 - malformed UTF-8 TXT rejection before any project is created or saved;
+- English/Simplified Chinese switching, independent locale persistence, project
+  and draft preservation across language changes and reload, and 320px overflow;
 - mixed valid/unsupported file intake, explicit omission review, Back
   restoration and localStorage privacy;
 - pasted brief and rubric intake, Back preservation and raw-text privacy;
@@ -79,7 +102,7 @@ The narrow project does not emulate a mobile user agent or touch device:
   `LIVE_DISABLED` responses from both optional Live routes;
 - console/page errors and document-level horizontal overflow.
 
-The static suite repeats the 13 browser-local product scenarios above and adds
+The static suite repeats the 14 browser-local product scenarios above and adds
 one static-export boundary scenario per viewport. It verifies that the app and
 PDF worker load under `/rubrictrail`, that representative local workflows do
 not request an API route or cross-origin resource, and that the exported
@@ -117,6 +140,12 @@ asset request metadata.
   absolute path.
 
 ## Production visual evidence
+
+- Local v0.6.0 candidate captures cover the Simplified Chinese welcome and
+  sample workspace at 1440×900, 390×844 and 320×700. All six captures reported
+  matching viewport/document widths, `lang="zh-CN"`, the localized title and no
+  console or page errors. These local files are review evidence, not committed
+  release assets.
 
 - `docs/assets/rubrictrail-workspace.png`: 1440×900 production viewport with a
   source-linked rubric and the evidence drawer open.

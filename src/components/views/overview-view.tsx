@@ -20,6 +20,15 @@ import type {
   AssignmentAnalysis,
   LinkedRequirement,
 } from "@/lib/domain";
+import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
+import {
+  interpolateViewMessage,
+  localizeSampleAmbiguityText,
+  localizeSampleOverviewFact,
+  localizeSampleRequirementText,
+  overviewMessagesEn,
+  overviewMessagesZhCN,
+} from "@/lib/i18n/messages/views";
 
 interface OverviewViewProps {
   analysis: AssignmentAnalysis;
@@ -34,6 +43,7 @@ interface EvidenceLinksProps {
 }
 
 interface RequirementSectionProps {
+  analysisId: string;
   id: string;
   title: string;
   description: string;
@@ -43,39 +53,29 @@ interface RequirementSectionProps {
   onOpenEvidence(id: string): void;
 }
 
-function formatDueDate(dueAt: string, timezone: string): string {
-  const date = new Date(dueAt);
-  if (Number.isNaN(date.getTime())) return dueAt;
-
-  try {
-    return new Intl.DateTimeFormat("en", {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: timezone,
-    }).format(date);
-  } catch {
-    return new Intl.DateTimeFormat("en", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(date);
-  }
-}
-
 function EvidenceLinks({ ids, label, onOpenEvidence }: EvidenceLinksProps) {
+  const messages = useLocalizedMessages(overviewMessagesEn, overviewMessagesZhCN);
+  const { formatNumber } = useI18n();
   if (ids.length === 0) return null;
 
   return (
-    <div className="evidence-links" aria-label={`${label} source evidence`}>
+    <div
+      className="evidence-links"
+      aria-label={interpolateViewMessage(messages.evidenceGroup, { label })}
+    >
       {ids.map((id, index) => (
         <button
           key={id}
           type="button"
           className="evidence-links__button"
           onClick={() => onOpenEvidence(id)}
-          aria-label={`Open source ${index + 1} for ${label}`}
+          aria-label={interpolateViewMessage(messages.openSource, {
+            number: formatNumber(index + 1),
+            label,
+          })}
         >
           <Search aria-hidden="true" />
-          Source {index + 1}
+          {interpolateViewMessage(messages.source, { number: formatNumber(index + 1) })}
         </button>
       ))}
     </div>
@@ -83,14 +83,25 @@ function EvidenceLinks({ ids, label, onOpenEvidence }: EvidenceLinksProps) {
 }
 
 function RequirementSection({
+  analysisId,
   id,
   title,
   description,
   items,
   icon: Icon,
-  emptyMessage = "No items were identified in this category.",
+  emptyMessage,
   onOpenEvidence,
 }: RequirementSectionProps) {
+  const messages = useLocalizedMessages(overviewMessagesEn, overviewMessagesZhCN);
+  const { locale } = useI18n();
+  const localizedClassification = (value: string) => {
+    if (value === "required") return messages.required;
+    if (value === "recommended") return messages.recommended;
+    if (value === "explicit") return messages.explicit;
+    if (value === "inferred") return messages.inferred;
+    return value;
+  };
+
   return (
     <section className="overview-section" aria-labelledby={`${id}-title`}>
       <header className="overview-section__header">
@@ -104,26 +115,43 @@ function RequirementSection({
       </header>
 
       {items.length === 0 ? (
-        <p className="overview-section__empty">{emptyMessage}</p>
+        <p className="overview-section__empty">{emptyMessage ?? messages.noItems}</p>
       ) : (
         <ul className="requirement-list">
-          {items.map((item) => (
-            <li key={item.id} className="requirement-list__item">
-              <div className="requirement-list__content">
-                <h3>{item.label}</h3>
-                <p>{item.description}</p>
-                <div className="requirement-list__meta" aria-label="Requirement classification">
-                  <span>{item.priority}</span>
-                  <span>{item.status}</span>
+          {items.map((item) => {
+            const localizedLabel = localizeSampleRequirementText(
+              analysisId,
+              item.id,
+              "label",
+              item.label,
+              locale,
+            );
+            return (
+              <li key={item.id} className="requirement-list__item">
+                <div className="requirement-list__content">
+                  <h3>{localizedLabel}</h3>
+                  <p>
+                    {localizeSampleRequirementText(
+                      analysisId,
+                      item.id,
+                      "description",
+                      item.description,
+                      locale,
+                    )}
+                  </p>
+                  <div className="requirement-list__meta" aria-label={messages.classification}>
+                    <span>{localizedClassification(item.priority)}</span>
+                    <span>{localizedClassification(item.status)}</span>
+                  </div>
                 </div>
-              </div>
-              <EvidenceLinks
-                ids={item.evidenceRefs}
-                label={item.label}
-                onOpenEvidence={onOpenEvidence}
-              />
-            </li>
-          ))}
+                <EvidenceLinks
+                  ids={item.evidenceRefs}
+                  label={localizedLabel}
+                  onOpenEvidence={onOpenEvidence}
+                />
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
@@ -131,12 +159,23 @@ function RequirementSection({
 }
 
 function AmbiguityList({
+  analysisId,
   items,
   onOpenEvidence,
 }: {
+  analysisId: string;
   items: Ambiguity[];
   onOpenEvidence(id: string): void;
 }) {
+  const messages = useLocalizedMessages(overviewMessagesEn, overviewMessagesZhCN);
+  const { locale } = useI18n();
+  const localizedSeverity = (value: string) => {
+    if (value === "high") return messages.high;
+    if (value === "medium") return messages.medium;
+    if (value === "low") return messages.low;
+    return value;
+  };
+
   return (
     <section className="overview-section overview-section--risks" aria-labelledby="ambiguities-title">
       <header className="overview-section__header">
@@ -144,64 +183,94 @@ function AmbiguityList({
           <TriangleAlert />
         </span>
         <div>
-          <h2 id="ambiguities-title">Questions to resolve</h2>
-          <p>Unclear wording that could change the scope, evidence, or marking outcome.</p>
+          <h2 id="ambiguities-title">{messages.questionsTitle}</h2>
+          <p>{messages.questionsDescription}</p>
         </div>
       </header>
 
       {items.length === 0 ? (
-        <p className="overview-section__empty">No material ambiguities were identified.</p>
+        <p className="overview-section__empty">{messages.noAmbiguities}</p>
       ) : (
         <ol className="ambiguity-list">
-          {items.map((item) => (
-            <li key={item.id} className={`ambiguity-list__item ambiguity-list__item--${item.severity}`}>
-              <div className="ambiguity-list__heading">
-                <h3>{item.question}</h3>
-                <span>{item.severity} risk</span>
-              </div>
-              <dl className="ambiguity-list__details">
-                <div>
-                  <dt>Why it matters</dt>
-                  <dd>{item.whyItMatters}</dd>
+          {items.map((item) => {
+            const localizedQuestion = localizeSampleAmbiguityText(
+              analysisId,
+              item.id,
+              "question",
+              item.question,
+              locale,
+            );
+            return (
+              <li key={item.id} className={`ambiguity-list__item ambiguity-list__item--${item.severity}`}>
+                <div className="ambiguity-list__heading">
+                  <h3>{localizedQuestion}</h3>
+                  <span>
+                    {interpolateViewMessage(messages.risk, {
+                      severity: localizedSeverity(item.severity),
+                    })}
+                  </span>
                 </div>
-                <div>
-                  <dt>Safe working assumption</dt>
-                  <dd>{item.safeWorkingAssumption}</dd>
-                </div>
-              </dl>
-              <EvidenceLinks
-                ids={item.evidenceRefs}
-                label={item.question}
-                onOpenEvidence={onOpenEvidence}
-              />
-            </li>
-          ))}
+                <dl className="ambiguity-list__details">
+                  <div>
+                    <dt>{messages.whyItMatters}</dt>
+                    <dd>
+                      {localizeSampleAmbiguityText(
+                        analysisId,
+                        item.id,
+                        "whyItMatters",
+                        item.whyItMatters,
+                        locale,
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{messages.safeAssumption}</dt>
+                    <dd>
+                      {localizeSampleAmbiguityText(
+                        analysisId,
+                        item.id,
+                        "safeWorkingAssumption",
+                        item.safeWorkingAssumption,
+                        locale,
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+                <EvidenceLinks
+                  ids={item.evidenceRefs}
+                  label={localizedQuestion}
+                  onOpenEvidence={onOpenEvidence}
+                />
+              </li>
+            );
+          })}
         </ol>
       )}
     </section>
   );
 }
 
-const PLAIN_ENGLISH_TERMS = [
-  ["Process boundary", "The exact point where the process starts and ends."],
-  ["Constraint or bottleneck", "The step that limits how much work the whole process can complete."],
-  ["Trade-off", "A choice where improving one outcome may weaken another, such as speed versus accuracy."],
-  ["Guardrail", "A measure that must not get worse while the main result improves."],
-  ["Feasibility", "Whether an idea can realistically work with the available time, people, money, and space."],
-] as const;
-
 function PlainEnglishGuide() {
+  const messages = useLocalizedMessages(overviewMessagesEn, overviewMessagesZhCN);
+  const terms = [
+    [messages.termProcessBoundary, messages.meaningProcessBoundary],
+    [messages.termBottleneck, messages.meaningBottleneck],
+    [messages.termTradeoff, messages.meaningTradeoff],
+    [messages.termGuardrail, messages.meaningGuardrail],
+    [messages.termFeasibility, messages.meaningFeasibility],
+  ] as const;
+
   return (
     <section className="overview-section" aria-labelledby="plain-english-title">
       <header className="overview-section__header">
         <span className="overview-section__icon" aria-hidden="true"><BookOpen /></span>
         <div>
-          <h2 id="plain-english-title">Key terms in plain English</h2>
-          <p>Short definitions for common operations and rubric language.</p>
+          <h2 id="plain-english-title">{messages.termsTitle}</h2>
+          <p>{messages.termsDescription}</p>
         </div>
       </header>
       <ul className="requirement-list">
-        {PLAIN_ENGLISH_TERMS.map(([term, meaning]) => (
+        {terms.map(([term, meaning]) => (
           <li className="requirement-list__item" key={term}>
             <div className="requirement-list__content"><h3><dfn>{term}</dfn></h3><p>{meaning}</p></div>
           </li>
@@ -211,26 +280,50 @@ function PlainEnglishGuide() {
   );
 }
 export function OverviewView({ analysis, onOpenEvidence, onNavigate }: OverviewViewProps) {
+  const messages = useLocalizedMessages(overviewMessagesEn, overviewMessagesZhCN);
+  const { locale, formatDate, formatNumber } = useI18n();
   const wordCount = analysis.wordCount;
-  const wordCountSummary = `${wordCount.target.toLocaleString("en")} words${
+  const wordCountSummary = `${interpolateViewMessage(messages.words, {
+    count: formatNumber(wordCount.target),
+  })}${
     wordCount.tolerancePercent > 0 ? `, ±${wordCount.tolerancePercent}%` : ""
   }`;
+  const dueDate = new Date(analysis.dueAt);
+  let dueLabel = analysis.dueAt;
+  if (!Number.isNaN(dueDate.getTime())) {
+    try {
+      dueLabel = formatDate(dueDate, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: analysis.timezone,
+      });
+    } catch {
+      dueLabel = formatDate(dueDate, { dateStyle: "medium", timeStyle: "short" });
+    }
+  }
 
   return (
     <div className="overview-view">
       <header className="overview-hero">
         <div className="overview-hero__copy">
-          <span className="overview-hero__eyebrow">Assignment decoded</span>
+          <span className="overview-hero__eyebrow">{messages.decoded}</span>
           <h1>{analysis.title}</h1>
-          <p>{analysis.executiveSummary}</p>
+          <p>
+            {localizeSampleOverviewFact(
+              analysis.id,
+              "executiveSummary",
+              analysis.executiveSummary,
+              locale,
+            )}
+          </p>
         </div>
-        <div className="overview-hero__actions" aria-label="Next steps">
+        <div className="overview-hero__actions" aria-label={messages.nextSteps}>
           <button
             type="button"
             className="overview-hero__primary-action"
             onClick={() => onNavigate("rubric")}
           >
-            Open rubric map
+            {messages.openRubric}
             <ArrowRight aria-hidden="true" />
           </button>
           <button
@@ -238,7 +331,7 @@ export function OverviewView({ analysis, onOpenEvidence, onNavigate }: OverviewV
             className="overview-hero__secondary-action"
             onClick={() => onNavigate("plan")}
           >
-            View action plan
+            {messages.viewPlan}
           </button>
         </div>
       </header>
@@ -246,28 +339,37 @@ export function OverviewView({ analysis, onOpenEvidence, onNavigate }: OverviewV
       <section className="assignment-facts" aria-labelledby="assignment-facts-title">
         <div className="assignment-facts__heading">
           <FileCheck2 aria-hidden="true" />
-          <h2 id="assignment-facts-title">Assignment facts</h2>
+          <h2 id="assignment-facts-title">{messages.facts}</h2>
         </div>
         <dl className="assignment-facts__grid">
           <div className="assignment-facts__item">
-            <dt><BookOpen aria-hidden="true" />Course</dt>
+            <dt><BookOpen aria-hidden="true" />{messages.course}</dt>
             <dd>{analysis.course}</dd>
-            <span>{analysis.subject}</span>
+            <span>
+              {localizeSampleOverviewFact(analysis.id, "subject", analysis.subject, locale)}
+            </span>
           </div>
           <div className="assignment-facts__item">
-            <dt><FileText aria-hidden="true" />Format</dt>
-            <dd>{analysis.assignmentType}</dd>
+            <dt><FileText aria-hidden="true" />{messages.format}</dt>
+            <dd>
+              {localizeSampleOverviewFact(
+                analysis.id,
+                "assignmentType",
+                analysis.assignmentType,
+                locale,
+              )}
+            </dd>
             <span>{wordCountSummary}</span>
           </div>
           <div className="assignment-facts__item">
-            <dt><CalendarDays aria-hidden="true" />Due</dt>
-            <dd>{formatDueDate(analysis.dueAt, analysis.timezone)}</dd>
+            <dt><CalendarDays aria-hidden="true" />{messages.due}</dt>
+            <dd>{dueLabel}</dd>
             <span>{analysis.timezone}</span>
           </div>
           <div className="assignment-facts__item">
-            <dt><Flag aria-hidden="true" />Referencing</dt>
+            <dt><Flag aria-hidden="true" />{messages.referencing}</dt>
             <dd>{analysis.citationStyle}</dd>
-            <span>Check every claim before submission</span>
+            <span>{messages.checkClaims}</span>
           </div>
         </dl>
       </section>
@@ -276,17 +378,19 @@ export function OverviewView({ analysis, onOpenEvidence, onNavigate }: OverviewV
 
       <div className="overview-view__primary-grid">
         <RequirementSection
+          analysisId={analysis.id}
           id="deliverables"
-          title="What you must submit"
-          description="Explicit outputs that need to be present in the final submission."
+          title={messages.mustSubmit}
+          description={messages.mustSubmitDescription}
           items={analysis.deliverables}
           icon={FileCheck2}
           onOpenEvidence={onOpenEvidence}
         />
         <RequirementSection
+          analysisId={analysis.id}
           id="learning-objectives"
-          title="What the work must demonstrate"
-          description="Learning outcomes translated into observable work."
+          title={messages.demonstrate}
+          description={messages.demonstrateDescription}
           items={analysis.learningObjectives}
           icon={Target}
           onOpenEvidence={onOpenEvidence}
@@ -294,30 +398,37 @@ export function OverviewView({ analysis, onOpenEvidence, onNavigate }: OverviewV
       </div>
 
       <RequirementSection
+        analysisId={analysis.id}
         id="constraints"
-        title="Rules and boundaries"
-        description="Limits that shape the report even when they do not earn marks directly."
+        title={messages.boundaries}
+        description={messages.boundariesDescription}
         items={analysis.constraints}
         icon={Flag}
         onOpenEvidence={onOpenEvidence}
       />
 
-      <AmbiguityList items={analysis.ambiguities} onOpenEvidence={onOpenEvidence} />
+      <AmbiguityList
+        analysisId={analysis.id}
+        items={analysis.ambiguities}
+        onOpenEvidence={onOpenEvidence}
+      />
 
       <div className="overview-view__risk-grid">
         <RequirementSection
+          analysisId={analysis.id}
           id="hidden-requirements"
-          title="Easy-to-miss requirements"
-          description="Implied work that students commonly overlook when reading quickly."
+          title={messages.hidden}
+          description={messages.hiddenDescription}
           items={analysis.hiddenRequirements}
           icon={Eye}
-          emptyMessage="No additional hidden requirements were inferred."
+          emptyMessage={messages.noHidden}
           onOpenEvidence={onOpenEvidence}
         />
         <RequirementSection
+          analysisId={analysis.id}
           id="integrity-guidance"
-          title="Academic integrity guardrails"
-          description="Checks that keep the work yours, traceable, and defensible."
+          title={messages.integrity}
+          description={messages.integrityDescription}
           items={analysis.integrityGuidance}
           icon={ShieldCheck}
           onOpenEvidence={onOpenEvidence}

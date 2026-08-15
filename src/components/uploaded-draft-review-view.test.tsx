@@ -40,6 +40,30 @@ function reviewWithText(draftText: string): UploadedCriterionReview {
 }
 
 describe("UploadedDraftReviewView", () => {
+  it("describes a short draft warning from both the editor and disabled save button", () => {
+    render(
+      <UploadedDraftReviewView
+        project={projectWithCriterion("Analysis")}
+        reviews={[reviewWithText("Too short")]}
+        onChange={vi.fn()}
+        onSave={vi.fn(async () => undefined)}
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    const warning = screen.getByText(/Add at least 20 characters/);
+    const editor = screen.getByTestId("uploaded-review-text");
+    const save = screen.getByTestId("save-self-check");
+
+    expect(warning).toHaveAttribute("id", "uploaded-review-minimum");
+    expect(editor).toHaveAttribute(
+      "aria-describedby",
+      "uploaded-review-count uploaded-review-minimum",
+    );
+    expect(save).toBeDisabled();
+    expect(save).toHaveAttribute("aria-describedby", "uploaded-review-minimum");
+  });
+
   it("selects a valid requested criterion and falls back safely", () => {
     const project: UploadedProject = {
       ...projectWithCriterion("Analysis"),

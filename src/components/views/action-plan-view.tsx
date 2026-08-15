@@ -4,6 +4,14 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, GitBranch, SlidersHorizontal } from "lucide-react";
 import type { ActionPlan, PlanningDepth } from "@/lib/domain";
 import { PLANNING_DEPTH_OPTIONS } from "@/lib/plan";
+import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
+import {
+  interpolateViewMessage,
+  localizeCriterionReference,
+  localizeSystemText,
+  planMessagesEn,
+  planMessagesZhCN,
+} from "@/lib/i18n/messages/views";
 
 interface ActionPlanViewProps {
   plan: ActionPlan;
@@ -12,18 +20,42 @@ interface ActionPlanViewProps {
   onNavigateDraft: () => void;
 }
 
-function minutesLabel(minutes: number) {
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
-}
-
-function dateLabel(value: string) {
-  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(new Date(`${value}T12:00:00`));
-}
-
 export function ActionPlanView({ plan, onRebalance, onToggleTask, onNavigateDraft }: ActionPlanViewProps) {
+  const messages = useLocalizedMessages(planMessagesEn, planMessagesZhCN);
+  const { locale, formatDate, formatNumber } = useI18n();
+  const minutesLabel = (minutes: number) => {
+    if (minutes < 60) {
+      return interpolateViewMessage(messages.min, { minutes: formatNumber(minutes) });
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    return remainder
+      ? interpolateViewMessage(messages.hoursMinutes, {
+          hours: formatNumber(hours),
+          minutes: formatNumber(remainder),
+        })
+      : interpolateViewMessage(messages.hours, { hours: formatNumber(hours) });
+  };
+  const dateLabel = (value: string) =>
+    formatDate(new Date(`${value}T12:00:00`), { day: "numeric", month: "short" });
+  const localizedDepth = (value: PlanningDepth) => {
+    if (value === "focused") return messages.focused;
+    if (value === "standard") return messages.standard;
+    if (value === "thorough") return messages.thorough;
+    return messages.extended;
+  };
+  const localizedDepthDescription = (value: PlanningDepth) => {
+    if (value === "focused") return messages.focusedDescription;
+    if (value === "standard") return messages.standardDescription;
+    if (value === "thorough") return messages.thoroughDescription;
+    return messages.extendedDescription;
+  };
+  const localizedPriority = (value: string) => {
+    if (value === "high") return messages.high;
+    if (value === "medium") return messages.medium;
+    if (value === "low") return messages.low;
+    return value;
+  };
   const profileKey = [
     plan.profile.weeklyHours,
     plan.profile.planningDepth,
@@ -66,25 +98,25 @@ export function ActionPlanView({ plan, onRebalance, onToggleTask, onNavigateDraf
     <div className="view-stack plan-view">
       <header className="view-header split-header">
         <div>
-          <p className="eyebrow">Action plan</p>
-          <h1>A plan with a definition of done.</h1>
-          <p>Every task builds visible evidence for the rubric — and reschedules around the time you actually have.</p>
+          <p className="eyebrow">{messages.eyebrow}</p>
+          <h1>{messages.title}</h1>
+          <p>{messages.description}</p>
         </div>
-        <div className="header-progress" aria-label={`${Math.round(plan.completionPercent)}% of plan complete`}>
-          <strong>{Math.round(plan.completionPercent)}%</strong><span>work complete</span>
+        <div className="header-progress" aria-label={interpolateViewMessage(messages.completionAria, { percent: formatNumber(Math.round(plan.completionPercent)) })}>
+          <strong>{formatNumber(Math.round(plan.completionPercent))}%</strong><span>{messages.workComplete}</span>
         </div>
       </header>
 
       <section className="plan-controls" aria-labelledby="plan-controls-title">
-        <div className="plan-control-title"><SlidersHorizontal aria-hidden="true" /><div><strong id="plan-controls-title">Rebalance your plan</strong><span id="planning-depth-guidance">Planning depth adjusts task scope and time allowance only. It does not correspond to or predict a grade.</span></div></div>
+        <div className="plan-control-title"><SlidersHorizontal aria-hidden="true" /><div><strong id="plan-controls-title">{messages.rebalance}</strong><span id="planning-depth-guidance">{messages.depthGuidance}</span></div></div>
         <label>
-          <span>Study time</span>
+          <span>{messages.studyTime}</span>
           <select value={controls.weeklyHours} onChange={(event) => updateControls({ weeklyHours: Number(event.target.value) })} data-testid="weekly-hours">
-            {[5, 8, 10, 12, 15].map((hours) => <option key={hours} value={hours}>{hours} hours / week</option>)}
+            {[5, 8, 10, 12, 15].map((hours) => <option key={hours} value={hours}>{interpolateViewMessage(messages.hoursWeek, { hours: formatNumber(hours) })}</option>)}
           </select>
         </label>
         <div className="plan-control-field">
-          <label htmlFor="planning-depth"><span>Planning depth</span></label>
+          <label htmlFor="planning-depth"><span>{messages.planningDepth}</span></label>
           <select
             id="planning-depth"
             value={controls.planningDepth}
@@ -93,38 +125,38 @@ export function ActionPlanView({ plan, onRebalance, onToggleTask, onNavigateDraf
             data-testid="planning-depth"
           >
             {PLANNING_DEPTH_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+              <option key={option.value} value={option.value}>{localizedDepth(option.value)}</option>
             ))}
           </select>
           <small id="planning-depth-description" className="planning-depth-description">
-            {selectedPlanningDepth.description}
+            {localizedDepthDescription(selectedPlanningDepth.value)}
           </small>
         </div>
-        <button className="button button-secondary" type="button" onClick={() => onRebalance(controls.weeklyHours, controls.planningDepth)} data-testid="rebalance-plan">Rebalance plan</button>
+        <button className="button button-secondary" type="button" onClick={() => onRebalance(controls.weeklyHours, controls.planningDepth)} data-testid="rebalance-plan">{messages.rebalanceButton}</button>
       </section>
 
       {plan.capacityRisk ? (
         <div className="inline-alert warning" role="status" data-testid="capacity-risk">
           <AlertTriangle aria-hidden="true" />
-          <div><strong>Time risk detected</strong><span>{plan.capacityRisk.message}</span></div>
+          <div><strong>{messages.riskTitle}</strong><span>{localizeSystemText(plan.capacityRisk.message, locale)}</span></div>
         </div>
       ) : (
         <div className="inline-alert success" role="status">
           <CheckCircle2 aria-hidden="true" />
-          <div><strong>Schedule is feasible</strong><span>Projected finish: {dateLabel(plan.projectedFinishDate)}, leaving time for final checks.</span></div>
+          <div><strong>{messages.feasible}</strong><span>{interpolateViewMessage(messages.projectedWithChecks, { date: dateLabel(plan.projectedFinishDate) })}</span></div>
         </div>
       )}
 
       <div className="plan-summary-line">
-        <span><Clock3 aria-hidden="true" />{minutesLabel(plan.remainingMinutes)} remaining</span>
-        <span><CalendarDays aria-hidden="true" />Projected finish {dateLabel(plan.projectedFinishDate)}</span>
-        <span><GitBranch aria-hidden="true" />Dependencies respected</span>
+        <span><Clock3 aria-hidden="true" />{interpolateViewMessage(messages.remaining, { time: minutesLabel(plan.remainingMinutes) })}</span>
+        <span><CalendarDays aria-hidden="true" />{interpolateViewMessage(messages.projected, { date: dateLabel(plan.projectedFinishDate) })}</span>
+        <span><GitBranch aria-hidden="true" />{messages.dependenciesRespected}</span>
       </div>
 
       <div className="phase-list">
         {phases.map(([phase, tasks], phaseIndex) => (
           <section className="plan-phase" key={phase} aria-labelledby={`phase-${phaseIndex}`}>
-            <div className="phase-heading"><span>{String(phaseIndex + 1).padStart(2, "0")}</span><h2 id={`phase-${phaseIndex}`}>{phase}</h2><small>{tasks.length} tasks</small></div>
+            <div className="phase-heading"><span>{formatNumber(phaseIndex + 1, { minimumIntegerDigits: 2, useGrouping: false })}</span><h2 id={`phase-${phaseIndex}`}>{localizeSystemText(phase, locale)}</h2><small>{interpolateViewMessage(messages.taskCount, { count: formatNumber(tasks.length) })}</small></div>
             <div className="task-list">
               {tasks.map((task) => {
                   const incompleteDependencies = task.dependencies.filter(
@@ -134,21 +166,21 @@ export function ActionPlanView({ plan, onRebalance, onToggleTask, onNavigateDraf
                   return (
                 <article className={`plan-task${task.completed ? " is-complete" : ""}${task.late ? " is-late" : ""}${blocked ? " is-blocked" : ""}`} key={task.id} data-testid={`task-${task.id}`}>
                   <label className="task-check">
-                    <input type="checkbox" checked={task.completed} disabled={blocked} onChange={() => onToggleTask(task.id)} aria-label={blocked ? `${task.title} is blocked by unfinished dependencies` : `Mark ${task.title} ${task.completed ? "incomplete" : "complete"}`} />
+                    <input type="checkbox" checked={task.completed} disabled={blocked} onChange={() => onToggleTask(task.id)} aria-label={blocked ? interpolateViewMessage(messages.blockedAria, { title: localizeSystemText(task.title, locale) }) : interpolateViewMessage(messages.markTask, { title: localizeSystemText(task.title, locale), state: task.completed ? messages.incomplete : messages.complete })} />
                     <span aria-hidden="true"><CheckCircle2 /></span>
                   </label>
                   <div className="task-body">
                     <div className="task-title-line">
-                      <div><span className={`priority-text ${task.priority}`}>{task.priority} priority</span><h3>{task.title}</h3></div>
-                      <div className="task-time"><strong>{minutesLabel(task.adjustedMinutes)}</strong><span>Due {dateLabel(task.dueDate)}</span></div>
+                      <div><span className={`priority-text ${task.priority}`}>{interpolateViewMessage(messages.priority, { priority: localizedPriority(task.priority) })}</span><h3>{localizeSystemText(task.title, locale)}</h3></div>
+                      <div className="task-time"><strong>{minutesLabel(task.adjustedMinutes)}</strong><span>{interpolateViewMessage(messages.due, { date: dateLabel(task.dueDate) })}</span></div>
                     </div>
-                    <p>{task.description}</p>
-                    <div className="task-definition"><strong>Done when</strong><ul>{task.doneDefinition.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                    <p>{localizeSystemText(task.description, locale)}</p>
+                    <div className="task-definition"><strong>{messages.doneWhen}</strong><ul>{task.doneDefinition.map((item) => <li key={item}>{localizeSystemText(item, locale)}</li>)}</ul></div>
                     <div className="task-meta">
-                      <span>Rubric: {task.rubricLinks.map((link) => link.criterionId.replaceAll("-", " ")).join(" · ")}</span>
-                      <span>Depends on: {task.dependencies.length ? task.dependencies.map((id) => taskNameById.get(id) ?? id).join(", ") : "Nothing"}</span>
+                      <span>{interpolateViewMessage(messages.rubric, { items: task.rubricLinks.map((link) => localizeCriterionReference(link.criterionId, locale)).join(" · ") })}</span>
+                      <span>{interpolateViewMessage(messages.dependsOn, { items: task.dependencies.length ? task.dependencies.map((id) => localizeSystemText(taskNameById.get(id) ?? id, locale)).join(", ") : messages.nothing })}</span>
                     </div>
-                    {blocked ? <p className="task-blocked-note">Finish {incompleteDependencies.map((id) => taskNameById.get(id) ?? id).join(", ")} first.</p> : null}
+                    {blocked ? <p className="task-blocked-note">{interpolateViewMessage(messages.finishFirst, { items: incompleteDependencies.map((id) => localizeSystemText(taskNameById.get(id) ?? id, locale)).join(", ") })}</p> : null}
                   </div>
                 </article>
                   );
@@ -159,8 +191,8 @@ export function ActionPlanView({ plan, onRebalance, onToggleTask, onNavigateDraf
       </div>
 
       <div className="view-next-action">
-        <div><span>When you have a section ready</span><strong>Check whether the evidence is visible in your own words.</strong></div>
-        <button className="button button-primary" type="button" onClick={onNavigateDraft}>Check a draft section <ArrowRight aria-hidden="true" /></button>
+        <div><span>{messages.sectionReady}</span><strong>{messages.sectionReadyDescription}</strong></div>
+        <button className="button button-primary" type="button" onClick={onNavigateDraft}>{messages.checkSection} <ArrowRight aria-hidden="true" /></button>
       </div>
     </div>
   );

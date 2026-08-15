@@ -19,8 +19,16 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { CommunityLinks } from "@/components/community-links";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
 import { BRAND } from "@/lib/brand";
-import { assignmentFileIssueReason } from "@/lib/file-intake-messages";
+import type { AssignmentFileErrorCode } from "@/lib/files/parse-assignment-files";
+import {
+  formatIntakeMessage,
+  intakeEn,
+  intakeZhCN,
+  type IntakeMessages,
+} from "@/lib/i18n/messages/intake";
 import {
   PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS,
   validatePastedAssignmentText,
@@ -53,18 +61,36 @@ interface WelcomeScreenProps {
   backupError: string | null;
 }
 
-const FLOW = [
-  ["Brief", "Decode the real ask"],
-  ["Rubric", "See what earns marks"],
-  ["Plan", "Build evidence on time"],
-  ["Draft", "Check, don’t outsource"],
-  ["Progress", "Know what is still missing"],
-] as const;
+const FILE_ISSUE_MESSAGE_KEY: Record<AssignmentFileErrorCode, keyof IntakeMessages> = {
+  UNSUPPORTED_FILE_TYPE: "issueUnsupportedType",
+  INVALID_FILE_NAME: "issueInvalidName",
+  FILE_TOO_LARGE: "issueFileTooLarge",
+  TOO_MANY_FILES: "issueTooManyFiles",
+  TOTAL_FILE_SIZE_TOO_LARGE: "issueTotalSize",
+  EXTRACTED_TEXT_TOO_LARGE: "issueTextTooLarge",
+  EXTRACTED_TEXT_TOO_MANY_LINES: "issueTooManyLines",
+  EXTRACTED_TEXT_TOO_MANY_WORDS: "issueTooManyWords",
+  PDF_TOO_MANY_PAGES: "issuePdfTooLong",
+  TOTAL_PDF_PAGES_TOO_LARGE: "issuePdfsTooLong",
+  EMPTY_FILE: "issueEmpty",
+  INVALID_TEXT_ENCODING: "issueEncoding",
+  SCANNED_NO_TEXT: "issueScanned",
+  ENCRYPTED_PDF: "issueEncrypted",
+  PARSER_UNAVAILABLE: "issueParser",
+  CORRUPT_DOCUMENT: "issueCorrupt",
+};
 
-function chooseFilesLabel(error: AssignmentFileIntakeError): string {
-  if (error.code === "NO_READABLE_FILES") return "Choose all files again";
-  if (error.code === "FILE_TOO_LARGE") return "Choose a smaller file";
-  if (error.code === "PDF_TOO_MANY_PAGES") return "Choose a shorter PDF";
+function fileIssueReason(code: AssignmentFileErrorCode, messages: IntakeMessages): string {
+  return messages[FILE_ISSUE_MESSAGE_KEY[code]];
+}
+
+function chooseFilesLabel(
+  error: AssignmentFileIntakeError,
+  messages: IntakeMessages,
+): string {
+  if (error.code === "NO_READABLE_FILES") return messages.chooseAllFilesAgain;
+  if (error.code === "FILE_TOO_LARGE") return messages.chooseSmallerFile;
+  if (error.code === "PDF_TOO_MANY_PAGES") return messages.chooseShorterPdf;
   return [
     "TOO_MANY_FILES",
     "TOTAL_FILE_SIZE_TOO_LARGE",
@@ -73,8 +99,30 @@ function chooseFilesLabel(error: AssignmentFileIntakeError): string {
     "EXTRACTED_TEXT_TOO_MANY_WORDS",
     "TOTAL_PDF_PAGES_TOO_LARGE",
   ].includes(error.code)
-    ? "Choose fewer files"
-    : "Choose another file";
+    ? messages.chooseFewerFiles
+    : messages.chooseAnotherFile;
+}
+
+function localizedPastedError(
+  error: PastedTextIntakeError,
+  messages: IntakeMessages,
+): string {
+  if (error.code === "brief-required") return messages.pasteErrorBrief;
+  if (error.code === "unreadable") return messages.pasteErrorUnreadable;
+  if (error.code === "too-many-characters") return messages.pasteErrorCharacters;
+  if (error.code === "too-many-lines") return messages.pasteErrorLines;
+  if (error.code === "too-large") return messages.pasteErrorTooLarge;
+  if (error.code === "unknown") return messages.pasteErrorUnknown;
+  if (error.target === "brief") {
+    if (/does not contain readable text/i.test(error.message)) {
+      return messages.pasteErrorUnreadable;
+    }
+    return messages.pasteErrorBrief;
+  }
+  if (/lines combined/i.test(error.message)) return messages.pasteErrorLines;
+  if (/too large to prepare safely/i.test(error.message)) return messages.pasteErrorTooLarge;
+  if (/characters combined/i.test(error.message)) return messages.pasteErrorCharacters;
+  return messages.pasteErrorUnknown;
 }
 
 export function WelcomeScreen({
@@ -97,6 +145,8 @@ export function WelcomeScreen({
   isImportingBackup,
   backupError,
 }: WelcomeScreenProps) {
+  const { locale, formatNumber } = useI18n();
+  const messages = useLocalizedMessages<IntakeMessages>(intakeEn, intakeZhCN);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const pasteHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -117,6 +167,26 @@ export function WelcomeScreen({
   const selectedFileCount = partialUploadResult
     ? partialUploadResult.fileNames.length + partialUploadResult.skippedFiles.length
     : 0;
+  const flow = [
+    [messages.flowBriefTitle, messages.flowBriefDetail],
+    [messages.flowRubricTitle, messages.flowRubricDetail],
+    [messages.flowPlanTitle, messages.flowPlanDetail],
+    [messages.flowDraftTitle, messages.flowDraftDetail],
+    [messages.flowProgressTitle, messages.flowProgressDetail],
+  ] as const;
+  const displayedUploadError = uploadError
+    ? locale === "en"
+      ? { title: uploadError.title, message: uploadError.message }
+      : uploadError.code === "NO_READABLE_FILES"
+        ? { title: messages.errorNoReadableTitle, message: messages.errorNoReadableBody }
+        : uploadError.code === "UNKNOWN"
+          ? { title: messages.errorUnknownTitle, message: messages.errorUnknownBody }
+          : {
+              title: messages.errorKnownTitle,
+              message: fileIssueReason(uploadError.code, messages),
+            }
+    : null;
+  const displayedBackupError = backupError;
 
   useEffect(() => {
     if (uploadStatus !== "parsing") uploadSubmissionLockRef.current = false;
@@ -215,7 +285,7 @@ export function WelcomeScreen({
       onClick={openFilePicker}
       disabled={isWelcomeBusy}
     >
-      {chooseFilesLabel(uploadError)}
+      {chooseFilesLabel(uploadError, messages)}
     </button>
   ) : null;
   const pasteRecovery = uploadError ? (
@@ -225,7 +295,7 @@ export function WelcomeScreen({
       onClick={() => changeIntakeMode("paste", true)}
       disabled={isWelcomeBusy}
     >
-      Paste text instead
+      {messages.pasteInstead}
     </button>
   ) : null;
   const fileRecoveryButtons = uploadError ? (
@@ -241,23 +311,23 @@ export function WelcomeScreen({
   return (
     <main className="welcome-shell" id="main-content">
       <header className="welcome-header">
-        <a className="brand-lockup" href="#main-content" aria-label="RubricTrail home">
+        <a className="brand-lockup" href="#main-content" aria-label={messages.homeAria}>
           <span className="brand-mark" aria-hidden="true"><Route /></span>
           <span>{BRAND.name}</span>
         </a>
-        <div className="mode-indicator" title={BRAND.demoDescription}>
-          <span aria-hidden="true" />
-          Local demo · no credits
+        <div className="header-actions">
+          <LanguageSwitcher compact />
+          <div className="mode-indicator" title={messages.demoDescription}>
+            <span aria-hidden="true" />
+            {messages.demoLabel}
+          </div>
         </div>
       </header>
 
       <section className="welcome-grid" aria-labelledby="welcome-title">
         <div className="welcome-copy">
-          <h1 id="welcome-title">Turn the brief into a plan you can prove.</h1>
-          <p className="welcome-lede">
-            RubricTrail connects every requirement to the rubric, the work you need to do,
-            and the evidence you still need to build.
-          </p>
+          <h1 id="welcome-title">{messages.welcomeTitle}</h1>
+          <p className="welcome-lede">{messages.welcomeLede}</p>
 
           <button
             className="button button-primary button-large"
@@ -266,12 +336,12 @@ export function WelcomeScreen({
             disabled={isWelcomeBusy}
             data-testid="try-sample"
           >
-            {isLoadingSample ? "Reading sample brief…" : "Explore the 2-minute demo"}
+            {isLoadingSample ? messages.sampleLoading : messages.sampleCta}
             {isLoadingSample ? <span className="button-spinner" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
           </button>
 
-          <ol className="welcome-flow" aria-label="RubricTrail workflow">
-            {FLOW.map(([title, detail], index) => (
+          <ol className="welcome-flow" aria-label={messages.workflowAria}>
+            {flow.map(([title, detail], index) => (
               <li key={title}>
                 <span className="flow-number">{String(index + 1).padStart(2, "0")}</span>
                 <span><strong>{title}</strong><small>{detail}</small></span>
@@ -281,21 +351,26 @@ export function WelcomeScreen({
 
           <div className="integrity-note compact">
             <ShieldCheck aria-hidden="true" />
-            <p><strong>Support, not substitution.</strong> RubricTrail coaches the process. It never invents sources, data, or a submission.</p>
+            <p><strong>{messages.integrityTitle}</strong> {messages.integrityBody}</p>
           </div>
         </div>
 
         <div className="welcome-workbench">
           <div className="workbench-heading">
             <div>
-              <p className="eyebrow">Start a new project</p>
-              <h2>Add your assignment</h2>
-              <p>Upload a file or paste instructions from your course page. RubricTrail parses assignment content locally in this browser; the app does not upload it or send it to an AI service.</p>
+              <p className="eyebrow">{messages.startEyebrow}</p>
+              <h2>{messages.startTitle}</h2>
+              <p>{messages.startBody}</p>
             </div>
             <FileText aria-hidden="true" />
           </div>
 
-          <div className="intake-mode-picker" role="group" aria-label="Choose how to add your assignment">
+          <div className="inline-alert warning compact-alert" role="note">
+            <AlertTriangle aria-hidden="true" />
+            <p>{messages.extractionLimit}</p>
+          </div>
+
+          <div className="intake-mode-picker" role="group" aria-label={messages.intakeModeAria}>
             <button
               type="button"
               className={intakeMode === "files" ? "is-active" : ""}
@@ -306,7 +381,7 @@ export function WelcomeScreen({
               disabled={isWelcomeBusy}
             >
               <UploadCloud aria-hidden="true" />
-              <span><strong id="intake-files-title">Upload files</strong><small id="intake-files-description">PDF, DOCX or TXT</small></span>
+              <span><strong id="intake-files-title">{messages.uploadFiles}</strong><small id="intake-files-description">{messages.uploadFormats}</small></span>
             </button>
             <button
               type="button"
@@ -318,12 +393,12 @@ export function WelcomeScreen({
               disabled={isWelcomeBusy}
             >
               <ClipboardPaste aria-hidden="true" />
-              <span><strong id="intake-paste-title">Paste text</strong><small id="intake-paste-description">Course page, email or scan</small></span>
+              <span><strong id="intake-paste-title">{messages.pasteText}</strong><small id="intake-paste-description">{messages.pasteSources}</small></span>
             </button>
           </div>
 
           {intakeMode === "files" ? (
-            <section className="intake-panel" aria-label="Upload assignment files">
+            <section className="intake-panel" aria-label={messages.uploadPanelAria}>
               <div
                 className={`upload-zone${uploadError ? " has-error" : ""}`}
                 role="group"
@@ -336,8 +411,8 @@ export function WelcomeScreen({
                 data-testid="upload-zone"
               >
                 <UploadCloud aria-hidden="true" />
-                <h3 id="upload-zone-title" tabIndex={-1}>Drop brief and rubric here</h3>
-                <p>PDF, DOCX or TXT · up to 10 files · 10 MiB each · 25 MiB combined. Use only documents you trust; these limits are not a malicious-document sandbox.</p>
+                <h3 id="upload-zone-title" tabIndex={-1}>{messages.uploadTitle}</h3>
+                <p>{messages.uploadLimits}</p>
                 <button
                   id="choose-assignment-files"
                   type="button"
@@ -345,7 +420,7 @@ export function WelcomeScreen({
                   onClick={openFilePicker}
                   disabled={isWelcomeBusy}
                 >
-                  {uploadStatus === "parsing" ? "Parsing locally…" : "Choose files"}
+                  {uploadStatus === "parsing" ? messages.parsingLocally : messages.chooseFiles}
                 </button>
                 <input
                   ref={fileInputRef}
@@ -353,7 +428,7 @@ export function WelcomeScreen({
                   type="file"
                   accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
                   multiple
-                  aria-label="Upload assignment brief and rubric files"
+                  aria-label={messages.fileInputAria}
                   disabled={isWelcomeBusy}
                   onChange={handleInput}
                   data-testid="file-input"
@@ -370,20 +445,25 @@ export function WelcomeScreen({
                 >
                   <AlertTriangle aria-hidden="true" />
                   <div>
-                    <strong>{uploadError.title}</strong>
+                    <strong>{displayedUploadError?.title}</strong>
                     {uploadError.fileName ? <span className="intake-error-file">{uploadError.fileName}</span> : null}
-                    <p>{uploadError.message}</p>
+                    <p>{displayedUploadError?.message}</p>
                     {uploadError.fileIssues.length > 0 ? (
                       <ul className="intake-file-list issue-list">
                         {uploadError.fileIssues.map((issue) => (
                           <li key={`${issue.inputIndex}-${issue.code}`}>
-                            <strong>File {issue.inputIndex + 1}: {issue.fileName}</strong>
-                            <span>{assignmentFileIssueReason(issue.code)}</span>
+                            <strong>
+                              {formatIntakeMessage(messages.fileNumber, {
+                                number: issue.inputIndex + 1,
+                                fileName: issue.fileName,
+                              })}
+                            </strong>
+                            <span>{fileIssueReason(issue.code, messages)}</span>
                           </li>
                         ))}
                       </ul>
                     ) : null}
-                    <small>Nothing was saved or changed.</small>
+                    <small>{messages.nothingChanged}</small>
                     {fileRecoveryButtons}
                   </div>
                 </section>
@@ -401,14 +481,31 @@ export function WelcomeScreen({
                   <AlertTriangle aria-hidden="true" />
                   <div>
                     <h3 id="partial-upload-title">
-                      We read {readyFileCount} of {selectedFileCount} files.
+                      {formatIntakeMessage(messages.partialTitle, {
+                        ready: readyFileCount,
+                        selected: selectedFileCount,
+                      })}
                     </h3>
                     <p>
-                      {readyFileCount === 1 ? "One file is" : `${readyFileCount} files are`} ready to review. {partialUploadResult.skippedFiles.length === 1 ? "One file was" : `${partialUploadResult.skippedFiles.length} files were`} not included. Nothing has been saved yet.
+                      {formatIntakeMessage(
+                        readyFileCount === 1
+                          ? partialUploadResult.skippedFiles.length === 1
+                            ? messages.partialBodyOneOne
+                            : messages.partialBodyOneMany
+                          : partialUploadResult.skippedFiles.length === 1
+                            ? messages.partialBodyManyOne
+                            : messages.partialBodyManyMany,
+                        {
+                          ready: readyFileCount,
+                          skipped: partialUploadResult.skippedFiles.length,
+                        },
+                      )}
                     </p>
                     <div className="partial-file-groups">
                       <section aria-labelledby="ready-files-title">
-                        <h4 id="ready-files-title">Ready to review ({readyFileCount})</h4>
+                        <h4 id="ready-files-title">
+                          {formatIntakeMessage(messages.readyToReview, { count: readyFileCount })}
+                        </h4>
                         <ul className="intake-file-list ready-list">
                           {partialUploadResult.fileNames.map((fileName, index) => (
                             <li key={`${index}-${fileName}`}>{fileName}</li>
@@ -417,20 +514,26 @@ export function WelcomeScreen({
                       </section>
                       <section aria-labelledby="attention-files-title">
                         <h4 id="attention-files-title">
-                          Needs attention ({partialUploadResult.skippedFiles.length})
+                          {formatIntakeMessage(messages.needsAttention, {
+                            count: partialUploadResult.skippedFiles.length,
+                          })}
                         </h4>
                         <ul className="intake-file-list issue-list">
                           {partialUploadResult.skippedFiles.map((issue) => (
                             <li key={`${issue.inputIndex}-${issue.code}`}>
-                              <strong>Not included — {issue.fileName}</strong>
-                              <span>{assignmentFileIssueReason(issue.code)}</span>
+                              <strong>
+                                {formatIntakeMessage(messages.notIncluded, {
+                                  fileName: issue.fileName,
+                                })}
+                              </strong>
+                              <span>{fileIssueReason(issue.code, messages)}</span>
                             </li>
                           ))}
                         </ul>
                       </section>
                     </div>
                     <p className="partial-reselect-note">
-                      Choosing files again replaces this whole selection; select the complete brief-and-rubric set.
+                      {messages.reselectWarning}
                     </p>
                     <div className="intake-error-actions partial-upload-actions">
                       <button
@@ -439,7 +542,12 @@ export function WelcomeScreen({
                         onClick={onReviewPartialUpload}
                         disabled={isWelcomeBusy}
                       >
-                        Review {readyFileCount} ready {readyFileCount === 1 ? "file" : "files"}
+                        {formatIntakeMessage(
+                          readyFileCount === 1
+                            ? messages.reviewReadyFile
+                            : messages.reviewReadyFiles,
+                          { count: readyFileCount },
+                        )}
                       </button>
                       <button
                         className="button button-secondary"
@@ -447,7 +555,7 @@ export function WelcomeScreen({
                         onClick={openFilePicker}
                         disabled={isWelcomeBusy}
                       >
-                        Choose all files again
+                        {messages.chooseAllFilesAgain}
                       </button>
                       <button
                         className="button button-ghost"
@@ -455,7 +563,7 @@ export function WelcomeScreen({
                         onClick={() => changeIntakeMode("paste", true)}
                         disabled={isWelcomeBusy}
                       >
-                        Paste all text instead
+                        {messages.pasteAllInstead}
                       </button>
                     </div>
                   </div>
@@ -473,19 +581,19 @@ export function WelcomeScreen({
               <div className="paste-intake-heading">
                 <ClipboardPaste aria-hidden="true" />
                 <div>
-                  <h3 id="paste-intake-title" ref={pasteHeadingRef} tabIndex={-1}>Paste your assignment text</h3>
-                  <p>Copy the instructions from your course page or document. Formatting does not matter.</p>
+                  <h3 id="paste-intake-title" ref={pasteHeadingRef} tabIndex={-1}>{messages.pasteTitle}</h3>
+                  <p>{messages.pasteIntro}</p>
                 </div>
               </div>
 
               <label htmlFor="pasted-assignment-brief">
-                <span>Assignment brief or instructions <b>Required</b></span>
+                <span>{messages.briefLabel} <b>{messages.required}</b></span>
               </label>
               <textarea
                 id="pasted-assignment-brief"
                 value={pastedBrief}
                 onChange={(event) => onPastedBriefChange(event.target.value)}
-                placeholder="Include the task, deadline, word count and submission rules if available."
+                placeholder={messages.briefPlaceholder}
                 maxLength={PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS}
                 required
                 aria-invalid={pastedTextError?.target === "brief" || pastedTextError?.target === "combined" || undefined}
@@ -493,27 +601,30 @@ export function WelcomeScreen({
                 disabled={isWelcomeBusy}
                 data-testid="pasted-assignment-brief"
               />
-              <small id="pasted-brief-hint">Include the task, deadline, word count and submission rules if available.</small>
+              <small id="pasted-brief-hint">{messages.briefHint}</small>
 
               <label htmlFor="pasted-assignment-rubric">
-                <span>Rubric or marking criteria <b>Optional</b></span>
+                <span>{messages.rubricLabel} <b>{messages.optional}</b></span>
               </label>
               <textarea
                 id="pasted-assignment-rubric"
                 value={pastedRubric}
                 onChange={(event) => onPastedRubricChange(event.target.value)}
-                placeholder="Paste criterion names and any published percentages. You can add criteria later."
+                placeholder={messages.rubricPlaceholder}
                 maxLength={PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS}
                 aria-invalid={pastedTextError?.target === "combined" || undefined}
                 aria-describedby={`pasted-rubric-hint${rubricErrorId ? ` ${rubricErrorId}` : ""}`}
                 disabled={isWelcomeBusy}
                 data-testid="pasted-assignment-rubric"
               />
-              <small id="pasted-rubric-hint">Paste criterion names and any percentages explicitly published in the rubric. RubricTrail will not estimate missing weights.</small>
+              <small id="pasted-rubric-hint">{messages.rubricHint}</small>
 
               <div className="paste-intake-meta">
                 <span className={combinedPastedCharacters > PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS ? "is-over-limit" : ""}>
-                  {combinedPastedCharacters.toLocaleString()} / {PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS.toLocaleString()} characters combined
+                  {formatIntakeMessage(messages.charactersCombined, {
+                    current: formatNumber(combinedPastedCharacters),
+                    maximum: formatNumber(PASTED_ASSIGNMENT_TEXT_MAX_CHARACTERS),
+                  })}
                 </span>
               </div>
 
@@ -528,16 +639,18 @@ export function WelcomeScreen({
                 >
                   <AlertTriangle aria-hidden="true" />
                   <div>
-                    <strong>Check the pasted text.</strong>
-                    <p>{pastedTextError.message}</p>
-                    <small>Nothing was saved or changed.</small>
+                    <strong>{messages.pasteErrorTitle}</strong>
+                    <p>
+                      {localizedPastedError(pastedTextError, messages)}
+                    </p>
+                    <small>{messages.nothingChanged}</small>
                     {pastedTextError.target !== "brief" ? (
                       <button
                         className="button button-ghost paste-error-jump"
                         type="button"
                         onClick={() => document.getElementById("pasted-assignment-brief")?.focus({ preventScroll: true })}
                       >
-                        Go to assignment brief
+                        {messages.goToBrief}
                       </button>
                     ) : null}
                   </div>
@@ -551,14 +664,14 @@ export function WelcomeScreen({
                   onClick={() => changeIntakeMode("files", true)}
                   disabled={isWelcomeBusy}
                 >
-                  Upload files instead
+                  {messages.uploadInstead}
                 </button>
                 <button
                   className="button button-primary"
                   type="submit"
                   disabled={isWelcomeBusy}
                 >
-                  {uploadStatus === "parsing" ? "Preparing preview…" : "Review assignment details"}
+                  {uploadStatus === "parsing" ? messages.preparingPreview : messages.reviewDetails}
                   {uploadStatus === "parsing" ? <span className="button-spinner" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
                 </button>
               </div>
@@ -567,29 +680,29 @@ export function WelcomeScreen({
 
           <div className="privacy-row">
             <LockKeyhole aria-hidden="true" />
-            <p><strong>Local processing.</strong> RubricTrail does not send selected file contents or pasted text to an analysis service. Confirmed fields, short excerpts, self-check notes and progress may be saved in this browser; full source text is not retained.</p>
+            <p><strong>{messages.localProcessingTitle}</strong> {messages.localProcessingBody}</p>
           </div>
 
           <div className="welcome-backup-restore" aria-busy={isImportingBackup}>
             <ArchiveRestore aria-hidden="true" />
             <div>
-              <span className="backup-eyebrow">Continue an existing project</span>
-              <strong>Already have a RubricTrail backup?</strong>
-              <p>Restore a versioned JSON backup. Backups are unencrypted and unsigned; open only one you created or trust. Confirm its project name and export date before anything is replaced.</p>
+              <span className="backup-eyebrow">{messages.backupEyebrow}</span>
+              <strong>{messages.backupTitle}</strong>
+              <p>{messages.backupBody}</p>
               <button
                 className="button button-ghost"
                 type="button"
                 disabled={isWelcomeBusy}
                 onClick={() => backupInputRef.current?.click()}
               >
-                {isImportingBackup ? "Reading backup…" : "Open a project backup"}
+                {isImportingBackup ? messages.backupReading : messages.backupOpen}
               </button>
               <input
                 ref={backupInputRef}
                 className="visually-hidden"
                 type="file"
                 accept=".rubrictrail.json,.json,application/json"
-                aria-label="Choose a RubricTrail project backup"
+                aria-label={messages.backupInputAria}
                 disabled={isWelcomeBusy}
                 onChange={handleBackupInput}
                 data-testid="backup-file-input"
@@ -600,8 +713,8 @@ export function WelcomeScreen({
             <div className="inline-alert danger" role="alert" data-testid="backup-error">
               <ArchiveRestore aria-hidden="true" />
               <div>
-                <strong>We couldn’t restore that backup.</strong>
-                <span>{backupError}</span>
+                <strong>{messages.backupErrorTitle}</strong>
+                <span>{displayedBackupError}</span>
               </div>
             </div>
           ) : null}
@@ -609,7 +722,7 @@ export function WelcomeScreen({
       </section>
 
       <footer className="welcome-footer">
-        <span>Built for evidence-led coursework</span>
+        <span>{messages.footer}</span>
         <CommunityLinks />
       </footer>
     </main>

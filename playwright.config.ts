@@ -37,7 +37,7 @@ export default defineConfig({
       OPENAI_LIVE_ENABLED: "false",
     },
     url: "http://127.0.0.1:3100",
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === "true",
     timeout: 120_000,
   },
 });

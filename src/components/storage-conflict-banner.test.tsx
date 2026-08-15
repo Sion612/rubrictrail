@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import { LocaleProvider } from "@/components/locale-provider";
 import { StorageConflictBanner } from "@/components/storage-conflict-banner";
 
 afterEach(() => {
@@ -111,5 +113,44 @@ describe("StorageConflictBanner", () => {
     expect(callbacks.onLoadSavedVersion).toHaveBeenCalledOnce();
     expect(callbacks.onDownloadThisTab).not.toHaveBeenCalled();
     expect(callbacks.onKeepThisTab).not.toHaveBeenCalled();
+  });
+
+  it("localizes the destructive-version warning and recovery actions", () => {
+    const callbacks = {
+      onDownloadThisTab: vi.fn(),
+      onLoadSavedVersion: vi.fn(),
+      onKeepThisTab: vi.fn(),
+    };
+    render(
+      <LocaleProvider>
+        <LanguageSwitcher />
+        <StorageConflictBanner {...callbacks} />
+      </LocaleProvider>,
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "zh-CN" },
+    });
+
+    const region = screen.getByRole("region", {
+      name: "自动保存已暂停：其他标签页保存了更改",
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "自动保存已暂停：其他标签页保存了更改。",
+    );
+    expect(region).toHaveAccessibleDescription(
+      /载入已保存版本会替换仅保留在此标签页中的更改/,
+    );
+    expect(
+      within(region).getByRole("button", { name: "下载此标签页的备份" }),
+    ).toBeInTheDocument();
+    expect(
+      within(region).getByRole("button", { name: "载入已保存版本" }),
+    ).toBeInTheDocument();
+    expect(
+      within(region).getByRole("button", {
+        name: "用此标签页替换已保存版本",
+      }),
+    ).toBeInTheDocument();
   });
 });

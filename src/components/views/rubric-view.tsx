@@ -19,6 +19,15 @@ import type {
   DraftCheckResult,
   RubricCriterion,
 } from "@/lib/domain";
+import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
+import {
+  interpolateViewMessage,
+  localizeSampleRubricListItem,
+  localizeSampleRubricSummary,
+  localizeSystemText,
+  rubricMessagesEn,
+  rubricMessagesZhCN,
+} from "@/lib/i18n/messages/views";
 
 interface RubricViewProps {
   analysis: AssignmentAnalysis;
@@ -74,13 +83,15 @@ function ProgressMetric({
   detail?: string;
   muted?: boolean;
 }) {
+  const messages = useLocalizedMessages(rubricMessagesEn, rubricMessagesZhCN);
+  const { formatNumber } = useI18n();
   const normalizedValue = value === null ? 0 : Math.max(0, Math.min(100, value));
 
   return (
     <div className={`rubric-progress ${muted ? "rubric-progress--muted" : ""}`}>
       <div className="rubric-progress__label-row">
         <span>{label}</span>
-        <strong>{value === null ? "Not checked" : `${Math.round(normalizedValue)}%`}</strong>
+        <strong>{value === null ? messages.notChecked : `${formatNumber(Math.round(normalizedValue))}%`}</strong>
       </div>
       <progress value={normalizedValue} max={100} aria-label={label} />
       {detail ? <p>{detail}</p> : null}
@@ -89,6 +100,8 @@ function ProgressMetric({
 }
 
 export function RubricView({ analysis, draftResult, plan, onOpenEvidence }: RubricViewProps) {
+  const messages = useLocalizedMessages(rubricMessagesEn, rubricMessagesZhCN);
+  const { locale, formatNumber } = useI18n();
   const defaultExpandedId = getDefaultExpandedId(analysis.rubric);
   const [expansion, setExpansion] = useState<{
     assignmentId: string;
@@ -126,31 +139,28 @@ export function RubricView({ analysis, draftResult, plan, onOpenEvidence }: Rubr
     <div className="rubric-view">
       <header className="rubric-view__header">
         <div className="rubric-view__heading-copy">
-          <span className="rubric-view__eyebrow">Rubric-to-work map</span>
-          <h1>See what every mark requires</h1>
-          <p>
-            Expand a criterion to connect high-mark performance with the evidence, report section,
-            tasks, and draft changes needed to achieve it.
-          </p>
+          <span className="rubric-view__eyebrow">{messages.eyebrow}</span>
+          <h1>{messages.title}</h1>
+          <p>{messages.description}</p>
         </div>
 
-        <dl className="rubric-summary" aria-label="Rubric progress summary">
+        <dl className="rubric-summary" aria-label={messages.summary}>
           <div className="rubric-summary__item">
-            <dt>Rubric weight mapped</dt>
-            <dd>{Math.round(totalWeight)}%</dd>
+            <dt>{messages.weightMapped}</dt>
+            <dd>{formatNumber(Math.round(totalWeight))}%</dd>
           </div>
           <div className="rubric-summary__item">
-            <dt>Plan completed</dt>
-            <dd>{Math.round(plan.completionPercent)}%</dd>
+            <dt>{messages.planCompleted}</dt>
+            <dd>{formatNumber(Math.round(plan.completionPercent))}%</dd>
           </div>
           <div className="rubric-summary__item">
-            <dt>Draft coverage</dt>
-            <dd>{draftResult ? `${Math.round(draftResult.coverageEstimate)}%` : "Not checked"}</dd>
+            <dt>{messages.draftCoverage}</dt>
+            <dd>{draftResult ? `${formatNumber(Math.round(draftResult.coverageEstimate))}%` : messages.notChecked}</dd>
           </div>
         </dl>
       </header>
 
-      <div className="rubric-table" role="list" aria-label="Rubric criteria">
+      <div className="rubric-table" role="list" aria-label={messages.criteria}>
         {analysis.rubric.map((criterion, index) => {
           const expanded = expandedIds.has(criterion.id);
           const panelId = `rubric-criterion-panel-${index}`;
@@ -178,21 +188,32 @@ export function RubricView({ analysis, draftResult, plan, onOpenEvidence }: Rubr
                   {expanded ? <ChevronDown /> : <ChevronRight />}
                 </span>
                 <span className="rubric-row__identity">
-                  <span className="rubric-row__index">Criterion {index + 1}</span>
+                  <span className="rubric-row__index">
+                    {interpolateViewMessage(messages.criterion, {
+                      number: formatNumber(index + 1),
+                    })}
+                  </span>
                   <strong>{criterion.name}</strong>
-                  <span>{criterion.summary}</span>
+                  <span>
+                    {localizeSampleRubricSummary(
+                      analysis.id,
+                      criterion.id,
+                      criterion.summary,
+                      locale,
+                    )}
+                  </span>
                 </span>
                 <span className="rubric-row__weight">
-                  <strong>{criterion.weight}%</strong>
-                  <span>of grade</span>
+                  <strong>{formatNumber(criterion.weight)}%</strong>
+                  <span>{messages.ofGrade}</span>
                 </span>
                 <span className="rubric-row__snapshot">
-                  <span>Plan</span>
-                  <strong>{Math.round(planProgress?.percent ?? 0)}%</strong>
+                  <span>{messages.plan}</span>
+                  <strong>{formatNumber(Math.round(planProgress?.percent ?? 0))}%</strong>
                 </span>
                 <span className="rubric-row__snapshot">
-                  <span>Draft</span>
-                  <strong>{draftCheck ? `${Math.round(draftCheck.coverage)}%` : "—"}</strong>
+                  <span>{messages.draft}</span>
+                  <strong>{draftCheck ? `${formatNumber(Math.round(draftCheck.coverage))}%` : "—"}</strong>
                 </span>
               </button>
 
@@ -200,46 +221,83 @@ export function RubricView({ analysis, draftResult, plan, onOpenEvidence }: Rubr
                 <div id={panelId} className="rubric-row__details">
                   <div className="rubric-row__progress-grid">
                     <ProgressMetric
-                      label="Action-plan completion"
+                      label={messages.actionCompletion}
                       value={planProgress?.percent ?? 0}
                       detail={
                         planProgress
-                          ? `${Math.round(planProgress.completedMinutes)} of ${Math.round(
-                              planProgress.totalMinutes,
-                            )} planned minutes complete`
-                          : "No plan tasks are linked to this criterion yet."
+                          ? interpolateViewMessage(messages.minutesComplete, {
+                              completed: formatNumber(Math.round(planProgress.completedMinutes)),
+                              total: formatNumber(Math.round(planProgress.totalMinutes)),
+                            })
+                          : messages.noPlanTasks
                       }
                     />
                     <ProgressMetric
-                      label="Draft coverage"
+                      label={messages.draftCoverage}
                       value={draftCheck?.coverage ?? null}
-                      detail={draftCheck?.summary ?? "Run Draft Check to measure this criterion."}
+                      detail={draftCheck ? localizeSystemText(draftCheck.summary, locale) : messages.runDraftCheck}
                       muted={!draftCheck}
                     />
                   </div>
 
                   <div className="rubric-row__detail-grid">
                     <DetailList
-                      title="High-performance signals"
-                      items={criterion.highPerformance}
+                      title={messages.highPerformance}
+                      items={criterion.highPerformance.map((item, index) =>
+                        localizeSampleRubricListItem(
+                          analysis.id,
+                          criterion.id,
+                          "highPerformance",
+                          index,
+                          item,
+                          locale,
+                        ),
+                      )}
                       icon={CheckCircle2}
                       modifier="success"
                     />
                     <DetailList
-                      title="Evidence you need"
-                      items={criterion.evidenceNeeded}
+                      title={messages.evidenceNeeded}
+                      items={criterion.evidenceNeeded.map((item, index) =>
+                        localizeSampleRubricListItem(
+                          analysis.id,
+                          criterion.id,
+                          "evidenceNeeded",
+                          index,
+                          item,
+                          locale,
+                        ),
+                      )}
                       icon={FileSearch}
                       modifier="evidence"
                     />
                     <DetailList
-                      title="Where it belongs"
-                      items={criterion.reportSections}
+                      title={messages.whereBelongs}
+                      items={criterion.reportSections.map((item, index) =>
+                        localizeSampleRubricListItem(
+                          analysis.id,
+                          criterion.id,
+                          "reportSections",
+                          index,
+                          item,
+                          locale,
+                        ),
+                      )}
                       icon={Map}
                       modifier="sections"
                     />
                     <DetailList
-                      title="Common ways to lose marks"
-                      items={criterion.commonRisks}
+                      title={messages.commonRisks}
+                      items={criterion.commonRisks.map((item, index) =>
+                        localizeSampleRubricListItem(
+                          analysis.id,
+                          criterion.id,
+                          "commonRisks",
+                          index,
+                          item,
+                          locale,
+                        ),
+                      )}
                       icon={AlertTriangle}
                       modifier="risks"
                     />
@@ -249,23 +307,23 @@ export function RubricView({ analysis, draftResult, plan, onOpenEvidence }: Rubr
                     <section className="rubric-row__draft-findings" aria-labelledby={`${panelId}-draft`}>
                       <div className="rubric-row__subheading">
                         <ClipboardCheck aria-hidden="true" />
-                        <h4 id={`${panelId}-draft`}>Current draft signal</h4>
+                        <h4 id={`${panelId}-draft`}>{messages.currentSignal}</h4>
                       </div>
                       <div className="rubric-row__draft-columns">
                         <div>
-                          <h5>What is working</h5>
+                          <h5>{messages.working}</h5>
                           {draftCheck.strengths.length > 0 ? (
-                            <ul>{draftCheck.strengths.map((item) => <li key={item}>{item}</li>)}</ul>
+                            <ul>{draftCheck.strengths.map((item) => <li key={item}>{localizeSystemText(item, locale)}</li>)}</ul>
                           ) : (
-                            <p>No clear strength has been evidenced yet.</p>
+                            <p>{messages.noStrength}</p>
                           )}
                         </div>
                         <div>
-                          <h5>What is missing</h5>
+                          <h5>{messages.missing}</h5>
                           {draftCheck.gaps.length > 0 ? (
-                            <ul>{draftCheck.gaps.map((item) => <li key={item}>{item}</li>)}</ul>
+                            <ul>{draftCheck.gaps.map((item) => <li key={item}>{localizeSystemText(item, locale)}</li>)}</ul>
                           ) : (
-                            <p>No material gap was identified in this draft check.</p>
+                            <p>{messages.noGap}</p>
                           )}
                         </div>
                       </div>
@@ -275,7 +333,7 @@ export function RubricView({ analysis, draftResult, plan, onOpenEvidence }: Rubr
                   <footer className="rubric-row__evidence-footer">
                     <div>
                       <Layers3 aria-hidden="true" />
-                        <span>Why RubricTrail mapped this criterion</span>
+                        <span>{messages.mappingReason}</span>
                     </div>
                     <div className="rubric-row__evidence-actions">
                       {criterion.evidenceRefs.map((evidenceId, evidenceIndex) => (
@@ -283,10 +341,15 @@ export function RubricView({ analysis, draftResult, plan, onOpenEvidence }: Rubr
                           key={evidenceId}
                           type="button"
                           onClick={() => onOpenEvidence(evidenceId)}
-                          aria-label={`Open source ${evidenceIndex + 1} for ${criterion.name}`}
+                          aria-label={interpolateViewMessage(messages.openSource, {
+                            number: formatNumber(evidenceIndex + 1),
+                            label: criterion.name,
+                          })}
                         >
                           <Search aria-hidden="true" />
-                          Source {evidenceIndex + 1}
+                          {interpolateViewMessage(messages.source, {
+                            number: formatNumber(evidenceIndex + 1),
+                          })}
                         </button>
                       ))}
                     </div>

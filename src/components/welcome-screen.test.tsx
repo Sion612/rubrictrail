@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider } from "@/components/locale-provider";
 import { WelcomeScreen } from "@/components/welcome-screen";
 import { COMMUNITY_URLS } from "@/components/community-links";
 import { buildUploadedAssignmentSummary } from "@/lib/files/parse-assignment-files";
@@ -359,5 +360,41 @@ describe("WelcomeScreen upload controls", () => {
     expect(
       within(error).getByRole("button", { name: "Choose all files again" }),
     ).toBeInTheDocument();
+  });
+
+  it("switches the visible intake and recovery copy to Simplified Chinese without changing file names", () => {
+    render(
+      <LocaleProvider>
+        <WelcomeScreen
+          {...defaultProps}
+          uploadStatus="error"
+          uploadError={{
+            code: "SCANNED_NO_TEXT",
+            fileName: "rubric-scan.pdf",
+            title: "This file has no selectable text.",
+            message: "Paste the assignment instructions.",
+            preferredRecovery: "paste",
+            fileIssues: [],
+          }}
+        />
+      </LocaleProvider>,
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "zh-CN" },
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "把作业要求变成一份有据可查的计划。" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("upload-error")).toHaveTextContent(
+      "未找到可选择文字；这可能是扫描件。",
+    );
+    expect(screen.getByTestId("upload-error")).toHaveTextContent("rubric-scan.pdf");
+    expect(
+      within(screen.getByTestId("upload-error")).getAllByRole("button").map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(["改为粘贴文字", "选择其他文件"]);
   });
 });

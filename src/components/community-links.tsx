@@ -1,4 +1,8 @@
+"use client";
+
 import { Bug, Code2, GitPullRequestArrow, type LucideIcon } from "lucide-react";
+import { useLocalizedMessages } from "@/components/locale-provider";
+import { workspaceEn, workspaceZhCN } from "@/lib/i18n/messages/workspace";
 
 export const COMMUNITY_URLS = {
   source: "https://github.com/Sion612/rubrictrail",
@@ -10,33 +14,35 @@ export const COMMUNITY_URLS = {
 
 const COMMUNITY_ITEMS: ReadonlyArray<{
   href: (typeof COMMUNITY_URLS)[keyof typeof COMMUNITY_URLS];
-  label: string;
-  detail: string;
+  label: keyof typeof workspaceEn;
+  detail: keyof typeof workspaceEn;
   icon: LucideIcon;
 }> = [
   {
     href: COMMUNITY_URLS.source,
-    label: "View source",
-    detail: "Read the code and project history.",
+    label: "viewSource",
+    detail: "viewSourceDetail",
     icon: Code2,
   },
   {
     href: COMMUNITY_URLS.report,
-    label: "Report a problem",
-    detail: "Use fictional examples only.",
+    label: "reportProblem",
+    detail: "reportProblemDetail",
     icon: Bug,
   },
   {
     href: COMMUNITY_URLS.contribute,
-    label: "Contribute",
-    detail: "Start with the contributor guide.",
+    label: "contribute",
+    detail: "contributeDetail",
     icon: GitPullRequestArrow,
   },
 ];
 
 export function CommunityLinks() {
+  const messages = useLocalizedMessages(workspaceEn, workspaceZhCN);
+
   return (
-    <nav className="community-links" aria-label="RubricTrail community">
+    <nav className="community-links" aria-label={messages.communityAria}>
       {COMMUNITY_ITEMS.map(({ href, label, detail, icon: Icon }) => (
         <a
           className="community-link"
@@ -47,8 +53,8 @@ export function CommunityLinks() {
         >
           <Icon aria-hidden="true" />
           <span>
-            <strong>{label}</strong>
-            <small>{detail}</small>
+            <strong>{messages[label]}</strong>
+            <small>{messages[detail]}</small>
           </span>
         </a>
       ))}

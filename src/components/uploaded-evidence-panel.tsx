@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { FileText, MapPin, Quote, X } from "lucide-react";
+import { useLocalizedMessages } from "@/components/locale-provider";
+import { workspaceEn, workspaceZhCN } from "@/lib/i18n/messages/workspace";
 import type { UploadedProject } from "@/lib/ui-types";
 
 interface UploadedEvidencePanelProps {
@@ -15,6 +17,7 @@ export function UploadedEvidencePanel({
   criterionId,
   onClose,
 }: UploadedEvidencePanelProps) {
+  const messages = useLocalizedMessages(workspaceEn, workspaceZhCN);
   const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
@@ -65,7 +68,7 @@ export function UploadedEvidencePanel({
       <button
         type="button"
         className="evidence-panel-shell__backdrop"
-        aria-label="Close evidence panel"
+        aria-label={messages.closeEvidencePanel}
         onClick={onClose}
       />
       <aside
@@ -77,16 +80,16 @@ export function UploadedEvidencePanel({
       >
         <header className="evidence-panel__header">
           <div className="evidence-panel__heading-group">
-            <span className="evidence-panel__eyebrow">Source evidence</span>
+            <span className="evidence-panel__eyebrow">{messages.sourceEvidence}</span>
             <h2 id="uploaded-evidence-title" className="evidence-panel__title">
-              {criterion?.name ?? "Evidence unavailable"}
+              {criterion?.name ?? messages.evidenceUnavailable}
             </h2>
           </div>
           <button
             ref={closeRef}
             type="button"
             className="evidence-panel__close"
-            aria-label="Close evidence panel"
+            aria-label={messages.closeEvidencePanel}
             onClick={onClose}
           >
             <X aria-hidden="true" />
@@ -97,35 +100,39 @@ export function UploadedEvidencePanel({
           <div className="evidence-panel__source-meta">
             <span className="evidence-panel__source-kind">
               <FileText aria-hidden="true" />
-              {evidence ? `Recorded source: ${evidence.fileName}` : "Manually added"}
+              {evidence
+                ? messages.recordedSource.replace(
+                    "{name}",
+                    evidence.fileName ?? messages.sourceDocument,
+                  )
+                : messages.manuallyAdded}
             </span>
             <span className="evidence-panel__locator">
               <MapPin aria-hidden="true" />
-              {evidence?.page ? `Recorded page: ${evidence.page}` : "Page not available"}
+              {evidence?.page
+                ? messages.recordedPage.replace("{number}", String(evidence.page))
+                : messages.pageUnavailable}
             </span>
           </div>
 
           <section className="evidence-panel__section" aria-labelledby="uploaded-excerpt-title">
             <div className="evidence-panel__section-heading">
               <Quote aria-hidden="true" />
-              <h3 id="uploaded-excerpt-title">Retained excerpt — re-check the original</h3>
+              <h3 id="uploaded-excerpt-title">{messages.retainedExcerpt}</h3>
             </div>
             {evidence ? (
               <blockquote className="evidence-panel__quote">{evidence.excerpt}</blockquote>
             ) : (
               <p className="evidence-panel__explanation">
-                This criterion was entered manually, so it has no source excerpt. Check it against
-                the original rubric before relying on the plan.
+                {messages.manualCriterionDescription}
               </p>
             )}
           </section>
 
           <section className="evidence-panel__section" aria-labelledby="local-retention-title">
-            <h3 id="local-retention-title">What is retained</h3>
+            <h3 id="local-retention-title">{messages.whatIsRetained}</h3>
             <p className="evidence-panel__explanation">
-              RubricTrail stores this short excerpt, recorded source label and any recorded page
-              locator locally. It cannot re-verify them after the full source text is discarded,
-              so compare the original before relying on them.
+              {messages.retentionDescription}
             </p>
           </section>
         </div>

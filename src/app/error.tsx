@@ -7,7 +7,13 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { LanguageSwitcher } from "@/components/language-switcher";
+import {
+  LocaleProvider,
+  useLocalizedMessages,
+} from "@/components/locale-provider";
+import { appEn, appZhCN } from "@/lib/i18n/messages/app";
 import {
   purgeProjectState,
   readProjectStateWithStatus,
@@ -19,31 +25,32 @@ type ClearFailureReason = Extract<
   { ok: false }
 >["reason"];
 
-const CLEAR_FAILURE_MESSAGES: Record<ClearFailureReason, string> = {
-  unavailable:
-    "Browser storage is unavailable, so RubricTrail could not reset the local project.",
-  "coordination-unavailable":
-    "This browser cannot coordinate a safe reset across tabs, so RubricTrail did not delete the project. Try again in a current browser with Web Locks support.",
-  "invalid-record":
-    "The local project record cannot accept another safe revision, so RubricTrail refused to delete it.",
-  "storage-error":
-    "Browser storage failed during reset, so RubricTrail could not confirm complete deletion. Some browser data may remain; reload before trying again.",
-  "intent-changed":
-    "The reset request changed before deletion began, so RubricTrail kept the saved project. Reload before trying again.",
-  conflict:
-    "The saved project changed after this recovery page opened, so RubricTrail could not confirm complete deletion. Reload before deciding whether to reset the current saved version.",
-};
-
 interface ErrorPageProps {
   error: Error & { digest?: string };
   reset: () => void;
   reloadPage?: () => void;
 }
 
-export default function ErrorPage({
+function ErrorPageContent({
   reset,
   reloadPage = () => window.location.reload(),
 }: ErrorPageProps) {
+  const messages = useLocalizedMessages(appEn, appZhCN);
+  const clearFailureMessages = useMemo<Record<ClearFailureReason, string>>(
+    () => ({
+      unavailable: messages["error.failure.unavailable"],
+      "coordination-unavailable": messages["error.failure.coordination-unavailable"],
+      "invalid-record": messages["error.failure.invalid-record"],
+      "storage-error": messages["error.failure.storage-error"],
+      "intent-changed": messages["error.failure.intent-changed"],
+      conflict: messages["error.failure.conflict"],
+    }),
+    [messages],
+  );
+  const clearFailureMessagesRef = useRef(clearFailureMessages);
+  useLayoutEffect(() => {
+    clearFailureMessagesRef.current = clearFailureMessages;
+  }, [clearFailureMessages]);
   const [observedBaseline] = useState(
     () => readProjectStateWithStatus().baseline,
   );
@@ -54,7 +61,7 @@ export default function ErrorPage({
     if (resetActive.current) return;
     if (
       !window.confirm(
-        "Permanently reset this browser’s RubricTrail project? This removes saved draft excerpts, self-checks and task progress and cannot be undone.",
+        messages["error.confirmReset"],
       )
     ) {
       return;
@@ -68,10 +75,10 @@ export default function ErrorPage({
       if (result.ok) {
         shouldReload = true;
       } else {
-        window.alert(CLEAR_FAILURE_MESSAGES[result.reason]);
+        window.alert(clearFailureMessagesRef.current[result.reason]);
       }
     } catch {
-      window.alert(CLEAR_FAILURE_MESSAGES["storage-error"]);
+      window.alert(clearFailureMessagesRef.current["storage-error"]);
     } finally {
       resetActive.current = false;
       setIsResetting(false);
@@ -83,31 +90,31 @@ export default function ErrorPage({
   return (
     <main className="welcome-shell" id="main-content">
       <header className="welcome-header">
-        <a className="brand-lockup" href="#main-content" aria-label="RubricTrail recovery">
+        <a className="brand-lockup" href="#main-content" aria-label={messages["error.recoveryLabel"]}>
           <span className="brand-mark" aria-hidden="true"><Route /></span>
           <span>RubricTrail</span>
         </a>
         <div className="mode-indicator">
           <span aria-hidden="true" />
-          Recovery
+          {messages["error.mode"]}
         </div>
+        <LanguageSwitcher compact />
       </header>
 
       <section className="welcome-grid" aria-labelledby="error-title">
         <div className="welcome-copy">
-          <p className="eyebrow">Local recovery</p>
-          <h1 id="error-title">RubricTrail couldn’t load this page.</h1>
+          <p className="eyebrow">{messages["error.eyebrow"]}</p>
+          <h1 id="error-title">{messages["error.title"]}</h1>
           <p className="welcome-lede">
-            Try the page again first. If the error returns, you can reset the
-            project saved in this browser and start from a clean local state.
+            {messages["error.lede"]}
           </p>
         </div>
 
         <div className="welcome-workbench">
           <div className="workbench-heading">
             <div>
-              <p className="eyebrow">What happened</p>
-              <h2>This view needs recovery</h2>
+              <p className="eyebrow">{messages["error.whatHappened"]}</p>
+              <h2>{messages["error.viewNeedsRecovery"]}</h2>
             </div>
             <AlertTriangle aria-hidden="true" />
           </div>
@@ -115,21 +122,16 @@ export default function ErrorPage({
           <div className="inline-alert warning" role="alert">
             <AlertTriangle aria-hidden="true" />
             <div>
-              <strong>Saved data may be damaged.</strong>
-              <span>
-                The local project state or page data for this view may be
-                incomplete or corrupted.
-              </span>
+              <strong>{messages["error.dataDamaged"]}</strong>
+              <span>{messages["error.dataDamagedDetail"]}</span>
             </div>
           </div>
 
           <div className="integrity-note compact privacy-row">
             <ShieldCheck aria-hidden="true" />
             <p>
-              <strong>This recovery page does not delete data automatically.</strong>{" "}
-              “Try again” keeps the local project. Reset only if the error
-              continues; resetting removes this browser’s saved RubricTrail
-              project.
+              <strong>{messages["error.noAutomaticDelete"]}</strong>{" "}
+              {messages["error.noAutomaticDeleteDetail"]}
             </p>
           </div>
 
@@ -142,7 +144,7 @@ export default function ErrorPage({
               aria-busy={isResetting}
             >
               <Trash2 aria-hidden="true" />
-              {isResetting ? "Resetting local project…" : "Reset local project"}
+              {isResetting ? messages["error.resetting"] : messages["error.reset"]}
             </button>
             <button
               className="button button-primary button-large"
@@ -151,16 +153,24 @@ export default function ErrorPage({
               disabled={isResetting}
             >
               <RefreshCw aria-hidden="true" />
-              Try again
+              {messages["error.tryAgain"]}
             </button>
           </div>
         </div>
       </section>
 
       <footer className="welcome-footer">
-        <span>Local-first recovery</span>
-        <span>No automatic deletion from this recovery page</span>
+        <span>{messages["error.footerLocal"]}</span>
+        <span>{messages["error.footerNoDelete"]}</span>
       </footer>
     </main>
+  );
+}
+
+export default function ErrorPage(props: ErrorPageProps) {
+  return (
+    <LocaleProvider>
+      <ErrorPageContent {...props} />
+    </LocaleProvider>
   );
 }

@@ -4,6 +4,56 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Added an English and Simplified Chinese interface switcher to the single
+  application URL, with first-visit browser-language detection and a separate
+  versioned browser preference.
+- Added localized navigation, intake and confirmation flows, workspace views,
+  deterministic feedback, errors, recovery controls, accessibility labels,
+  dates and numbers.
+- Added browser coverage for switching languages without losing pasted input or
+  an autosave-pending project edit, then restoring both project and language
+  state after refresh.
+- Added a concise Simplified Chinese README and a language link at the top of
+  the primary README so Chinese-speaking visitors can reach the demo, privacy
+  boundaries and contribution path without translating the full technical guide.
+- Added a static-demo initial-asset gzip budget so later changes cannot silently
+  return the first load to the larger pre-splitting baseline.
+
+### Changed
+
+- Keeps the language preference outside the project state and backup schemas, so
+  changing or resetting a project does not change the selected interface
+  language and changing language does not rewrite project data.
+- Uses combined bilingual static metadata on the one canonical URL rather than
+  locale-specific server-rendered pages; the active client title, description
+  and document language follow the selected locale.
+- Uses the browser's first supported preferred language consistently before
+  hydration, including when preference storage cannot be read.
+- Keeps translated planning notifications semantic while they are visible, so
+  changing language cannot leave an English depth label inside Chinese copy.
+- Reports when a language change works only for the current tab because the
+  preference could not be saved, and clears that warning after a later save.
+- Stacks simultaneous persistence and action notices on narrow screens and
+  allows long user titles and notification text to wrap without overflowing.
+- Loads confirmation, workspace and evidence phases on demand, reducing the
+  static demo's initial JS/CSS payload by 21,440 gzip bytes (5.82%) in the
+  current local candidate without changing project or backup data.
+- Uses explicit labels for confirmation fields and exposes short self-check
+  guidance to assistive technology when saving is unavailable.
+- Raises the transitive `nanoid@3` security override from 3.3.17 to the patched
+  3.3.18 release after advisory GHSA-2v37-7h3g-55p8.
+
+### Limitations
+
+- This release localizes the product interface, not user coursework. Uploaded or
+  pasted text, project titles, rubric criteria, source excerpts and draft notes
+  are never translated.
+- Automatic field extraction remains optimized for English materials. Chinese
+  source material requires careful manual confirmation, and there is no separate
+  Chinese URL or language-specific server-rendered page.
+
 ## [0.5.1] - 2026-08-12
 
 ### Added

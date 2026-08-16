@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { FileText, MapPin, Quote, X } from "lucide-react";
 import { useLocalizedMessages } from "@/components/locale-provider";
 import { workspaceEn, workspaceZhCN } from "@/lib/i18n/messages/workspace";
+import { resolveUploadedProjectSource } from "@/lib/uploaded-project";
 import type { UploadedProject } from "@/lib/ui-types";
 
 interface UploadedEvidencePanelProps {
@@ -62,6 +63,35 @@ export function UploadedEvidencePanel({
   if (!criterionId) return null;
   const criterion = project.criteria.find((item) => item.id === criterionId);
   const evidence = criterion?.evidence;
+  const manualLocator = criterion?.manualSourceLocator ?? null;
+  const evidenceSource = resolveUploadedProjectSource(project, evidence?.sourceId);
+  const manualSource = resolveUploadedProjectSource(project, manualLocator?.sourceId);
+  const sourcePageDescription = (
+    source: typeof evidenceSource,
+    page: number | null | undefined,
+    manual: boolean,
+  ) => {
+    if (source?.kind === "pdf") {
+      if (!page) return manual ? messages.pageNotEntered : messages.pageUnavailable;
+      return (manual ? messages.manuallyRecordedPage : messages.recordedPage).replace(
+        "{number}",
+        String(page),
+      );
+    }
+    if (source?.intakeMethod === "paste") return messages.pastedHasNoPage;
+    if (source && ["png", "jpeg", "webp"].includes(source.kind)) {
+      return messages.imageHasNoPdfPage;
+    }
+    if (source?.kind === "txt") return messages.textHasNoPage;
+    if (source?.kind === "docx") return messages.docxHasNoStablePage;
+    if (page) {
+      return (manual ? messages.manuallyRecordedPage : messages.recordedPage).replace(
+        "{number}",
+        String(page),
+      );
+    }
+    return messages.pageUnavailable;
+  };
 
   return (
     <div className="evidence-panel-shell">
@@ -110,12 +140,28 @@ export function UploadedEvidencePanel({
                   )
                 : messages.manuallyAdded}
             </span>
-            <span className="evidence-panel__locator">
-              <MapPin aria-hidden="true" />
-              {evidence?.page
-                ? messages.recordedPage.replace("{number}", String(evidence.page))
-                : messages.pageUnavailable}
-            </span>
+            {!evidence && manualLocator && manualSource ? (
+              <span className="evidence-panel__source-kind">
+                <FileText aria-hidden="true" />
+                {messages.manuallyLinkedSource.replace("{name}", manualSource.fileName)}
+              </span>
+            ) : null}
+            {!evidence && !manualSource ? (
+              <span className="evidence-panel__source-kind">
+                <FileText aria-hidden="true" />
+                {messages.noSourceLinked}
+              </span>
+            ) : null}
+            {evidence || manualSource ? (
+              <span className="evidence-panel__locator">
+                <MapPin aria-hidden="true" />
+                {sourcePageDescription(
+                  evidence ? evidenceSource : manualSource,
+                  evidence?.page ?? manualLocator?.page,
+                  !evidence,
+                )}
+              </span>
+            ) : null}
           </div>
 
           <section className="evidence-panel__section" aria-labelledby="uploaded-excerpt-title">
@@ -124,7 +170,9 @@ export function UploadedEvidencePanel({
               <h3 id="uploaded-excerpt-title">
                 {evidence?.origin === "ocr"
                   ? messages.ocrRetainedExcerpt
-                  : messages.retainedExcerpt}
+                  : evidence
+                    ? messages.retainedExcerpt
+                    : messages.noRetainedExcerpt}
               </h3>
             </div>
             {evidence ? (
@@ -139,7 +187,9 @@ export function UploadedEvidencePanel({
           <section className="evidence-panel__section" aria-labelledby="local-retention-title">
             <h3 id="local-retention-title">{messages.whatIsRetained}</h3>
             <p className="evidence-panel__explanation">
-              {messages.retentionDescription}
+              {evidence
+                ? messages.retentionDescription
+                : messages.manualRetentionDescription}
             </p>
           </section>
         </div>

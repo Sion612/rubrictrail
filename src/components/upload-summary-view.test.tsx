@@ -1,10 +1,13 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "@/components/locale-provider";
 import { UploadSummaryView } from "@/components/upload-summary-view";
-import { buildUploadedAssignmentSummary } from "@/lib/files/parse-assignment-files";
 import { draftFromUpload } from "@/lib/uploaded-project";
 import type { UploadFlowResult } from "@/lib/ui-types";
+import {
+  sourceAwareTextUpload,
+  sourceAwareUploadFixture,
+} from "../../tests/source-aware-upload-fixture";
 
 function uploadWithRubric(rubricLines: string[]): UploadFlowResult {
   const text = [
@@ -15,13 +18,7 @@ function uploadWithRubric(rubricLines: string[]): UploadFlowResult {
     "Rubric",
     ...rubricLines,
   ].join("\n");
-  return {
-    intakeMethod: "files",
-    fileNames: ["brief.txt"],
-    skippedFiles: [],
-    totalWords: 24,
-    summary: buildUploadedAssignmentSummary(text),
-  };
+  return sourceAwareTextUpload(text);
 }
 
 function completeUpload(): UploadFlowResult {
@@ -45,10 +42,39 @@ afterEach(() => {
 });
 
 describe("UploadSummaryView rubric weighting", () => {
+  it("uses the spanning evidence wrapper for extracted, OCR and missing evidence", () => {
+    const result = completeUpload();
+    result.summary.rubric.criteria[1].evidence = {
+      ...result.summary.rubric.criteria[1].evidence,
+      fileName: "rubric.png",
+      origin: "ocr",
+    };
+    const { container } = render(
+      <UploadSummaryView result={result} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+
+    expect(container.querySelectorAll("details.source-evidence-note")).toHaveLength(6);
+    fireEvent.change(screen.getByTestId("criterion-name-0"), {
+      target: { value: "Manual analysis" },
+    });
+    const row = screen.getByTestId("criterion-name-0").closest(".rubric-editor-row");
+    expect(row?.querySelector(".source-evidence-note--empty")).not.toBeNull();
+    expect(row?.querySelector(".source-evidence-note--empty")?.tagName).toBe("DIV");
+    expect(within(row as HTMLElement).getByText(/No source excerpt/)).toBeInTheDocument();
+    expect(screen.getByText("OCR-derived excerpt — verify against the image")).toBeInTheDocument();
+  });
+
   it("labels OCR-derived sources and evidence as needing image verification", () => {
     const result = completeUpload();
     result.fileNames = ["rubric.png"];
-    result.sources = [{ fileName: "rubric.png", origin: "ocr" }];
+    result.sources = [{
+      id: "source-1",
+      fileName: "rubric.png",
+      kind: "png",
+      origin: "ocr",
+      intakeMethod: "files",
+      pageCount: null,
+    }];
     for (const criterion of result.summary.rubric.criteria) {
       criterion.evidence = {
         ...criterion.evidence,
@@ -167,6 +193,291 @@ describe("UploadSummaryView rubric weighting", () => {
     expect(weightField).not.toBeNull();
     expect(within(weightField as HTMLElement).getByText("Found in source")).toBeInTheDocument();
   });
+
+  it("renders the complete-weight total as a focusable rubric-level error", () => {
+    render(
+      <UploadSummaryView result={completeUpload()} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-weight-0"), {
+      target: { value: "20" },
+    });
+    fireEvent.click(screen.getByTestId("create-project"));
+
+    const totalError = document.getElementById("rubric-weight-total");
+    expect(totalError).not.toBeNull();
+    expect(totalError).toHaveClass("rubric-weight-total-error");
+    expect(
+      within(screen.getByTestId("criterion-weight-0").closest(".weight-field") as HTMLElement)
+        .queryByText(/must total 100%/),
+    ).not.toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /must total 100%/ });
+    expect(link).toHaveAttribute("href", "#rubric-weight-total");
+    fireEvent.click(link);
+    expect(totalError).toHaveFocus();
+  });
+
+  it("keeps individual invalid weights attached to their own input", () => {
+    render(
+      <UploadSummaryView result={completeUpload()} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-weight-0"), {
+      target: { value: "-1" },
+    });
+    fireEvent.click(screen.getByTestId("create-project"));
+    expect(screen.getByTestId("criterion-weight-0")).toHaveAttribute(
+      "aria-describedby",
+      "criterion-weight-0-error",
+    );
+  });
+});
+
+describe("UploadSummaryView manual criterion workflow", () => {
+  it("adds exactly one stable row, preserves edits, and focuses the new name", async () => {
+    render(
+      <UploadSummaryView result={completeUpload()} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-name-0"), {
+      target: { value: "Preserved analysis" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add missing criterion" }));
+    await waitFor(() => expect(screen.getByTestId("criterion-name-2")).toHaveFocus());
+    expect(screen.getAllByTestId(/criterion-name-/)).toHaveLength(3);
+    expect(screen.getByTestId("criterion-name-0")).toHaveValue("Preserved analysis");
+
+    fireEvent.change(screen.getByTestId("criterion-name-2"), {
+      target: { value: "First manual criterion" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add missing criterion" }));
+    await waitFor(() => expect(screen.getByTestId("criterion-name-3")).toHaveFocus());
+    expect(screen.getByTestId("criterion-name-2")).toHaveValue("First manual criterion");
+    const rows = document.querySelectorAll("[data-criterion-key]");
+    expect(new Set(Array.from(rows, (row) => row.getAttribute("data-criterion-key")).values()).size)
+      .toBe(rows.length);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove criterion 3" }));
+    expect(screen.queryByDisplayValue("First manual criterion")).not.toBeInTheDocument();
+  });
+
+  it("stops adding criteria at the 50-row cap", () => {
+    render(
+      <UploadSummaryView result={completeUpload()} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+    const add = screen.getByRole("button", { name: "Add missing criterion" });
+    for (let index = 2; index < 50; index += 1) fireEvent.click(add);
+    expect(screen.getAllByTestId(/criterion-name-/)).toHaveLength(50);
+    expect(add).toBeDisabled();
+    fireEvent.click(add);
+    expect(screen.getAllByTestId(/criterion-name-/)).toHaveLength(50);
+  });
+
+  it("stores a manual PDF source locator without inventing retained evidence", () => {
+    const onCreateProject = vi.fn();
+    const result = sourceAwareUploadFixture([{
+      id: "source-1",
+      fileName: "fictional-rubric.pdf",
+      kind: "pdf",
+      origin: "extracted",
+      intakeMethod: "files",
+      pages: [
+        [
+          "Assignment title: Strategy Report",
+          "Deadline: 24 September 2026",
+          "Word count: 2500 words",
+          "Use APA 7 referencing.",
+          "Rubric",
+          "Analysis | 60%",
+        ].join("\n"),
+        "Communication | 40%",
+      ],
+    }]);
+    render(
+      <UploadSummaryView result={result} onBack={vi.fn()} onCreateProject={onCreateProject} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-name-0"), {
+      target: { value: "Manual verification" },
+    });
+    fireEvent.change(screen.getByTestId("criterion-source-0"), {
+      target: { value: "source-1" },
+    });
+    fireEvent.change(screen.getByTestId("criterion-source-page-0"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByTestId("create-project"));
+
+    const criterion = onCreateProject.mock.calls[0][0].criteria[0];
+    expect(criterion.evidence).toBeNull();
+    expect(criterion.manualSourceLocator).toEqual({
+      sourceId: "source-1",
+      page: 2,
+    });
+  });
+
+  it("blocks a manual PDF page above the real page count and focuses the page field", async () => {
+    const onCreateProject = vi.fn();
+    const result = sourceAwareUploadFixture([{
+      id: "source-1",
+      fileName: "two-page-rubric.pdf",
+      kind: "pdf",
+      origin: "extracted",
+      intakeMethod: "files",
+      pages: [
+        [
+          "Assignment title: Strategy Report",
+          "Deadline: 24 September 2026",
+          "Word count: 2500 words",
+          "Use APA 7 referencing.",
+          "Rubric",
+          "Analysis | 60%",
+        ].join("\n"),
+        "Communication | 40%",
+      ],
+    }]);
+    render(
+      <UploadSummaryView result={result} onBack={vi.fn()} onCreateProject={onCreateProject} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-name-0"), {
+      target: { value: "Manual analysis" },
+    });
+    fireEvent.change(screen.getByTestId("criterion-source-0"), {
+      target: { value: "source-1" },
+    });
+    const page = screen.getByTestId("criterion-source-page-0");
+    fireEvent.change(page, { target: { value: "3" } });
+    fireEvent.click(screen.getByTestId("create-project"));
+
+    expect(onCreateProject).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByText("Criterion 1: enter a whole PDF page from 1 to 2, or leave it blank."),
+    ).toHaveLength(2);
+    const summary = screen.getByTestId("confirm-errors");
+    await waitFor(() => expect(summary).toHaveFocus());
+    fireEvent.click(within(summary).getByRole("link"));
+    expect(page).toHaveFocus();
+    expect(page).toHaveAttribute("max", "2");
+  });
+
+  it("clears a PDF page when the manual source changes to plain text", () => {
+    const onCreateProject = vi.fn();
+    const result = sourceAwareUploadFixture([
+      {
+        id: "source-1",
+        fileName: "same-name.pdf",
+        kind: "pdf",
+        origin: "extracted",
+        intakeMethod: "files",
+        pages: [
+          [
+            "Assignment title: Strategy Report",
+            "Deadline: 24 September 2026",
+            "Word count: 2500 words",
+            "Use APA 7 referencing.",
+            "Rubric",
+            "Analysis | 60%",
+          ].join("\n"),
+          "Communication | 40%",
+        ],
+      },
+      {
+        id: "source-3",
+        fileName: "same-name.pdf",
+        kind: "txt",
+        origin: "extracted",
+        intakeMethod: "files",
+        text: "Supporting plain-text source",
+      },
+    ]);
+    render(
+      <UploadSummaryView result={result} onBack={vi.fn()} onCreateProject={onCreateProject} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-name-0"), {
+      target: { value: "Manual analysis" },
+    });
+    const source = screen.getByTestId("criterion-source-0");
+    expect(within(source).getByRole("option", { name: /same-name\.pdf · PDF · Source 1/ }))
+      .toBeInTheDocument();
+    expect(within(source).getByRole("option", { name: /same-name\.pdf · TXT · Source 3/ }))
+      .toBeInTheDocument();
+    fireEvent.change(source, { target: { value: "source-1" } });
+    fireEvent.change(screen.getByTestId("criterion-source-page-0"), {
+      target: { value: "2" },
+    });
+    fireEvent.change(source, { target: { value: "source-3" } });
+
+    expect(screen.queryByTestId("criterion-source-page-0")).not.toBeInTheDocument();
+    expect(screen.getByText("Plain-text sources do not have page numbers.")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("create-project"));
+    expect(onCreateProject.mock.calls[0][0].criteria[0].manualSourceLocator).toEqual({
+      sourceId: "source-3",
+      page: null,
+    });
+  });
+
+  it("clears the old page when switching PDF sources and clears pagination for an image", () => {
+    const onCreateProject = vi.fn();
+    const result = sourceAwareUploadFixture([
+      {
+        id: "source-1",
+        fileName: "first-rubric.pdf",
+        kind: "pdf",
+        origin: "extracted",
+        intakeMethod: "files",
+        pages: [
+          [
+            "Assignment title: Strategy Report",
+            "Deadline: 24 September 2026",
+            "Word count: 2500 words",
+            "Use APA 7 referencing.",
+            "Rubric",
+            "Analysis | 60%",
+          ].join("\n"),
+          "Communication | 40%",
+        ],
+      },
+      {
+        id: "source-2",
+        fileName: "second-rubric.pdf",
+        kind: "pdf",
+        origin: "extracted",
+        intakeMethod: "files",
+        pages: ["Fictional second PDF source"],
+      },
+      {
+        id: "source-3",
+        fileName: "rubric-scan.png",
+        kind: "png",
+        origin: "ocr",
+        intakeMethod: "files",
+        text: "Fictional OCR source",
+      },
+    ]);
+    render(
+      <UploadSummaryView result={result} onBack={vi.fn()} onCreateProject={onCreateProject} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-name-0"), {
+      target: { value: "Manual analysis" },
+    });
+    const source = screen.getByTestId("criterion-source-0");
+    fireEvent.change(source, { target: { value: "source-1" } });
+    fireEvent.change(screen.getByTestId("criterion-source-page-0"), {
+      target: { value: "2" },
+    });
+
+    fireEvent.change(source, { target: { value: "source-2" } });
+    expect(screen.getByTestId("criterion-source-page-0")).toHaveValue(null);
+    expect(screen.getByTestId("criterion-source-page-0")).toHaveAttribute("max", "1");
+    fireEvent.change(screen.getByTestId("criterion-source-page-0"), {
+      target: { value: "1" },
+    });
+
+    fireEvent.change(source, { target: { value: "source-3" } });
+    expect(screen.queryByTestId("criterion-source-page-0")).not.toBeInTheDocument();
+    expect(screen.getByText("Image sources do not have PDF page numbers.")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("create-project"));
+    expect(onCreateProject.mock.calls[0][0].criteria[0].manualSourceLocator).toEqual({
+      sourceId: "source-3",
+      page: null,
+    });
+  });
 });
 
 describe("UploadSummaryView provenance and recovery", () => {
@@ -256,6 +567,9 @@ describe("UploadSummaryView provenance and recovery", () => {
         "No source excerpt was retained for this field.",
       ),
     ).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("criterion-source-0"), {
+      target: { value: "source-1" },
+    });
 
     fireEvent.change(screen.getByTestId("criterion-name-0"), {
       target: { value: initial.criteria[0].name },
@@ -264,8 +578,9 @@ describe("UploadSummaryView provenance and recovery", () => {
       .getByTestId("criterion-name-0")
       .closest(".rubric-editor-row");
     expect(
-      within(criterionRow as HTMLElement).getByText(/Source: source text/),
+      within(criterionRow as HTMLElement).getByText(/Source: brief\.txt/),
     ).toBeInTheDocument();
+    expect(screen.queryByTestId("criterion-source-0")).not.toBeInTheDocument();
   });
 
   it("keeps evidence disclosures outside explicit field labels", () => {

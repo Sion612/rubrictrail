@@ -21,6 +21,14 @@ function uploadedProject(): UploadedProject {
     wordCount: 2_500,
     citationStyle: "APA 7",
     fileNames: ["brief.txt"],
+    sources: [{
+      id: "source-1",
+      fileName: "brief.txt",
+      kind: "txt",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: null,
+    }],
     extractedWordCount: 120,
     weightingStatus: "complete",
     criteria: [
@@ -35,6 +43,7 @@ function uploadedProject(): UploadedProject {
           excerpt: "Analysis | 100%",
           startOffset: 40,
           endOffset: 55,
+          origin: "extracted",
         },
       },
     ],
@@ -119,17 +128,73 @@ describe("RubricTrail project backups", () => {
     }
   });
 
+  it("round-trips a manual PDF locator without inventing an excerpt", () => {
+    const state = uploadedState();
+    state.uploadedProject!.fileNames = ["fictional-rubric.pdf"];
+    state.uploadedProject!.sources = [{
+      id: "source-1",
+      fileName: "fictional-rubric.pdf",
+      kind: "pdf",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: 2,
+    }];
+    state.uploadedProject!.criteria[0] = {
+      ...state.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        page: 2,
+      },
+    };
+    const restored = parseProjectBackupText(serializeProjectBackup(state));
+    expect(restored.state.uploadedProject?.criteria[0]).toMatchObject({
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        page: 2,
+      },
+    });
+    expect(JSON.stringify(restored)).not.toContain("excerpt");
+  });
+
+  it("serializes only compact source metadata and never source payloads", () => {
+    const serialized = serializeProjectBackup(uploadedState(), "2026-08-16T08:00:00.000Z");
+    const source = JSON.parse(serialized).project.uploadedProject.sources[0];
+
+    expect(source).toEqual({
+      id: "source-1",
+      fileName: "brief.txt",
+      kind: "txt",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: null,
+    });
+    expect(serialized).not.toMatch(
+      /(?:sourceText|fullText|textContent|fileBytes|imageBytes|blobUrl|base64|fullOcrTranscript)/iu,
+    );
+  });
+
   it("retains bounded OCR provenance without introducing image or transcript fields", () => {
     const state = uploadedState();
     const project = state.uploadedProject;
     expect(project).not.toBeNull();
     if (!project) return;
     project.fileNames = ["rubric.png"];
+    project.sources = [{
+      id: "source-1",
+      fileName: "rubric.png",
+      kind: "png",
+      origin: "ocr",
+      intakeMethod: "files",
+      pageCount: null,
+    }];
     const evidence = project.criteria[0].evidence;
     expect(evidence).not.toBeNull();
     if (!evidence) return;
     evidence.fileName = "rubric.png";
     evidence.origin = "ocr";
+    evidence.page = null;
 
     const serialized = serializeProjectBackup(state, "2026-08-16T08:00:00.000Z");
     const restored = parseProjectBackupText(serialized);
@@ -147,11 +212,13 @@ describe("RubricTrail project backups", () => {
     envelope.project.version = 2;
     delete envelope.project.supersededV2Fingerprint;
     delete envelope.project.uploadedProject.weightingStatus;
+    delete envelope.project.uploadedProject.sources;
 
     const restored = parseProjectBackupText(JSON.stringify(envelope));
     expect(restored.recovered).toBe(true);
     expect(restored.state.version).toBe(3);
     expect(restored.state.uploadedProject?.criteria[0].weight).toBe(100);
+    expect(restored.state.uploadedProject?.sources).toBeUndefined();
   });
 
   it("recovers the untrimmed-line evidence span written by older releases", () => {

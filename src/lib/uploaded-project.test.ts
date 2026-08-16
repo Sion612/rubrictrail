@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { buildUploadedAssignmentSummary } from "@/lib/files/parse-assignment-files";
 import { generateActionPlan } from "@/lib/plan";
 import {
   buildUploadedPlanTemplates,
@@ -10,6 +9,10 @@ import {
   validateUploadedProjectDraft,
 } from "@/lib/uploaded-project";
 import type { UploadFlowResult } from "@/lib/ui-types";
+import {
+  sourceAwareTextUpload,
+  sourceAwareUploadFixture,
+} from "../../tests/source-aware-upload-fixture";
 
 function completeUpload(): UploadFlowResult {
   const text = [
@@ -22,13 +25,25 @@ function completeUpload(): UploadFlowResult {
     "Recommendations | 35%",
     "Communication | 25%",
   ].join("\n");
-  return {
-    intakeMethod: "files",
-    fileNames: ["brief.txt", "rubric.txt"],
-    skippedFiles: [],
-    totalWords: 24,
-    summary: buildUploadedAssignmentSummary(text),
-  };
+  const lines = text.split("\n");
+  return sourceAwareUploadFixture([
+    {
+      id: "source-1",
+      fileName: "brief.txt",
+      kind: "txt",
+      origin: "extracted",
+      intakeMethod: "files",
+      text: lines.slice(0, 4).join("\n"),
+    },
+    {
+      id: "source-2",
+      fileName: "rubric.txt",
+      kind: "txt",
+      origin: "extracted",
+      intakeMethod: "files",
+      text: lines.slice(4).join("\n"),
+    },
+  ]);
 }
 
 function incompleteWeightUpload(): UploadFlowResult {
@@ -41,13 +56,7 @@ function incompleteWeightUpload(): UploadFlowResult {
     "- Problem diagnosis",
     "- Recommendations — 40%",
   ].join("\n");
-  return {
-    intakeMethod: "files",
-    fileNames: ["brief.txt"],
-    skippedFiles: [],
-    totalWords: 20,
-    summary: buildUploadedAssignmentSummary(text),
-  };
+  return sourceAwareTextUpload(text);
 }
 
 function noWeightUpload(): UploadFlowResult {
@@ -60,13 +69,7 @@ function noWeightUpload(): UploadFlowResult {
     "- Problem diagnosis",
     "- Recommendations",
   ].join("\n");
-  return {
-    intakeMethod: "files",
-    fileNames: ["brief.txt"],
-    skippedFiles: [],
-    totalWords: 18,
-    summary: buildUploadedAssignmentSummary(text),
-  };
+  return sourceAwareTextUpload(text);
 }
 
 describe("uploaded project workflow", () => {
@@ -224,14 +227,38 @@ describe("uploaded project workflow", () => {
 
   it("creates a compact project without retaining full uploaded text", () => {
     const upload = completeUpload();
+    const sourceWithUnexpectedContent = upload.sources[0] as (typeof upload.sources)[number] & {
+      pages: string[];
+      text: string;
+    };
+    sourceWithUnexpectedContent.pages = ["private page content"];
+    sourceWithUnexpectedContent.text = "private full source content";
     const project = createUploadedProject(upload, draftFromUpload(upload));
 
     expect(project.title).toBe("Strategy Report");
     expect(project.weightingStatus).toBe("complete");
     expect(project.criteria.map((criterion) => criterion.weight)).toEqual([40, 35, 25]);
     expect(project.fileNames).toEqual(["brief.txt", "rubric.txt"]);
-    expect(project.criteria.every((criterion) => criterion.evidence === null)).toBe(true);
+    expect(project.sources).toEqual(
+      upload.sources.map(({ id, fileName, kind, origin, intakeMethod, pageCount }) => ({
+        id,
+        fileName,
+        kind,
+        origin,
+        intakeMethod,
+        pageCount,
+      })),
+    );
+    expect(project.criteria.every((criterion) => criterion.evidence !== null)).toBe(true);
+    expect(project.criteria.every((criterion) => criterion.manualSourceLocator === null)).toBe(true);
+    expect(project.criteria.map((criterion) => criterion.evidence?.sourceId)).toEqual([
+      "source-2",
+      "source-2",
+      "source-2",
+    ]);
     expect(JSON.stringify(project)).not.toContain("Use APA 7 referencing");
+    expect(JSON.stringify(project)).not.toContain("private page content");
+    expect(JSON.stringify(project)).not.toContain("private full source content");
   });
 
   it("builds a valid generic plan linked only to uploaded criterion ids", () => {

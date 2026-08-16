@@ -474,6 +474,59 @@ describe("parseAssignmentFiles", () => {
     expect(destroy).toHaveBeenCalledOnce();
   });
 
+  it("attributes retained rubric evidence to real PDF pages across an empty page and source-id gap", async () => {
+    const pdf = makePdfDocument(3, {
+      pageText: (pageNumber) => {
+        if (pageNumber === 1) {
+          return [
+            "Assignment title: Fictional Traceability Report",
+            "Rubric",
+            "Criterion A | 50%",
+          ].join("\n");
+        }
+        if (pageNumber === 2) return null;
+        return "Criterion B | 50%";
+      },
+    });
+    parserMocks.getDocument.mockReturnValueOnce({
+      promise: Promise.resolve(pdf.document),
+    });
+
+    const result = await parseAssignmentFilesWithRecovery([
+      makeFile("", "omitted-empty.txt"),
+      makeFile("fictional-pdf", "fictional-rubric.pdf", "application/pdf"),
+      makeFile("Supporting appendix", "appendix.txt"),
+    ]);
+    const summary = buildUploadedAssignmentSummary(result.parsed);
+
+    expect(result.parsed.sources.map((source) => source.id)).toEqual([
+      "source-2",
+      "source-3",
+    ]);
+    expect(result.parsed.sources[0]).toMatchObject({
+      id: "source-2",
+      fileName: "fictional-rubric.pdf",
+      pageCount: 3,
+    });
+    expect(result.parsed.sources[0].pages).toEqual([
+      expect.objectContaining({ pageNumber: 1 }),
+      expect.objectContaining({ pageNumber: 2, text: "" }),
+      expect.objectContaining({ pageNumber: 3 }),
+    ]);
+    expect(summary.rubric.criteria).toEqual([
+      expect.objectContaining({
+        name: "Criterion A",
+        evidence: expect.objectContaining({ sourceId: "source-2", page: 1 }),
+      }),
+      expect.objectContaining({
+        name: "Criterion B",
+        evidence: expect.objectContaining({ sourceId: "source-2", page: 3 }),
+      }),
+    ]);
+    expect(pdf.getPage).toHaveBeenCalledTimes(3);
+    expect(pdf.destroy).toHaveBeenCalledOnce();
+  });
+
   it("accepts a 200-page PDF and rejects 201 pages before reading page one", async () => {
     const acceptedDocument = makePdfDocument(ASSIGNMENT_PDF_MAX_PAGES);
     parserMocks.getDocument.mockReturnValueOnce({

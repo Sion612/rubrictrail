@@ -7,7 +7,9 @@ import type {
   UploadFlowResult,
   UploadedCriterionReview,
   UploadedProject,
+  UploadedProjectCriterion,
   UploadedProjectDraft,
+  UploadedProjectSource,
   RubricWeightingStatus,
 } from "@/lib/ui-types";
 
@@ -122,12 +124,14 @@ export function draftFromUpload(result: UploadFlowResult): UploadedProjectDraft 
       name: criterion.name,
       weight: criterion.weight === null ? "" : String(criterion.weight),
       evidence: criterion.evidence,
+      manualSourceLocator: null,
     })),
   };
 }
 
 export function validateUploadedProjectDraftIssues(
   draft: UploadedProjectDraft,
+  sources: UploadedProjectSource[] = [],
 ): UploadedProjectDraftIssue[] {
   const issues: UploadedProjectDraftIssue[] = [];
   const addIssue = (targetId: string, message: string) => {
@@ -141,6 +145,7 @@ export function validateUploadedProjectDraftIssues(
     (total, criterion) => total + (Number(criterion.weight) || 0),
     0,
   );
+  const sourcesById = new Map(sources.map((source) => [source.id, source]));
   if (!title) addIssue("confirm-title", "Add an assignment title.");
   else if (title.length > 300) addIssue("confirm-title", "Keep the assignment title under 300 characters.");
   else if (!isSafeSingleLineProjectMetadata(title)) {
@@ -196,29 +201,168 @@ export function validateUploadedProjectDraftIssues(
         );
       }
     }
+    if (criterion.evidence !== null && criterion.manualSourceLocator !== null) {
+      addIssue(
+        `criterion-source-${index}`,
+        `Criterion ${index + 1}: retained evidence cannot also have a manual source locator.`,
+      );
+    }
+    if (criterion.evidence !== null && sources.length > 0) {
+      const evidence = criterion.evidence;
+      const source = evidence.sourceId ? sourcesById.get(evidence.sourceId) : undefined;
+      if (
+        !source ||
+        evidence.fileName !== source.fileName ||
+        evidence.origin !== source.origin ||
+        (source.kind === "pdf"
+          ? evidence.page === null || evidence.page > (source.pageCount ?? 0)
+          : evidence.page !== null)
+      ) {
+        addIssue(
+          `criterion-source-${index}`,
+          `Criterion ${index + 1}: retained evidence no longer matches an included source.`,
+        );
+      }
+    }
+    if (criterion.manualSourceLocator !== null) {
+      const source = sourcesById.get(criterion.manualSourceLocator.sourceId);
+      if (!source) {
+        addIssue(
+          `criterion-source-${index}`,
+          `Criterion ${index + 1}: choose an included source, or leave the source blank.`,
+        );
+      } else {
+        const manualPage = criterion.manualSourceLocator.page;
+        if (
+          manualPage !== null &&
+          (!Number.isInteger(manualPage) ||
+            manualPage <= 0 ||
+            source.kind !== "pdf" ||
+            source.pageCount === null ||
+            manualPage > source.pageCount)
+        ) {
+          addIssue(
+            `criterion-source-page-${index}`,
+            source.kind === "pdf" && source.pageCount !== null
+              ? `Criterion ${index + 1}: enter a whole PDF page from 1 to ${source.pageCount}, or leave it blank.`
+              : `Criterion ${index + 1}: only PDF sources may have a page number.`,
+          );
+        }
+      }
+    }
   });
   if (
     draft.weightingMode === "complete" &&
     Math.abs(totalWeight - 100) > 0.01
   ) {
     addIssue(
-      draft.criteria.length ? "criterion-weight-0" : "add-criterion",
+      "rubric-weight-total",
       `Published rubric weights must total 100%; they currently total ${totalWeight || 0}%. Check for a missing criterion or a mistyped percentage.`,
     );
   }
   return issues;
 }
 
-export function validateUploadedProjectDraft(draft: UploadedProjectDraft): string[] {
-  return validateUploadedProjectDraftIssues(draft).map((issue) => issue.message);
+export function validateUploadedProjectDraft(
+  draft: UploadedProjectDraft,
+  sources: UploadedProjectSource[] = [],
+): string[] {
+  return validateUploadedProjectDraftIssues(draft, sources).map((issue) => issue.message);
+}
+
+export function resolveUploadedProjectSource(
+  project: UploadedProject,
+  sourceId: string | null | undefined,
+): UploadedProjectSource | null {
+  if (!sourceId) return null;
+  return project.sources?.find((source) => source.id === sourceId) ?? null;
+}
+
+export type UploadedCriterionSourceState =
+  | {
+      kind: "retained";
+      source: UploadedProjectSource | null;
+    }
+  | {
+      kind: "manual";
+      source: UploadedProjectSource;
+    }
+  | {
+      kind: "none";
+      source: null;
+    };
+
+export function uploadedCriterionSourceState(
+  project: UploadedProject,
+  criterion: UploadedProjectCriterion,
+): UploadedCriterionSourceState {
+  if (criterion.evidence) {
+    return {
+      kind: "retained",
+      source: resolveUploadedProjectSource(project, criterion.evidence.sourceId),
+    };
+  }
+  const manualSource = resolveUploadedProjectSource(
+    project,
+    criterion.manualSourceLocator?.sourceId,
+  );
+  return manualSource
+    ? { kind: "manual", source: manualSource }
+    : { kind: "none", source: null };
+}
+
+function validateNewSourceRegistry(result: UploadFlowResult): void {
+  if (result.sources.length === 0) {
+    throw new Error("A new uploaded project requires at least one parsed source.");
+  }
+  if (
+    result.fileNames.length !== result.sources.length ||
+    result.fileNames.some(
+      (fileName, index) => fileName !== result.sources[index]?.fileName,
+    )
+  ) {
+    throw new Error("Included filenames must match the parsed source registry in source order.");
+  }
+
+  const sourceIds = new Set<string>();
+  for (const source of result.sources) {
+    const sourceIdMatch = /^source-([1-9]\d*)$/u.exec(source.id);
+    const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
+    if (
+      !Number.isSafeInteger(sourceNumber) ||
+      sourceIds.has(source.id)
+    ) {
+      throw new Error("Parsed sources must have unique canonical source ids.");
+    }
+    sourceIds.add(source.id);
+    const isImage = ["png", "jpeg", "webp"].includes(source.kind);
+    const valid =
+      source.intakeMethod === result.intakeMethod &&
+      (source.intakeMethod === "paste"
+        ? source.kind === "txt" &&
+          source.origin === "extracted" &&
+          source.pageCount === null
+        : source.kind === "pdf"
+          ? source.origin === "extracted" &&
+            Number.isInteger(source.pageCount) &&
+            (source.pageCount ?? 0) > 0
+          : isImage
+            ? source.origin === "ocr" && source.pageCount === null
+            : source.origin === "extracted" && source.pageCount === null);
+    if (!valid) {
+      throw new Error("Parsed source metadata does not match its intake and pagination model.");
+    }
+  }
 }
 
 export function createUploadedProject(
   result: UploadFlowResult,
   draft: UploadedProjectDraft,
 ): UploadedProject {
-  const errors = validateUploadedProjectDraft(draft);
+  validateNewSourceRegistry(result);
+  const errors = validateUploadedProjectDraft(draft, result.sources);
   if (errors.length) throw new Error(errors.join(" "));
+  const sources = new Map(result.sources.map((source) => [source.id, source]));
   const createdAt = new Date().toISOString();
   const retainedWeights = draft.criteria.map((criterion) => {
     const value = criterion.weight.trim();
@@ -237,7 +381,15 @@ export function createUploadedProject(
     dueDate: draft.dueDate,
     wordCount: Number(draft.wordCount),
     citationStyle: draft.citationStyle.trim(),
-    fileNames: result.fileNames,
+    fileNames: result.sources.map((source) => source.fileName),
+    sources: result.sources.map((source) => ({
+      id: source.id,
+      fileName: source.fileName,
+      kind: source.kind,
+      origin: source.origin,
+      intakeMethod: source.intakeMethod,
+      pageCount: source.pageCount,
+    })),
     extractedWordCount: result.totalWords,
     weightingStatus,
     criteria: draft.criteria.map((criterion, index) => ({
@@ -248,8 +400,17 @@ export function createUploadedProject(
         criterion.evidence !== null &&
         criterion.evidence.sourceId !== null &&
         criterion.evidence.fileName !== null &&
-        result.fileNames.includes(criterion.evidence.fileName)
+        sources.get(criterion.evidence.sourceId)?.fileName ===
+          criterion.evidence.fileName &&
+        sources.get(criterion.evidence.sourceId)?.origin ===
+          criterion.evidence.origin
           ? criterion.evidence
+          : null,
+      manualSourceLocator:
+        criterion.evidence === null &&
+        criterion.manualSourceLocator !== null &&
+        sources.has(criterion.manualSourceLocator.sourceId)
+          ? criterion.manualSourceLocator
           : null,
     })),
     createdAt,

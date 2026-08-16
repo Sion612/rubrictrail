@@ -9,6 +9,7 @@ export default defineConfig({
     "core-flow.spec.ts",
     "i18n.spec.ts",
     "ocr-intake.spec.ts",
+    "rubric-confirmation-hotfix.spec.ts",
     "static-export.spec.ts",
   ],
   fullyParallel: false,

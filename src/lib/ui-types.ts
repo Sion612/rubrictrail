@@ -1,6 +1,8 @@
 import type { DraftCheckResult } from "@/lib/domain";
 import type {
+  AssignmentFileKind,
   AssignmentFileErrorCode,
+  AssignmentSourceOrigin,
   SkippedAssignmentFile,
   UploadedAssignmentSummary,
   UploadedSourceEvidence,
@@ -12,6 +14,20 @@ export type WorkflowState = "complete" | "in_progress" | "needs_review" | "not_s
 export type AssignmentIntakeMode = "files" | "paste";
 export type RubricWeightingMode = "complete" | "not_complete";
 export type RubricWeightingStatus = "complete" | "incomplete" | "none";
+
+export interface ManualSourceLocator {
+  sourceId: string;
+  page: number | null;
+}
+
+export interface UploadedProjectSource {
+  id: string;
+  fileName: string;
+  kind: AssignmentFileKind;
+  origin: AssignmentSourceOrigin;
+  intakeMethod: AssignmentIntakeMode;
+  pageCount: number | null;
+}
 
 export interface AssignmentFileIntakeError {
   code: AssignmentFileErrorCode | "NO_READABLE_FILES" | "UNKNOWN";
@@ -34,6 +50,8 @@ export interface UploadedProjectCriterion {
   /** A percentage explicitly confirmed from the rubric; never an inferred equal share. */
   weight: number | null;
   evidence: UploadedSourceEvidence | null;
+  /** A user-recorded pointer to the original source, never retained evidence text. */
+  manualSourceLocator?: ManualSourceLocator | null;
 }
 
 export interface UploadedProject {
@@ -44,6 +62,8 @@ export interface UploadedProject {
   wordCount: number;
   citationStyle: string;
   fileNames: string[];
+  /** Compact source metadata. Optional only for projects saved before this registry existed. */
+  sources?: UploadedProjectSource[];
   extractedWordCount: number;
   /** Whether the retained official percentages form a complete 100% breakdown. */
   weightingStatus: RubricWeightingStatus;
@@ -82,10 +102,7 @@ export interface PersistedProjectState {
 export interface UploadFlowResult {
   intakeMethod: AssignmentIntakeMode;
   fileNames: string[];
-  sources?: Array<{
-    fileName: string;
-    origin: "extracted" | "ocr";
-  }>;
+  sources: UploadedProjectSource[];
   skippedFiles: SkippedAssignmentFile[];
   totalWords: number;
   summary: UploadedAssignmentSummary;
@@ -102,6 +119,7 @@ export interface UploadedProjectDraft {
     name: string;
     weight: string;
     evidence: UploadedSourceEvidence | null;
+    manualSourceLocator: ManualSourceLocator | null;
   }>;
 }
 

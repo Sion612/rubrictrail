@@ -40,6 +40,14 @@ function uploadedProject(): UploadedProject {
     wordCount: 2_500,
     citationStyle: "APA 7",
     fileNames: ["brief.txt"],
+    sources: [{
+      id: "source-1",
+      fileName: "brief.txt",
+      kind: "txt",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: null,
+    }],
     extractedWordCount: 120,
     weightingStatus: "complete",
     criteria: [
@@ -54,6 +62,7 @@ function uploadedProject(): UploadedProject {
           excerpt: "Analysis | 100%",
           startOffset: 40,
           endOffset: 55,
+          origin: "extracted",
         },
       },
     ],
@@ -89,6 +98,7 @@ function v2Value(state: PersistedProjectState = uploadedState()): Record<string,
   if (uploadedProject) {
     const project: Record<string, unknown> = { ...uploadedProject };
     delete project.weightingStatus;
+    delete project.sources;
     v2UploadedProject = project;
   }
   return { ...v2State, version: 2, uploadedProject: v2UploadedProject };
@@ -189,9 +199,247 @@ describe("local project persistence", () => {
     expect(parsePersistedProjectStateValue(state).ok).toBe(false);
   });
 
+  it("round-trips a manual source locator without creating retained evidence", () => {
+    const state = uploadedState();
+    state.uploadedProject!.fileNames = ["fictional-rubric.pdf"];
+    state.uploadedProject!.sources = [{
+      id: "source-1",
+      fileName: "fictional-rubric.pdf",
+      kind: "pdf",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: 2,
+    }];
+    state.uploadedProject!.criteria[0] = {
+      ...state.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        page: 2,
+      },
+    };
+
+    const parsed = parsePersistedProjectStateValue(state);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.state.uploadedProject?.criteria[0]).toMatchObject({
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        page: 2,
+      },
+    });
+  });
+
+  it("accepts a manual PDF locator with no page without inventing one", () => {
+    const state = uploadedState();
+    state.uploadedProject!.fileNames = ["fictional-rubric.pdf"];
+    state.uploadedProject!.sources = [{
+      id: "source-1",
+      fileName: "fictional-rubric.pdf",
+      kind: "pdf",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: 3,
+    }];
+    state.uploadedProject!.criteria[0] = {
+      ...state.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: { sourceId: "source-1", page: null },
+    };
+
+    const parsed = parsePersistedProjectStateValue(state);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.state.uploadedProject?.criteria[0].manualSourceLocator).toEqual({
+      sourceId: "source-1",
+      page: null,
+    });
+  });
+
+  it("keeps older uploaded projects valid when the manual locator field is absent", () => {
+    const state = uploadedState() as unknown as Record<string, unknown>;
+    const project = state.uploadedProject as Record<string, unknown>;
+    const [criterion] = project.criteria as Array<Record<string, unknown>>;
+    delete criterion.manualSourceLocator;
+    expect(parsePersistedProjectStateValue(state).ok).toBe(true);
+  });
+
+  it("keeps older v3 uploaded projects valid when the source registry is absent", () => {
+    const state = uploadedState();
+    delete state.uploadedProject?.sources;
+
+    const parsed = parsePersistedProjectStateValue(state);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.state.uploadedProject?.sources).toBeUndefined();
+    expect(parsed.state.uploadedProject?.criteria[0].evidence?.fileName).toBe("brief.txt");
+  });
+
+  it("rejects invalid or contradictory manual source locators", () => {
+    const invented = uploadedState();
+    invented.uploadedProject!.criteria[0] = {
+      ...invented.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-2",
+        page: 1,
+      },
+    };
+    expect(parsePersistedProjectStateValue(invented).ok).toBe(false);
+
+    const invalidPage = uploadedState();
+    invalidPage.uploadedProject!.criteria[0] = {
+      ...invalidPage.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        page: 0,
+      },
+    };
+    expect(parsePersistedProjectStateValue(invalidPage).ok).toBe(false);
+
+    const contradictory = uploadedState();
+    contradictory.uploadedProject!.criteria[0].manualSourceLocator = {
+      sourceId: "source-1",
+      page: null,
+    };
+    expect(parsePersistedProjectStateValue(contradictory).ok).toBe(false);
+  });
+
+  it("rejects manual pages outside the real PDF count or on non-PDF sources", () => {
+    const outsidePdf = uploadedState();
+    outsidePdf.uploadedProject!.fileNames = ["rubric.pdf"];
+    outsidePdf.uploadedProject!.sources = [{
+      id: "source-1",
+      fileName: "rubric.pdf",
+      kind: "pdf",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: 2,
+    }];
+    outsidePdf.uploadedProject!.criteria[0] = {
+      ...outsidePdf.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: { sourceId: "source-1", page: 3 },
+    };
+    expect(parsePersistedProjectStateValue(outsidePdf).ok).toBe(false);
+
+    const txtPage = uploadedState();
+    txtPage.uploadedProject!.criteria[0] = {
+      ...txtPage.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: { sourceId: "source-1", page: 1 },
+    };
+    expect(parsePersistedProjectStateValue(txtPage).ok).toBe(false);
+  });
+
+  it("accepts duplicate filenames when canonical source ids remain distinct", () => {
+    const state = uploadedState();
+    state.uploadedProject!.fileNames = ["rubric.txt", "rubric.txt"];
+    state.uploadedProject!.sources = [
+      {
+        id: "source-1",
+        fileName: "rubric.txt",
+        kind: "txt",
+        origin: "extracted",
+        intakeMethod: "files",
+        pageCount: null,
+      },
+      {
+        id: "source-3",
+        fileName: "rubric.txt",
+        kind: "txt",
+        origin: "extracted",
+        intakeMethod: "files",
+        pageCount: null,
+      },
+    ];
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      sourceId: "source-3",
+      fileName: "rubric.txt",
+    };
+
+    expect(parsePersistedProjectStateValue(state).ok).toBe(true);
+  });
+
+  it("rejects source registries that contain content or contradict their media model", () => {
+    const withContent = uploadedState() as unknown as Record<string, unknown>;
+    const contentProject = withContent.uploadedProject as Record<string, unknown>;
+    const [contentSource] = contentProject.sources as Array<Record<string, unknown>>;
+    contentSource.text = "private source text must never persist";
+    expect(parsePersistedProjectStateValue(withContent).ok).toBe(false);
+
+    const invalidPdf = uploadedState();
+    invalidPdf.uploadedProject!.fileNames = ["rubric.pdf"];
+    invalidPdf.uploadedProject!.sources = [{
+      id: "source-1",
+      fileName: "rubric.pdf",
+      kind: "pdf",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: null,
+    }];
+    expect(parsePersistedProjectStateValue(invalidPdf).ok).toBe(false);
+
+    const invalidImage = uploadedState();
+    invalidImage.uploadedProject!.fileNames = ["rubric.png"];
+    invalidImage.uploadedProject!.sources = [{
+      id: "source-1",
+      fileName: "rubric.png",
+      kind: "png",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: null,
+    }];
+    expect(parsePersistedProjectStateValue(invalidImage).ok).toBe(false);
+  });
+
+  it("rejects retained evidence that contradicts its canonical source", () => {
+    const wrongOrigin = uploadedState();
+    wrongOrigin.uploadedProject!.criteria[0].evidence = {
+      ...wrongOrigin.uploadedProject!.criteria[0].evidence!,
+      origin: "ocr",
+    };
+    expect(parsePersistedProjectStateValue(wrongOrigin).ok).toBe(false);
+
+    const pdfMissingPage = uploadedState();
+    pdfMissingPage.uploadedProject!.fileNames = ["rubric.pdf"];
+    pdfMissingPage.uploadedProject!.sources = [{
+      id: "source-1",
+      fileName: "rubric.pdf",
+      kind: "pdf",
+      origin: "extracted",
+      intakeMethod: "files",
+      pageCount: 2,
+    }];
+    pdfMissingPage.uploadedProject!.criteria[0].evidence = {
+      ...pdfMissingPage.uploadedProject!.criteria[0].evidence!,
+      fileName: "rubric.pdf",
+      page: null,
+    };
+    expect(parsePersistedProjectStateValue(pdfMissingPage).ok).toBe(false);
+
+    const txtWithPage = uploadedState();
+    txtWithPage.uploadedProject!.criteria[0].evidence = {
+      ...txtWithPage.uploadedProject!.criteria[0].evidence!,
+      page: 1,
+    };
+    expect(parsePersistedProjectStateValue(txtWithPage).ok).toBe(false);
+  });
+
   it("preserves optional OCR evidence provenance without changing the state version", () => {
     const state = uploadedState();
     state.uploadedProject!.fileNames = ["rubric.png"];
+    state.uploadedProject!.sources = [{
+      id: "source-1",
+      fileName: "rubric.png",
+      kind: "png",
+      origin: "ocr",
+      intakeMethod: "files",
+      pageCount: null,
+    }];
     state.uploadedProject!.criteria[0].evidence = {
       ...state.uploadedProject!.criteria[0].evidence!,
       fileName: "rubric.png",
@@ -273,10 +521,29 @@ describe("local project persistence", () => {
   it("accepts retained input-index source ids when a middle file was omitted", () => {
     const state = uploadedState();
     state.uploadedProject!.fileNames = ["brief.txt", "rubric.txt"];
+    state.uploadedProject!.sources = [
+      {
+        id: "source-1",
+        fileName: "brief.txt",
+        kind: "txt",
+        origin: "extracted",
+        intakeMethod: "files",
+        pageCount: null,
+      },
+      {
+        id: "source-3",
+        fileName: "rubric.txt",
+        kind: "txt",
+        origin: "extracted",
+        intakeMethod: "files",
+        pageCount: null,
+      },
+    ];
     state.uploadedProject!.criteria[0].evidence = {
       ...state.uploadedProject!.criteria[0].evidence!,
       sourceId: "source-3",
       fileName: "rubric.txt",
+      origin: "extracted",
     };
 
     expect(parsePersistedProjectStateValue(state).ok).toBe(true);
@@ -407,6 +674,7 @@ describe("local project persistence", () => {
   it("migrates a valid local v2 project while preserving numeric weights", () => {
     const expected = uploadedState();
     const previousRaw = JSON.stringify(v2Value(expected));
+    delete expected.uploadedProject?.sources;
     window.localStorage.setItem(PREVIOUS_STORAGE_KEY, previousRaw);
 
     expect(readProjectStateWithStatus()).toMatchObject({
@@ -426,6 +694,7 @@ describe("local project persistence", () => {
   it("parses a v2 backup as recovered v3 state", () => {
     const expected = uploadedState();
     const raw = JSON.stringify(v2Value(expected));
+    delete expected.uploadedProject?.sources;
 
     expect(parsePersistedProjectStateValue(v2Value(expected))).toEqual({
       ok: true,
@@ -614,6 +883,7 @@ describe("local project persistence", () => {
 
   it("accepts equivalent v3 and migrated v2 states without a lineage marker", () => {
     const state = uploadedState();
+    delete state.uploadedProject?.sources;
     const currentRaw = JSON.stringify(state);
     const previousRaw = JSON.stringify(v2Value(state));
     window.localStorage.setItem(PREVIOUS_STORAGE_KEY, previousRaw);

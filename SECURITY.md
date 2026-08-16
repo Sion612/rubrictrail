@@ -18,6 +18,11 @@ seen and will coordinate disclosure after a fix is available.
 
 ## Deployment boundary
 
+- The optional Calendar `.ics` export is generated entirely in the browser. It
+  may contain assignment title, course, task titles, target dates and task
+  instructions. It does not contain uploaded documents, excerpts, OCR text,
+  source filenames, drafts or credentials. Importing that file into another
+  calendar service is outside RubricTrail's control.
 - Uploaded files and pasted assignment text are parsed as plain text in the
   browser. Real-file selections are rejected above 10 files, 10 MiB per file or
   25 MiB combined, counting the original selection before any per-file omission.

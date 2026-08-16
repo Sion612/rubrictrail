@@ -1,5 +1,48 @@
 # Verification report
 
+The v0.7.0 release candidate adds post-creation locator editing, a transient
+Plan Calendar and a browser-local `.ics` snapshot. Exact-main CI, a GitHub
+Release and public Pages freshness for v0.7.0 are not claimed here; those
+belong to a later merge-and-release phase. The historical v0.6.0 exact-main
+evidence below remains the last published main verification.
+
+## v0.7.0 release-candidate local verification
+
+Date: 17 August 2026
+Runtime: bundled Node.js 24 locally; the repository remains pinned to pnpm
+11.9.0 for CI and contributor installs.
+Worktree: isolated `feat/v0.7.0-calendar` from `origin/main`
+[`07852a5`](https://github.com/Sion612/rubrictrail/commit/07852a5).
+
+This section records local source, build and generated-artifact results for
+the Phase 1 release candidate only. It does not claim remote PR CI success, a
+merge to `main`, a git tag, a GitHub Release or a public Pages deployment.
+
+| Command | Observed result |
+| --- | --- |
+| `pnpm lint` | Passed with zero warnings |
+| `pnpm typecheck` | Passed |
+| `pnpm test` | 31 Vitest files / 374 tests plus 3 OCR asset-audit Node tests passed |
+| `pnpm build` | Next.js 16.3.0 production build passed |
+| `PLAYWRIGHT_PRODUCTION=true PLAYWRIGHT_APP_PATH=/ pnpm test:e2e --workers=1` | 44/44 desktop and mobile Chromium executions passed through `next start` |
+| `pnpm audit:demo` | Passed for 62 exported files; 14 initial JS/CSS files totalled 1,261,985 raw / 354,491 gzip bytes, below the unchanged 357,000-byte gzip budget; 10 deferred OCR files totalled 16,850,033 bytes |
+| `PLAYWRIGHT_APP_PATH=/rubrictrail/ pnpm test:e2e:demo --workers=1` | 44/44 desktop and mobile Chromium executions passed against the static `/rubrictrail` artifact |
+
+New browser coverage in this candidate:
+
+- post-creation Add / Edit / Remove of a manual source locator without
+  confirming Check;
+- PDF page bounds after project creation and before project creation;
+- sample Calendar month navigation when the assignment deadline is outside
+  the current planning month;
+- browser-local `.ics` export of remaining tasks and the deadline, with no
+  network `.ics` request;
+- Calendar remains usable at 320px without document-level overflow;
+- Calendar presentation is not persisted across reload.
+
+The public GitHub Pages demo still reflects the last deployed main build
+until the separate release phase completes.
+
 Date: 15 August 2026
 Runtime: bundled Node.js 24 locally; the repository remains pinned to pnpm 11.9.0
 for CI and contributor installs.

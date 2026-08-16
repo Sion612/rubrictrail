@@ -4,31 +4,46 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-17
+
 ### Added
 
 - Added lazy, same-origin, browser-local English and Simplified Chinese OCR for
   PNG, JPEG and WebP assignment screenshots and photos, with visible progress,
   explicit OCR provenance and mixed-batch recovery.
-- Added deterministic local OCR asset preparation/integrity auditing and real
-  desktop/mobile static-demo coverage that rejects cross-origin and Live-route
-  requests while exercising the worker, core and both language models.
+- Added a compact source registry and full-flow rubric source traceability from
+  intake through backup restore.
+- Added post-creation Add, Edit and Remove actions for manual source locators
+  without turning Rubric into a general criterion editor.
+- Added a Plan Calendar month view and selected-week agenda derived from the
+  existing Action Plan.
+- Added a browser-local `.ics` export of remaining plan tasks and the
+  assignment deadline.
 
-### Security
+### Changed
 
-- Added image magic-byte/decode validation, 16,384-pixel side and 20,000,000
-  decoded-pixel limits, pinned runtime/language assets, worker cleanup and the
-  existing selection-wide text budgets for OCR output. Original images and full
-  OCR transcripts remain transient and are not added to project storage or
-  backups.
+- Rubric source buttons now name the available action: add, view/edit, or view
+  retained evidence.
+- Duplicate source filenames stay distinguishable by canonical source number.
+- Rebalancing updates both the task list and Calendar because both views read
+  the same Action Plan.
 
-### Fixed
+### Privacy / Security
 
-- Fixed rubric confirmation so missing-evidence guidance and aggregate weight
-  errors use readable section-level layouts, and newly added criteria scroll
-  into view with focus on their name field.
-- Clarified that manually added criteria have no retained excerpt, while
-  allowing users to save an optional uploaded-source and PDF-page locator for
-  checking the original rubric without retaining or inventing source text.
+- OCR remains browser-local. Original images and full OCR transcripts remain
+  transient.
+- Calendar export is generated locally. Importing the `.ics` file into an
+  external calendar provider may cause that provider to store assignment
+  metadata. Source documents, excerpts, OCR text, source filenames and drafts
+  are excluded.
+
+### Limitations
+
+- Calendar dates are target completion dates, not reserved study appointments.
+- There is no provider sync, reminder, subscription URL or exact time block.
+- `.ics` export is a one-way snapshot of incomplete tasks plus the deadline.
+- Older projects without a source registry cannot add locators until the
+  original files are re-imported.
 
 ## [0.6.0] - 2026-08-15
 

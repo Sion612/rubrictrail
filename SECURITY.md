@@ -25,6 +25,14 @@ seen and will coordinate disclosure after a fix is available.
   Merged extracted text is limited to 2,000,000 normalized characters, 50,000
   merged lines and 100,000 merged whitespace-delimited words. Paste intake is
   separately rejected above 100,000 characters or 10,000 lines.
+- PNG, JPEG and WebP images are signature-checked, decoded locally, rejected
+  above 16,384 pixels per side or 20,000,000 decoded pixels, then recognized by
+  a lazily loaded Tesseract.js worker using English and Simplified Chinese data.
+  The worker, WebAssembly core and trained data are pinned build dependencies
+  served from the same origin. RubricTrail does not send selected images or OCR
+  text to a remote recognition service and disables Tesseract's persistent
+  trained-data cache; browser HTTP caching of the public runtime assets remains
+  host-controlled.
 - A mixed file batch can continue only after the user explicitly accepts the
   readable subset. A PDF above the 200-page per-file limit is one recoverable
   per-file omission. The 400-page selection limit and every merged-text budget
@@ -48,6 +56,8 @@ seen and will coordinate disclosure after a fix is available.
   list: source ids and filenames must be present together, one source id cannot
   claim multiple filenames, and retained excerpt offsets must match the excerpt.
   Full source text is not retained, so users must still re-check the original.
+  New OCR-derived evidence also retains an `ocr` origin label so restored views
+  cannot present probabilistic image recognition as document-extracted text.
 - The authoritative browser value is the revisioned
   `rubrictrail.project.store.v1` record. Its envelope is separate from the state
   and backup protocols: active project and backup payloads remain v3. During
@@ -71,11 +81,12 @@ seen and will coordinate disclosure after a fix is available.
   `visibilitychange` and `pagehide` trigger best-effort asynchronous flushes, but
   the 250 ms debounce, an immediate close or a force-kill can still lose the last
   uncommitted edit.
-- File-count, byte, PDF-page and merged-text limits reduce resource risk, but
+- File-count, byte, image-dimension, PDF-page and merged-text limits reduce resource risk, but
   they are not a CPU or peak-memory sandbox. PDF metadata must be loaded before
   the page-count checks can run, a page's text items may be materialized before
-  its text budget is measured, and DOCX decompression occurs before extracted
-  text can be counted. Parsing is currently not cancellable. Do not treat these
+  its text budget is measured, image decoding allocates memory before OCR, and
+  DOCX decompression occurs before extracted text can be counted. OCR is CPU
+  intensive and probabilistic. Parsing is currently not cancellable. Do not treat these
   checks as protection against deliberately malicious documents or open such
   documents in RubricTrail.
 - Do not use a shared computer for sensitive work without closing older

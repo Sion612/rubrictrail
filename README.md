@@ -55,9 +55,10 @@ language-specific page.
 
 ### Use your own assignment
 
-1. Upload up to 10 TXT, DOCX or text-based PDF files (10 MiB each, 25 MiB
-   combined), or paste the brief and optional rubric from a course page, email
-   or scan. A PDF can contain up to 200 pages, with 400 PDF pages allowed across
+1. Upload up to 10 TXT, DOCX, text-based PDF, PNG, JPEG or WebP files (10 MiB
+   each, 25 MiB combined), or paste the brief and optional rubric from a course
+   page, email or scan. Image text recognition runs locally with English and
+   Simplified Chinese models. A PDF can contain up to 200 pages, with 400 PDF pages allowed across
    the complete selection. Every selected PDF whose page-count metadata can be
    read contributes to that 400-page total, even if the PDF is later explicitly
    omitted because it exceeds the 200-page per-file limit.
@@ -86,6 +87,8 @@ The custom workflow includes:
 - retained rubric excerpts with recorded filename and PDF page when available;
 - strict UTF-8 decoding for TXT files, with malformed text rejected instead of
   silently inserting replacement characters;
+- lazy, browser-local OCR for PNG, JPEG and WebP images, using pinned English
+  and Simplified Chinese Tesseract assets served from the same origin;
 - a generic dependency-aware plan linked only to confirmed criteria;
 - `focused`, `standard`, `thorough` and `extended` planning-depth choices that
   adjust task scope and time allowance only; they do not correspond to or
@@ -108,7 +111,7 @@ The custom workflow includes:
   purge when the user explicitly resets the project;
 - versioned project backups that can be restored without retaining original files.
 
-Original files and full uploaded or pasted source text are not written to
+Original files, image pixels and full uploaded, OCR-derived or pasted source text are not written to
 `localStorage`. Pasted intake is limited to 100,000 characters and 10,000 lines
 before it enters the same bounded TXT parser. Confirmed fields, weighting status,
 rubric percentages or `null`, short source excerpts, pasted self-check text and
@@ -286,7 +289,9 @@ Pages adds any particular response header.
 
 ```mermaid
 flowchart LR
-  A["TXT / DOCX / text PDF"] --> B["Batch + resource limits"]
+  A["TXT / DOCX / text PDF / image"] --> B["Batch + resource limits"]
+  A --> O["Lazy same-origin local OCR for images"]
+  O --> B
   B --> R["Readable + omitted review"]
   P["Pasted brief + optional rubric"] --> T["Strict bounded TXT parser"]
   R --> C["User confirmation"]
@@ -350,12 +355,22 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
 
 ## Known limitations
 
-- Scanned and encrypted PDFs are not parsed directly; there is no OCR, but users
-  can paste the readable brief and rubric text instead.
+- PNG, JPEG and WebP screenshots/photos can be read with local English and
+  Simplified Chinese OCR. Scanned or encrypted PDFs are not converted to images;
+  users can export relevant pages as supported images or paste the text instead.
+- OCR is probabilistic and is never authoritative evidence. Every OCR-derived
+  field and retained excerpt is visibly labelled for comparison with the
+  original image. It is intended for printed English and Simplified Chinese;
+  low contrast, handwriting, equations, diagrams, unusual layout and other
+  scripts can reduce accuracy. Chinese OCR does not make the English-first
+  assignment-field parser fully optimized for Chinese source material.
+- HEIC/HEIF, AVIF, GIF, TIFF, BMP and SVG are not accepted for OCR.
 - Local byte, PDF-page and merged-text limits reduce resource risk but are not a
-  CPU or peak-memory sandbox. PDF metadata, one page's text items, or DOCX
-  decompression may consume resources before a limit can be applied. Parsing is
-  currently not cancellable; do not open deliberately malicious documents.
+  CPU or peak-memory sandbox. Images are checked at 16,384 pixels per side and
+  20,000,000 decoded pixels before OCR, but decoding and OCR still consume CPU
+  and memory. PDF metadata, one page's text items, or DOCX decompression may
+  consume resources before a limit can be applied. Parsing is currently not
+  cancellable; do not open deliberately malicious files.
 - Custom projects rely on user confirmation rather than semantic AI extraction.
 - Planning depth changes the generated task scope and time allowance, not the
   meaning of the rubric or the likelihood of a grade.

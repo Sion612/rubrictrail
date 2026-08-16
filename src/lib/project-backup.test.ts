@@ -119,6 +119,29 @@ describe("RubricTrail project backups", () => {
     }
   });
 
+  it("retains bounded OCR provenance without introducing image or transcript fields", () => {
+    const state = uploadedState();
+    const project = state.uploadedProject;
+    expect(project).not.toBeNull();
+    if (!project) return;
+    project.fileNames = ["rubric.png"];
+    const evidence = project.criteria[0].evidence;
+    expect(evidence).not.toBeNull();
+    if (!evidence) return;
+    evidence.fileName = "rubric.png";
+    evidence.origin = "ocr";
+
+    const serialized = serializeProjectBackup(state, "2026-08-16T08:00:00.000Z");
+    const restored = parseProjectBackupText(serialized);
+
+    expect(restored.state.uploadedProject?.criteria[0].evidence).toMatchObject({
+      fileName: "rubric.png",
+      origin: "ocr",
+      excerpt: "Analysis | 100%",
+    });
+    expect(serialized).not.toMatch(/(?:imageBytes|blobUrl|base64|fullOcrTranscript)/iu);
+  });
+
   it("restores a real v2 backup as canonical v3 data", () => {
     const envelope = JSON.parse(serializeProjectBackup(uploadedState()));
     envelope.project.version = 2;

@@ -6,6 +6,8 @@ const MAX_EXTRACTED_TEXT_LINES = 50_000;
 const MAX_EXTRACTED_TEXT_WORDS = 100_000;
 const MAX_PDF_PAGES = 200;
 const MAX_TOTAL_PDF_PAGES = 400;
+const MAX_IMAGE_DIMENSION = 16_384;
+const MAX_IMAGE_PIXELS = 20_000_000;
 const MAX_EVIDENCE_EXCERPT_CHARACTERS = 500;
 const UNSAFE_FILE_NAME_CHARACTER = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
 
@@ -18,6 +20,8 @@ export const ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES = MAX_EXTRACTED_TEXT_LINES;
 export const ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS = MAX_EXTRACTED_TEXT_WORDS;
 export const ASSIGNMENT_PDF_MAX_PAGES = MAX_PDF_PAGES;
 export const ASSIGNMENT_PDFS_MAX_TOTAL_PAGES = MAX_TOTAL_PDF_PAGES;
+export const ASSIGNMENT_IMAGE_MAX_DIMENSION = MAX_IMAGE_DIMENSION;
+export const ASSIGNMENT_IMAGE_MAX_PIXELS = MAX_IMAGE_PIXELS;
 export const ASSIGNMENT_EVIDENCE_EXCERPT_MAX_CHARACTERS =
   MAX_EVIDENCE_EXCERPT_CHARACTERS;
 
@@ -34,12 +38,44 @@ export type AssignmentFileErrorCode =
   | "TOTAL_PDF_PAGES_TOO_LARGE"
   | "EMPTY_FILE"
   | "INVALID_TEXT_ENCODING"
+  | "INVALID_IMAGE"
+  | "IMAGE_DIMENSIONS_TOO_LARGE"
+  | "OCR_UNAVAILABLE"
+  | "OCR_NO_TEXT"
   | "SCANNED_NO_TEXT"
   | "ENCRYPTED_PDF"
   | "PARSER_UNAVAILABLE"
   | "CORRUPT_DOCUMENT";
 
-export type AssignmentFileKind = "txt" | "docx" | "pdf";
+export type AssignmentImageKind = "png" | "jpeg" | "webp";
+export type AssignmentFileKind = "txt" | "docx" | "pdf" | AssignmentImageKind;
+export type AssignmentSourceOrigin = "extracted" | "ocr";
+
+export interface AssignmentImageOcrProgress {
+  fileName: string;
+  currentFile: number;
+  totalFiles: number;
+  phase: "loading" | "recognizing";
+  progress: number | null;
+}
+
+export interface AssignmentImageOcrSession {
+  recognize(file: File, onProgress: (progress: number) => void): Promise<string>;
+  terminate(): Promise<void>;
+}
+
+export interface AssignmentImageOcrAdapter {
+  inspect(
+    file: File,
+    expectedKind: AssignmentImageKind,
+  ): Promise<{ width: number; height: number }>;
+  createSession(): Promise<AssignmentImageOcrSession>;
+}
+
+export interface ParseAssignmentFilesOptions {
+  imageOcrAdapter?: AssignmentImageOcrAdapter;
+  onImageOcrProgress?: (progress: AssignmentImageOcrProgress) => void;
+}
 
 export class AssignmentFileParseError extends Error {
   readonly code: AssignmentFileErrorCode;
@@ -80,6 +116,7 @@ export interface ParsedAssignmentSource {
   id: string;
   fileName: string;
   kind: AssignmentFileKind;
+  origin: AssignmentSourceOrigin;
   mediaType: string;
   sizeBytes: number;
   lastModified: number | null;
@@ -119,6 +156,7 @@ export interface UploadedSourceEvidence {
   excerpt: string;
   startOffset: number;
   endOffset: number;
+  origin?: AssignmentSourceOrigin;
 }
 
 export type UploadedSummaryFieldStatus = "found" | "inferred" | "missing";
@@ -227,13 +265,171 @@ const MIME_KIND_MAP: Readonly<Record<string, AssignmentFileKind>> = {
   "application/pdf": "pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
     "docx",
+  "image/png": "png",
+  "image/jpeg": "jpeg",
+  "image/webp": "webp",
 };
 
 const EXTENSION_KIND_MAP: Readonly<Record<string, AssignmentFileKind>> = {
   txt: "txt",
   pdf: "pdf",
   docx: "docx",
+  png: "png",
+  jpg: "jpeg",
+  jpeg: "jpeg",
+  webp: "webp",
 };
+
+function isImageKind(kind: AssignmentFileKind): kind is AssignmentImageKind {
+  return kind === "png" || kind === "jpeg" || kind === "webp";
+}
+
+class ImageOcrBatch {
+  private readonly options: ParseAssignmentFilesOptions;
+  private readonly totalFiles: number;
+  private adapterPromise: Promise<AssignmentImageOcrAdapter> | null = null;
+  private sessionPromise: Promise<AssignmentImageOcrSession> | null = null;
+  private currentFile = 0;
+
+  constructor(options: ParseAssignmentFilesOptions, totalFiles: number) {
+    this.options = options;
+    this.totalFiles = totalFiles;
+  }
+
+  private progress(
+    file: File,
+    phase: AssignmentImageOcrProgress["phase"],
+    progress: number | null,
+  ): void {
+    this.options.onImageOcrProgress?.({
+      fileName: file.name,
+      currentFile: this.currentFile,
+      totalFiles: this.totalFiles,
+      phase,
+      progress,
+    });
+  }
+
+  private adapter(): Promise<AssignmentImageOcrAdapter> {
+    this.adapterPromise ??= this.options.imageOcrAdapter
+      ? Promise.resolve(this.options.imageOcrAdapter)
+      : import("./local-image-ocr").then((module) => module.browserImageOcrAdapter);
+    return this.adapterPromise;
+  }
+
+  private async session(file: File): Promise<AssignmentImageOcrSession> {
+    if (!this.sessionPromise) {
+      this.progress(file, "loading", null);
+      this.sessionPromise = this.adapter().then((adapter) => adapter.createSession());
+    }
+    try {
+      return await this.sessionPromise;
+    } catch (error) {
+      throw new AssignmentFileParseError(
+        "OCR_UNAVAILABLE",
+        `Local OCR could not start for "${file.name}". Try another supported file or paste the text instead.`,
+        file.name,
+        { cause: error },
+      );
+    }
+  }
+
+  async recognize(
+    file: File,
+    kind: AssignmentImageKind,
+    limits: RemainingExtractionLimits,
+  ): Promise<LocallyParsedFile> {
+    this.currentFile += 1;
+    this.progress(file, "loading", null);
+
+    let adapter: AssignmentImageOcrAdapter;
+    try {
+      adapter = await this.adapter();
+    } catch (error) {
+      throw new AssignmentFileParseError(
+        "OCR_UNAVAILABLE",
+        `Local OCR could not load for "${file.name}". Try again or paste the text instead.`,
+        file.name,
+        { cause: error },
+      );
+    }
+
+    let dimensions: { width: number; height: number };
+    try {
+      dimensions = await adapter.inspect(file, kind);
+    } catch (error) {
+      throw new AssignmentFileParseError(
+        "INVALID_IMAGE",
+        `"${file.name}" is damaged or does not match its declared PNG, JPEG, or WebP type.`,
+        file.name,
+        { cause: error },
+      );
+    }
+
+    const { width, height } = dimensions;
+    if (
+      !Number.isSafeInteger(width) ||
+      !Number.isSafeInteger(height) ||
+      width <= 0 ||
+      height <= 0
+    ) {
+      throw new AssignmentFileParseError(
+        "INVALID_IMAGE",
+        `"${file.name}" has invalid image dimensions.`,
+        file.name,
+      );
+    }
+    if (
+      width > MAX_IMAGE_DIMENSION ||
+      height > MAX_IMAGE_DIMENSION ||
+      width * height > MAX_IMAGE_PIXELS
+    ) {
+      throw new AssignmentFileParseError(
+        "IMAGE_DIMENSIONS_TOO_LARGE",
+        `"${file.name}" exceeds the ${MAX_IMAGE_DIMENSION.toLocaleString("en-US")}-pixel side or ${MAX_IMAGE_PIXELS.toLocaleString("en-US")}-pixel decoded-image limit.`,
+        file.name,
+      );
+    }
+
+    const session = await this.session(file);
+    let rawText: string;
+    try {
+      this.progress(file, "recognizing", 0);
+      rawText = await session.recognize(file, (progress) => {
+        this.progress(file, "recognizing", progress);
+      });
+    } catch (error) {
+      throw new AssignmentFileParseError(
+        "OCR_UNAVAILABLE",
+        `Local OCR could not read "${file.name}". Try a clearer image or paste the text instead.`,
+        file.name,
+        { cause: error },
+      );
+    }
+
+    const text = normalizeExtractedText(rawText);
+    if (!text.trim()) {
+      throw new AssignmentFileParseError(
+        "OCR_NO_TEXT",
+        `Local OCR found no readable English or Simplified Chinese text in "${file.name}".`,
+        file.name,
+      );
+    }
+    const metrics = extractedTextMetrics(text, file, limits);
+    this.progress(file, "recognizing", 1);
+    return { text, ...metrics, pageCount: null, pages: [] };
+  }
+
+  async terminate(): Promise<void> {
+    if (!this.sessionPromise) return;
+    try {
+      const session = await this.sessionPromise;
+      await session.terminate();
+    } catch {
+      // Cleanup is best effort and must not replace the stable parse result/error.
+    }
+  }
+}
 
 const DATE_PATTERN =
   /\b(?:\d{4}[/-]\d{1,2}[/-]\d{1,2}|\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{4}|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*|\s+)\d{4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/i;
@@ -253,6 +449,10 @@ const RECOVERABLE_PER_FILE_ERROR_CODES = new Set<AssignmentFileErrorCode>([
   "FILE_TOO_LARGE",
   "EMPTY_FILE",
   "INVALID_TEXT_ENCODING",
+  "INVALID_IMAGE",
+  "IMAGE_DIMENSIONS_TOO_LARGE",
+  "OCR_UNAVAILABLE",
+  "OCR_NO_TEXT",
   "SCANNED_NO_TEXT",
   "ENCRYPTED_PDF",
   "PDF_TOO_MANY_PAGES",
@@ -265,6 +465,7 @@ const RECOVERABLE_PER_FILE_ERROR_CODES = new Set<AssignmentFileErrorCode>([
  */
 export async function parseAssignmentFiles(
   files: readonly File[],
+  options: ParseAssignmentFilesOptions = {},
 ): Promise<ParsedAssignmentFiles> {
   if (files.length === 0) {
     throw new AssignmentFileParseError(
@@ -303,46 +504,52 @@ export async function parseAssignmentFiles(
   let extractedLineCount = 0;
   let extractedWordCount = 0;
   let discoveredPdfPageCount = 0;
+  const imageOcr = new ImageOcrBatch(
+    options,
+    validatedFiles.filter(({ kind }) => isImageKind(kind)).length,
+  );
 
-  // Keep input order stable and avoid loading several large documents at once.
-  for (const { file, inputIndex, kind } of validatedFiles) {
-    const separatorLength = parsedFiles.length > 0 ? 2 : 0;
-    const separatorLineCount = parsedFiles.length > 0 ? 1 : 0;
-    const remainingCharacters =
-      MAX_EXTRACTED_TEXT_CHARACTERS -
-      extractedCharacterCount -
-      separatorLength;
-    const remainingLines =
-      MAX_EXTRACTED_TEXT_LINES - extractedLineCount - separatorLineCount;
-    const remainingWords = MAX_EXTRACTED_TEXT_WORDS - extractedWordCount;
-    if (remainingCharacters <= 0) {
-      throw extractedTextTooLargeError(file);
+  try {
+    // Keep input order stable and avoid loading several large documents at once.
+    for (const { file, inputIndex, kind } of validatedFiles) {
+      const separatorLength = parsedFiles.length > 0 ? 2 : 0;
+      const separatorLineCount = parsedFiles.length > 0 ? 1 : 0;
+      const remainingCharacters =
+        MAX_EXTRACTED_TEXT_CHARACTERS - extractedCharacterCount - separatorLength;
+      const remainingLines =
+        MAX_EXTRACTED_TEXT_LINES - extractedLineCount - separatorLineCount;
+      const remainingWords = MAX_EXTRACTED_TEXT_WORDS - extractedWordCount;
+      if (remainingCharacters <= 0) throw extractedTextTooLargeError(file);
+      if (remainingLines <= 0) throw extractedTextTooManyLinesError(file);
+      if (remainingWords <= 0) throw extractedTextTooManyWordsError(file);
+
+      const parsed = await parseSingleFile(
+        file,
+        kind,
+        {
+          characters: remainingCharacters,
+          lines: remainingLines,
+          words: remainingWords,
+          onPdfPagesDiscovered: (pageCount) => {
+            const nextPageCount = discoveredPdfPageCount + pageCount;
+            if (nextPageCount > MAX_TOTAL_PDF_PAGES) {
+              throw totalPdfPagesTooLargeError(file);
+            }
+            discoveredPdfPageCount = nextPageCount;
+          },
+        },
+        imageOcr,
+      );
+      parsedFiles.push({ file, inputIndex, kind, parsed });
+      extractedCharacterCount += separatorLength + parsed.text.length;
+      extractedLineCount += separatorLineCount + parsed.lineCount;
+      extractedWordCount += parsed.wordCount;
     }
-    if (remainingLines <= 0) {
-      throw extractedTextTooManyLinesError(file);
-    }
-    if (remainingWords <= 0) {
-      throw extractedTextTooManyWordsError(file);
-    }
-    const parsed = await parseSingleFile(file, kind, {
-      characters: remainingCharacters,
-      lines: remainingLines,
-      words: remainingWords,
-      onPdfPagesDiscovered: (pageCount) => {
-        const nextPageCount = discoveredPdfPageCount + pageCount;
-        if (nextPageCount > MAX_TOTAL_PDF_PAGES) {
-          throw totalPdfPagesTooLargeError(file);
-        }
-        discoveredPdfPageCount = nextPageCount;
-      },
-    });
-    parsedFiles.push({ file, inputIndex, kind, parsed });
-    extractedCharacterCount += separatorLength + parsed.text.length;
-    extractedLineCount += separatorLineCount + parsed.lineCount;
-    extractedWordCount += parsed.wordCount;
+
+    return mergeParsedAssignmentFiles(parsedFiles, totalBytes);
+  } finally {
+    await imageOcr.terminate();
   }
-
-  return mergeParsedAssignmentFiles(parsedFiles, totalBytes);
 }
 
 /**
@@ -353,6 +560,7 @@ export async function parseAssignmentFiles(
  */
 export async function parseAssignmentFilesWithRecovery(
   files: readonly File[],
+  options: ParseAssignmentFilesOptions = {},
 ): Promise<RecoveredAssignmentFiles> {
   if (files.length === 0) {
     throw new AssignmentFileParseError(
@@ -386,68 +594,77 @@ export async function parseAssignmentFilesWithRecovery(
   let extractedLineCount = 0;
   let extractedWordCount = 0;
   let discoveredPdfPageCount = 0;
+  const imageOcr = new ImageOcrBatch(
+    options,
+    files.filter((file) => {
+      const kind = detectFileKind(file);
+      return kind !== null && isImageKind(kind);
+    }).length,
+  );
 
-  // Parse sequentially so one large or damaged source cannot fan out memory use.
-  for (const [inputIndex, file] of files.entries()) {
-    try {
-      const kind = validateFile(file);
-      const separatorLength = parsedFiles.length > 0 ? 2 : 0;
-      const separatorLineCount = parsedFiles.length > 0 ? 1 : 0;
-      const remainingCharacters =
-        MAX_EXTRACTED_TEXT_CHARACTERS -
-        extractedCharacterCount -
-        separatorLength;
-      const remainingLines =
-        MAX_EXTRACTED_TEXT_LINES - extractedLineCount - separatorLineCount;
-      const remainingWords = MAX_EXTRACTED_TEXT_WORDS - extractedWordCount;
-      if (remainingCharacters <= 0) {
-        throw extractedTextTooLargeError(file);
+  try {
+    // Parse sequentially so one large or damaged source cannot fan out memory use.
+    for (const [inputIndex, file] of files.entries()) {
+      try {
+        const kind = validateFile(file);
+        const separatorLength = parsedFiles.length > 0 ? 2 : 0;
+        const separatorLineCount = parsedFiles.length > 0 ? 1 : 0;
+        const remainingCharacters =
+          MAX_EXTRACTED_TEXT_CHARACTERS - extractedCharacterCount - separatorLength;
+        const remainingLines =
+          MAX_EXTRACTED_TEXT_LINES - extractedLineCount - separatorLineCount;
+        const remainingWords = MAX_EXTRACTED_TEXT_WORDS - extractedWordCount;
+        if (remainingCharacters <= 0) throw extractedTextTooLargeError(file);
+        if (remainingLines <= 0) throw extractedTextTooManyLinesError(file);
+        if (remainingWords <= 0) throw extractedTextTooManyWordsError(file);
+
+        const parsed = await parseSingleFile(
+          file,
+          kind,
+          {
+            characters: remainingCharacters,
+            lines: remainingLines,
+            words: remainingWords,
+            onPdfPagesDiscovered: (pageCount) => {
+              const nextPageCount = discoveredPdfPageCount + pageCount;
+              if (nextPageCount > MAX_TOTAL_PDF_PAGES) {
+                throw totalPdfPagesTooLargeError(file);
+              }
+              discoveredPdfPageCount = nextPageCount;
+            },
+          },
+          imageOcr,
+        );
+        parsedFiles.push({ file, inputIndex, kind, parsed });
+        extractedCharacterCount += separatorLength + parsed.text.length;
+        extractedLineCount += separatorLineCount + parsed.lineCount;
+        extractedWordCount += parsed.wordCount;
+      } catch (error) {
+        if (!(error instanceof AssignmentFileParseError)) {
+          throw error;
+        }
+        if (!RECOVERABLE_PER_FILE_ERROR_CODES.has(error.code)) {
+          throw error;
+        }
+        skippedFiles.push(skippedAssignmentFile(inputIndex, file, error));
       }
-      if (remainingLines <= 0) {
-        throw extractedTextTooManyLinesError(file);
-      }
-      if (remainingWords <= 0) {
-        throw extractedTextTooManyWordsError(file);
-      }
-      const parsed = await parseSingleFile(file, kind, {
-        characters: remainingCharacters,
-        lines: remainingLines,
-        words: remainingWords,
-        onPdfPagesDiscovered: (pageCount) => {
-          const nextPageCount = discoveredPdfPageCount + pageCount;
-          if (nextPageCount > MAX_TOTAL_PDF_PAGES) {
-            throw totalPdfPagesTooLargeError(file);
-          }
-          discoveredPdfPageCount = nextPageCount;
-        },
-      });
-      parsedFiles.push({ file, inputIndex, kind, parsed });
-      extractedCharacterCount += separatorLength + parsed.text.length;
-      extractedLineCount += separatorLineCount + parsed.lineCount;
-      extractedWordCount += parsed.wordCount;
-    } catch (error) {
-      if (!(error instanceof AssignmentFileParseError)) {
-        throw error;
-      }
-      if (!RECOVERABLE_PER_FILE_ERROR_CODES.has(error.code)) {
-        throw error;
-      }
-      skippedFiles.push(skippedAssignmentFile(inputIndex, file, error));
     }
-  }
 
-  if (parsedFiles.length === 0) {
-    throw new AssignmentFileBatchParseError(skippedFiles);
-  }
+    if (parsedFiles.length === 0) {
+      throw new AssignmentFileBatchParseError(skippedFiles);
+    }
 
-  return {
-    parsed: mergeParsedAssignmentFiles(
-      parsedFiles,
-      parsedFiles.reduce((total, item) => total + item.file.size, 0),
-    ),
-    skippedFiles,
-    selectedFileCount: files.length,
-  };
+    return {
+      parsed: mergeParsedAssignmentFiles(
+        parsedFiles,
+        parsedFiles.reduce((total, item) => total + item.file.size, 0),
+      ),
+      skippedFiles,
+      selectedFileCount: files.length,
+    };
+  } finally {
+    await imageOcr.terminate();
+  }
 }
 
 function mergeParsedAssignmentFiles(
@@ -459,7 +676,6 @@ function mergeParsedAssignmentFiles(
   }>,
   totalBytes: number,
 ): ParsedAssignmentFiles {
-
   let mergedText = "";
   const sources: ParsedAssignmentSource[] = [];
 
@@ -476,6 +692,7 @@ function mergeParsedAssignmentFiles(
       id: `source-${inputIndex + 1}`,
       fileName: file.name,
       kind,
+      origin: isImageKind(kind) ? "ocr" : "extracted",
       mediaType: file.type || mediaTypeForKind(kind),
       sizeBytes: file.size,
       lastModified:
@@ -613,7 +830,7 @@ function validateFile(file: File): AssignmentFileKind {
   if (!kind) {
     throw new AssignmentFileParseError(
       "UNSUPPORTED_FILE_TYPE",
-      `"${file.name}" is not a supported TXT, DOCX, or PDF file.`,
+      `"${file.name}" is not a supported TXT, DOCX, PDF, PNG, JPEG, or WebP file.`,
       file.name,
     );
   }
@@ -646,6 +863,7 @@ async function parseSingleFile(
   file: File,
   kind: AssignmentFileKind,
   limits: RemainingExtractionLimits,
+  imageOcr: ImageOcrBatch,
 ): Promise<LocallyParsedFile> {
   if (kind === "txt") {
     return parseTextFile(file, limits);
@@ -653,7 +871,26 @@ async function parseSingleFile(
   if (kind === "docx") {
     return parseDocxFile(file, limits);
   }
-  return parsePdfFile(file, limits);
+  if (isImageKind(kind)) {
+    const extension = file.name.toLowerCase().match(/\.([a-z0-9]+)$/u)?.[1];
+    const extensionKind = extension ? EXTENSION_KIND_MAP[extension] : undefined;
+    const mimeKind = file.type ? MIME_KIND_MAP[file.type.toLowerCase()] : undefined;
+    if (
+      extensionKind &&
+      mimeKind &&
+      (extensionKind !== mimeKind || !isImageKind(mimeKind))
+    ) {
+      throw new AssignmentFileParseError(
+        "INVALID_IMAGE",
+        `"${file.name}" has conflicting image extension and media-type declarations.`,
+        file.name,
+      );
+    }
+  }
+  if (kind === "pdf") {
+    return parsePdfFile(file, limits);
+  }
+  return imageOcr.recognize(file, kind, limits);
 }
 
 async function parseTextFile(
@@ -1015,6 +1252,9 @@ function mediaTypeForKind(kind: AssignmentFileKind): string {
   if (kind === "pdf") {
     return "application/pdf";
   }
+  if (kind === "png") return "image/png";
+  if (kind === "jpeg") return "image/jpeg";
+  if (kind === "webp") return "image/webp";
   return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 }
 
@@ -1358,6 +1598,7 @@ function evidenceForLine(
     excerpt: excerpt.text,
     startOffset: excerptStartOffset,
     endOffset: excerptEndOffset,
+    ...(source ? { origin: source.origin } : {}),
   };
 }
 

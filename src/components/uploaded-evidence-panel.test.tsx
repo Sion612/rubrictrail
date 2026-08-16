@@ -36,6 +36,38 @@ const uploadedProject: UploadedProject = {
 };
 
 describe("UploadedEvidencePanel", () => {
+  it("distinguishes OCR-derived evidence from extracted document evidence", () => {
+    const ocrProject: UploadedProject = {
+      ...uploadedProject,
+      fileNames: ["rubric.png"],
+      criteria: [
+        {
+          ...uploadedProject.criteria[0],
+          evidence: {
+            ...uploadedProject.criteria[0].evidence!,
+            fileName: "rubric.png",
+            origin: "ocr",
+          },
+        },
+      ],
+    };
+
+    render(
+      <UploadedEvidencePanel
+        project={ocrProject}
+        criterionId="analysis-1"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("OCR image source: rubric.png")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: "OCR-derived excerpt — verify against the original image",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("labels saved provenance as recorded data that still needs the original", () => {
     render(
       <UploadedEvidencePanel

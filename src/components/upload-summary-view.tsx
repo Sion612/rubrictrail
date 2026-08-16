@@ -61,6 +61,10 @@ const FILE_ISSUE_MESSAGE_KEY: Record<AssignmentFileErrorCode, keyof IntakeMessag
   TOTAL_PDF_PAGES_TOO_LARGE: "issuePdfsTooLong",
   EMPTY_FILE: "issueEmpty",
   INVALID_TEXT_ENCODING: "issueEncoding",
+  INVALID_IMAGE: "issueInvalidImage",
+  IMAGE_DIMENSIONS_TOO_LARGE: "issueImageDimensions",
+  OCR_UNAVAILABLE: "issueOcrUnavailable",
+  OCR_NO_TEXT: "issueOcrNoText",
   SCANNED_NO_TEXT: "issueScanned",
   ENCRYPTED_PDF: "issueEncrypted",
   PARSER_UNAVAILABLE: "issueParser",
@@ -107,6 +111,9 @@ function EvidenceNote({
           ? formatIntakeMessage(messages.evidencePage, { page: evidence.page })
           : ""}
       </summary>
+      {evidence.origin === "ocr" ? (
+        <p className="field-message warning">{messages.ocrEvidence}</p>
+      ) : null}
       <blockquote>{evidence.excerpt}</blockquote>
     </details>
   );
@@ -285,6 +292,8 @@ export function UploadSummaryView({
   ).length;
   const isPasted = result.intakeMethod === "paste";
   const isPartial = result.skippedFiles.length > 0;
+  const ocrSourceCount =
+    result.sources?.filter((source) => source.origin === "ocr").length ?? 0;
   const selectedFileCount = result.fileNames.length + result.skippedFiles.length;
   const sourceContainsPercentageValues = result.summary.rubric.criteria.some(
     (criterion) => criterion.weight !== null,
@@ -461,6 +470,17 @@ export function UploadSummaryView({
             </span>
           </div>
         </div>
+
+        {ocrSourceCount > 0 ? (
+          <section className="inline-alert warning" data-testid="ocr-source-notice">
+            <AlertTriangle aria-hidden="true" />
+            <p>
+              {formatIntakeMessage(messages.ocrSourceCount, {
+                count: formatNumber(ocrSourceCount),
+              })}
+            </p>
+          </section>
+        ) : null}
 
         {result.summary.warnings.length ? (
           <section className="inline-alert warning" aria-labelledby="parse-warning-title">

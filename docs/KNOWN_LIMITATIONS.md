@@ -10,9 +10,17 @@
    only. It does not express a target mark, estimate the likelihood of an
    outcome or predict a grade. State v3 retains the old numeric `targetGrade`
    field only as a backward-compatible internal encoding for that choice.
-4. **No OCR.** Text PDFs, DOCX and TXT are supported. Scanned, encrypted or
-   damaged documents receive a recovery path to another file or pasted text;
-   RubricTrail does not extract text from the image itself.
+4. **Image OCR is bounded and probabilistic.** PNG, JPEG and WebP files use
+   local English and Simplified Chinese OCR. Results can be wrong, especially
+   for handwriting, low contrast, unusual layouts or other scripts, so every
+   OCR-derived field and excerpt must be checked against the original image.
+   Scanned PDFs are not rasterized for OCR; export only the relevant page as a
+   supported image or paste the text. Encrypted or damaged documents receive a
+   recovery path to another file or pasted text.
+   HEIC/HEIF, AVIF, GIF, TIFF, BMP and SVG are not accepted. There is no
+   handwriting, equation, diagram, chart or semantic-image understanding
+   guarantee, and Chinese OCR does not make field extraction fully optimized
+   for Chinese assignments.
    TXT files must be valid UTF-8; files saved in another encoding are rejected
    with instructions to save a UTF-8 copy or paste the text.
 5. **Partial recovery is explicit and per-file.** A mixed batch can continue
@@ -33,7 +41,9 @@
    400 pages per selection; merged text is limited to 2,000,000 normalized
    characters, 50,000 merged lines and 100,000 merged whitespace-delimited
    words. These checks reduce resource risk but do not cap CPU or peak memory.
-   PDF metadata, one page's text items, and DOCX decompression may consume
+   Images are limited to 16,384 pixels per side and 20,000,000 decoded pixels,
+   but decoding and recognition still use substantial CPU and memory. PDF
+   metadata, one page's text items, and DOCX decompression may consume
    resources before the relevant limit is available. Parsing is currently not
    cancellable. The internal direct-string summary overload also applies the
    2,000,000-character ceiling to raw input before normalization. Do not open

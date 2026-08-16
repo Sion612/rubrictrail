@@ -28,6 +28,34 @@ that revision.
 | `pnpm test:e2e:demo --workers=1` | Exact-main GitHub Actions: 30/30 executions passed against the static `/rubrictrail` artifact (15 scenarios × 2 Chromium projects) |
 | `pnpm audit --audit-level high` | Passed after raising the transitive `nanoid@3` override to patched version 3.3.18; no known vulnerabilities found |
 
+### Local image OCR candidate
+
+The local image OCR worktree is intentionally separate from the published
+v0.6.0 evidence above. On 16 August 2026 its final local verification observed:
+
+| Command | Observed result |
+| --- | --- |
+| `pnpm install --frozen-lockfile` | Passed with pnpm 11.9.0; deterministic OCR asset preparation also rechecked the pinned upstream files against recorded SHA-256 values |
+| `pnpm audit --prod` | No known production dependency vulnerabilities found |
+| `pnpm check` | ESLint passed with zero warnings; TypeScript passed; 27 Vitest files / 325 tests plus 3 OCR asset-audit Node tests passed; the Next.js 16.3.0 production build passed |
+| `PAGES_BASE_PATH=/rubrictrail pnpm build:demo` | Static export completed successfully with same-origin worker, core and English/Simplified-Chinese language assets |
+| `pnpm audit:demo` | Passed for 57 exported files; 14 initial JS/CSS files totalled 1,244,369 raw / 349,595 gzip bytes, below the unchanged 357,000-byte budget; 10 deferred OCR files totalled 16,850,033 bytes and were absent from initial HTML |
+| `PLAYWRIGHT_PRODUCTION=true PLAYWRIGHT_APP_PATH=/ pnpm test:e2e --workers=1` | 34/34 desktop/mobile Chromium executions passed through `next start`, including a text-only zero-OCR-request check and real bilingual OCR with mixed-batch recovery |
+| `PLAYWRIGHT_APP_PATH=/rubrictrail/ pnpm test:e2e:demo --workers=1` | 34/34 desktop/mobile Chromium executions passed against the static artifact, including same-origin worker/core/language requests and rejection of all cross-origin or API requests |
+
+The exact-main pre-OCR baseline reported above was 1,235,028 raw / 346,687
+gzip bytes. The candidate remains inside the unchanged budget at 1,244,369 raw /
+349,595 gzip bytes; its separately reported OCR payload is lazy. A complete
+fictional PNG OCR E2E took about 2.8–2.9 seconds in the final local Chromium
+runs, including UI setup and recovery; this is an observation, not a general
+performance benchmark. Tesseract emitted only its known missing legacy-language
+parameter diagnostics for the pinned Chinese data; the narrow test allowlist
+rejects any other console or page error.
+
+These are local source, build and generated-artifact results. They do not claim
+remote PR CI success or a merged/public Pages deployment; those require a future
+PR head and post-merge deployment verification.
+
 The final language-preference, notification, narrow-screen, accessibility,
 phase-splitting and dependency-security changes were all included in the exact
 main revision tested above.

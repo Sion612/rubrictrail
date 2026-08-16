@@ -189,6 +189,38 @@ describe("local project persistence", () => {
     expect(parsePersistedProjectStateValue(state).ok).toBe(false);
   });
 
+  it("preserves optional OCR evidence provenance without changing the state version", () => {
+    const state = uploadedState();
+    state.uploadedProject!.fileNames = ["rubric.png"];
+    state.uploadedProject!.criteria[0].evidence = {
+      ...state.uploadedProject!.criteria[0].evidence!,
+      fileName: "rubric.png",
+      origin: "ocr",
+    };
+
+    const parsed = parsePersistedProjectStateValue(state);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.state.version).toBe(3);
+      expect(parsed.state.uploadedProject?.criteria[0].evidence?.origin).toBe("ocr");
+    }
+  });
+
+  it("rejects an invented evidence provenance value", () => {
+    const state = uploadedState() as unknown as Record<string, unknown>;
+    const project = state.uploadedProject as Record<string, unknown>;
+    const [criterion] = project.criteria as Array<Record<string, unknown>>;
+    criterion.evidence = {
+      ...(criterion.evidence as Record<string, unknown>),
+      origin: "remote-ai",
+    };
+
+    expect(parsePersistedProjectStateValue(state)).toEqual({
+      ok: false,
+      reason: "invalid-state",
+    });
+  });
+
   it("rejects deceptive control and bidirectional characters in saved filenames", () => {
     const state = uploadedState();
     const deceptiveName = "report\u202Etxt.exe";

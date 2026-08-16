@@ -101,7 +101,10 @@ export function UploadedEvidencePanel({
             <span className="evidence-panel__source-kind">
               <FileText aria-hidden="true" />
               {evidence
-                ? messages.recordedSource.replace(
+                ? (evidence.origin === "ocr"
+                    ? messages.ocrRecordedSource
+                    : messages.recordedSource
+                  ).replace(
                     "{name}",
                     evidence.fileName ?? messages.sourceDocument,
                   )
@@ -118,7 +121,11 @@ export function UploadedEvidencePanel({
           <section className="evidence-panel__section" aria-labelledby="uploaded-excerpt-title">
             <div className="evidence-panel__section-heading">
               <Quote aria-hidden="true" />
-              <h3 id="uploaded-excerpt-title">{messages.retainedExcerpt}</h3>
+              <h3 id="uploaded-excerpt-title">
+                {evidence?.origin === "ocr"
+                  ? messages.ocrRetainedExcerpt
+                  : messages.retainedExcerpt}
+              </h3>
             </div>
             {evidence ? (
               <blockquote className="evidence-panel__quote">{evidence.excerpt}</blockquote>

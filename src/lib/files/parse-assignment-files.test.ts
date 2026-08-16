@@ -8,6 +8,8 @@ import {
   ASSIGNMENT_FILE_MAX_BYTES,
   ASSIGNMENT_FILE_MAX_COUNT,
   ASSIGNMENT_FILES_MAX_TOTAL_BYTES,
+  ASSIGNMENT_IMAGE_MAX_DIMENSION,
+  ASSIGNMENT_IMAGE_MAX_PIXELS,
   ASSIGNMENT_PDF_MAX_PAGES,
   ASSIGNMENT_PDFS_MAX_TOTAL_PAGES,
   AssignmentFileBatchParseError,
@@ -15,6 +17,7 @@ import {
   buildUploadedAssignmentSummary,
   parseAssignmentFiles,
   parseAssignmentFilesWithRecovery,
+  type AssignmentImageOcrAdapter,
 } from "./parse-assignment-files";
 
 const parserMocks = vi.hoisted(() => ({
@@ -90,6 +93,37 @@ function makePdfDocument(
     destroy,
     getPage,
   };
+}
+
+function makeImageFile(name: string, type: string): File {
+  return makeFile(new Uint8Array([1, 2, 3, 4]), name, type);
+}
+
+function makeOcrAdapter(options: {
+  dimensions?: { width: number; height: number };
+  inspectError?: Error;
+  createError?: Error;
+  terminateError?: Error;
+  textByName?: Record<string, string>;
+}) {
+  const inspect = options.inspectError
+    ? vi.fn().mockRejectedValue(options.inspectError)
+    : vi.fn().mockResolvedValue(options.dimensions ?? { width: 1200, height: 900 });
+  const recognize = vi.fn().mockImplementation(async (
+    file: File,
+    onProgress: (progress: number) => void,
+  ) => {
+    onProgress(0.5);
+    return options.textByName?.[file.name] ?? "Assignment title: OCR brief";
+  });
+  const terminate = options.terminateError
+    ? vi.fn().mockRejectedValue(options.terminateError)
+    : vi.fn();
+  const createSession = options.createError
+    ? vi.fn().mockRejectedValue(options.createError)
+    : vi.fn().mockResolvedValue({ recognize, terminate });
+  const adapter: AssignmentImageOcrAdapter = { inspect, createSession };
+  return { adapter, inspect, createSession, recognize, terminate };
 }
 
 describe("parseAssignmentFiles", () => {
@@ -663,6 +697,238 @@ describe("parseAssignmentFiles", () => {
       expectErrorCode("CORRUPT_DOCUMENT"),
     );
   });
+
+  it("recognizes PNG, JPEG and WebP sources with one bilingual local OCR session", async () => {
+    const ocr = makeOcrAdapter({
+      textByName: {
+        "brief.png": "Assignment title: Local OCR\n截止日期：2026-09-01",
+        "rubric.jpg": "Rubric\nAnalysis | 100%",
+        "appendix.jpeg": "Appendix requirements",
+        "notes.webp": "简体中文说明",
+      },
+    });
+    const progress = vi.fn();
+
+    const result = await parseAssignmentFiles(
+      [
+        makeImageFile("brief.png", "image/png"),
+        makeImageFile("rubric.jpg", "image/jpeg"),
+        makeImageFile("appendix.jpeg", "image/jpeg"),
+        makeImageFile("notes.webp", "image/webp"),
+      ],
+      { imageOcrAdapter: ocr.adapter, onImageOcrProgress: progress },
+    );
+
+    expect(result.sources.map(({ kind, origin }) => ({ kind, origin }))).toEqual([
+      { kind: "png", origin: "ocr" },
+      { kind: "jpeg", origin: "ocr" },
+      { kind: "jpeg", origin: "ocr" },
+      { kind: "webp", origin: "ocr" },
+    ]);
+    expect(result.text).toContain("截止日期");
+    expect(result.text).toContain("简体中文说明");
+    expect(ocr.createSession).toHaveBeenCalledOnce();
+    expect(ocr.recognize).toHaveBeenCalledTimes(4);
+    expect(ocr.terminate).toHaveBeenCalledOnce();
+    expect(progress).toHaveBeenCalledWith(
+      expect.objectContaining({ currentFile: 4, totalFiles: 4, progress: 1 }),
+    );
+  });
+
+  it("merges TXT, image and PDF sources in stable order with correct offsets", async () => {
+    const ocr = makeOcrAdapter({
+      textByName: { "rubric.png": "Rubric\nAnalysis | 100%" },
+    });
+    const pdf = makePdfDocument(1, {
+      pageText: () => "Appendix requirements",
+    });
+    parserMocks.getDocument.mockReturnValueOnce({
+      promise: Promise.resolve(pdf.document),
+    });
+
+    const result = await parseAssignmentFiles(
+      [
+        makeFile("Assignment title: Mixed intake", "brief.txt"),
+        makeImageFile("rubric.png", "image/png"),
+        makeFile("pdf", "appendix.pdf", "application/pdf"),
+      ],
+      { imageOcrAdapter: ocr.adapter },
+    );
+
+    expect(result.sources.map(({ fileName, origin }) => ({ fileName, origin }))).toEqual([
+      { fileName: "brief.txt", origin: "extracted" },
+      { fileName: "rubric.png", origin: "ocr" },
+      { fileName: "appendix.pdf", origin: "extracted" },
+    ]);
+    expect(result.sources[1].startOffset).toBe(result.sources[0].endOffset + 2);
+    expect(result.sources[2].startOffset).toBe(result.sources[1].endOffset + 2);
+    expect(result.text.slice(result.sources[1].startOffset, result.sources[1].endOffset)).toBe(
+      "Rubric\nAnalysis | 100%",
+    );
+    expect(pdf.destroy).toHaveBeenCalledOnce();
+    expect(ocr.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("retains explicit OCR provenance on evidence derived from an image", async () => {
+    const ocr = makeOcrAdapter({
+      textByName: {
+        "rubric.png": "Assignment title: OCR brief\nRubric\nAnalysis | 100%",
+      },
+    });
+    const parsed = await parseAssignmentFiles(
+      [makeImageFile("rubric.png", "image/png")],
+      { imageOcrAdapter: ocr.adapter },
+    );
+
+    const summary = buildUploadedAssignmentSummary(parsed);
+    expect(summary.title.evidence).toMatchObject({
+      fileName: "rubric.png",
+      origin: "ocr",
+    });
+    expect(summary.rubric.criteria[0].evidence).toMatchObject({
+      fileName: "rubric.png",
+      origin: "ocr",
+    });
+  });
+
+  it("rejects conflicting image extension and media type before OCR starts", async () => {
+    const ocr = makeOcrAdapter({});
+    const file = makeImageFile("spoofed.png", "image/jpeg");
+
+    await expect(
+      parseAssignmentFiles([file], { imageOcrAdapter: ocr.adapter }),
+    ).rejects.toSatisfy(expectErrorCode("INVALID_IMAGE"));
+    expect(ocr.inspect).not.toHaveBeenCalled();
+    expect(ocr.createSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported, empty and over-byte-limit images before OCR starts", async () => {
+    const ocr = makeOcrAdapter({});
+    const gif = makeFile(new Uint8Array([0x47, 0x49, 0x46]), "page.gif", "image/gif");
+    await expect(
+      parseAssignmentFiles([gif], { imageOcrAdapter: ocr.adapter }),
+    ).rejects.toSatisfy(expectErrorCode("UNSUPPORTED_FILE_TYPE"));
+
+    const empty = makeFile(new Uint8Array(), "empty.png", "image/png");
+    await expect(
+      parseAssignmentFiles([empty], { imageOcrAdapter: ocr.adapter }),
+    ).rejects.toSatisfy(expectErrorCode("EMPTY_FILE"));
+
+    const oversized = makeImageFile("oversized.webp", "image/webp");
+    Object.defineProperty(oversized, "size", {
+      configurable: true,
+      value: ASSIGNMENT_FILE_MAX_BYTES + 1,
+    });
+    await expect(
+      parseAssignmentFiles([oversized], { imageOcrAdapter: ocr.adapter }),
+    ).rejects.toSatisfy(expectErrorCode("FILE_TOO_LARGE"));
+    expect(ocr.inspect).not.toHaveBeenCalled();
+    expect(ocr.createSession).not.toHaveBeenCalled();
+  });
+
+  it("enforces decoded image dimensions before creating the OCR worker", async () => {
+    const exact = makeOcrAdapter({
+      dimensions: { width: ASSIGNMENT_IMAGE_MAX_DIMENSION, height: 1 },
+    });
+    await expect(
+      parseAssignmentFiles([makeImageFile("exact.png", "image/png")], {
+        imageOcrAdapter: exact.adapter,
+      }),
+    ).resolves.toBeDefined();
+
+    const exactPixels = makeOcrAdapter({
+      dimensions: { width: 5000, height: ASSIGNMENT_IMAGE_MAX_PIXELS / 5000 },
+    });
+    await expect(
+      parseAssignmentFiles([makeImageFile("exact-pixels.png", "image/png")], {
+        imageOcrAdapter: exactPixels.adapter,
+      }),
+    ).resolves.toBeDefined();
+
+    const tooWide = makeOcrAdapter({
+      dimensions: { width: ASSIGNMENT_IMAGE_MAX_DIMENSION + 1, height: 1 },
+    });
+    await expect(
+      parseAssignmentFiles([makeImageFile("too-wide.png", "image/png")], {
+        imageOcrAdapter: tooWide.adapter,
+      }),
+    ).rejects.toSatisfy(expectErrorCode("IMAGE_DIMENSIONS_TOO_LARGE"));
+    expect(tooWide.createSession).not.toHaveBeenCalled();
+
+    const tooManyPixels = makeOcrAdapter({
+      dimensions: { width: 5000, height: Math.floor(ASSIGNMENT_IMAGE_MAX_PIXELS / 5000) + 1 },
+    });
+    await expect(
+      parseAssignmentFiles([makeImageFile("large.png", "image/png")], {
+        imageOcrAdapter: tooManyPixels.adapter,
+      }),
+    ).rejects.toSatisfy(expectErrorCode("IMAGE_DIMENSIONS_TOO_LARGE"));
+    expect(tooManyPixels.createSession).not.toHaveBeenCalled();
+  });
+
+  it("uses stable OCR failure codes and always terminates an initialized worker", async () => {
+    const empty = makeOcrAdapter({ textByName: { "blank.png": " \n " } });
+    await expect(
+      parseAssignmentFiles([makeImageFile("blank.png", "image/png")], {
+        imageOcrAdapter: empty.adapter,
+      }),
+    ).rejects.toSatisfy(expectErrorCode("OCR_NO_TEXT"));
+    expect(empty.terminate).toHaveBeenCalledOnce();
+
+    const unavailable = makeOcrAdapter({ createError: new Error("worker blocked") });
+    await expect(
+      parseAssignmentFiles([makeImageFile("brief.png", "image/png")], {
+        imageOcrAdapter: unavailable.adapter,
+      }),
+    ).rejects.toSatisfy(expectErrorCode("OCR_UNAVAILABLE"));
+    expect(unavailable.createSession).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a successful parse when best-effort OCR worker cleanup fails", async () => {
+    const ocr = makeOcrAdapter({ terminateError: new Error("cleanup failed") });
+
+    await expect(
+      parseAssignmentFiles([makeImageFile("brief.png", "image/png")], {
+        imageOcrAdapter: ocr.adapter,
+      }),
+    ).resolves.toMatchObject({ sources: [expect.objectContaining({ origin: "ocr" })] });
+    expect(ocr.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("applies the existing selection-wide text budget to OCR output", async () => {
+    const ocr = makeOcrAdapter({
+      textByName: {
+        "huge.png": "x".repeat(ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS + 1),
+      },
+    });
+
+    await expect(
+      parseAssignmentFiles([makeImageFile("huge.png", "image/png")], {
+        imageOcrAdapter: ocr.adapter,
+      }),
+    ).rejects.toSatisfy(expectErrorCode("EXTRACTED_TEXT_TOO_LARGE"));
+    expect(ocr.terminate).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_LINES" as const,
+      text: makeLineText(ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES + 1),
+    },
+    {
+      code: "EXTRACTED_TEXT_TOO_MANY_WORDS" as const,
+      text: makeWordText(ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS + 1),
+    },
+  ])("applies the existing selection-wide $code budget to OCR output", async ({ code, text }) => {
+    const ocr = makeOcrAdapter({ textByName: { "huge.png": text } });
+
+    await expect(
+      parseAssignmentFiles([makeImageFile("huge.png", "image/png")], {
+        imageOcrAdapter: ocr.adapter,
+      }),
+    ).rejects.toSatisfy(expectErrorCode(code));
+    expect(ocr.terminate).toHaveBeenCalledOnce();
+  });
 });
 
 describe("parseAssignmentFilesWithRecovery", () => {
@@ -980,6 +1246,61 @@ describe("parseAssignmentFilesWithRecovery", () => {
     });
     expect(result.skippedFiles[0].fileName.length).toBeLessThanOrEqual(255);
     expect(result.skippedFiles[0].fileName).not.toBe(unsafeName);
+  });
+
+  it("recovers from one damaged image while preserving mixed-batch source order", async () => {
+    const inspect = vi.fn().mockImplementation(async (file: File) => {
+      if (file.name === "broken.png") throw new Error("decode failed");
+      return { width: 800, height: 600 };
+    });
+    const recognize = vi.fn().mockResolvedValue("Rubric\nAnalysis | 100%");
+    const terminate = vi.fn();
+    const adapter: AssignmentImageOcrAdapter = {
+      inspect,
+      createSession: vi.fn().mockResolvedValue({ recognize, terminate }),
+    };
+
+    const result = await parseAssignmentFilesWithRecovery(
+      [
+        makeFile("Assignment title: Safe brief", "brief.txt"),
+        makeImageFile("broken.png", "image/png"),
+        makeImageFile("rubric.jpg", "image/jpeg"),
+      ],
+      { imageOcrAdapter: adapter },
+    );
+
+    expect(result.parsed.sources.map((source) => source.id)).toEqual([
+      "source-1",
+      "source-3",
+    ]);
+    expect(result.parsed.sources[1]).toMatchObject({ origin: "ocr", kind: "jpeg" });
+    expect(result.skippedFiles).toEqual([
+      expect.objectContaining({ inputIndex: 1, code: "INVALID_IMAGE" }),
+    ]);
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it("treats OCR no-text as recoverable but keeps selection-wide budgets fatal", async () => {
+    const recoverable = makeOcrAdapter({
+      textByName: { "blank.png": "", "good.png": "Assignment title: Good" },
+    });
+    const recovered = await parseAssignmentFilesWithRecovery(
+      [makeImageFile("blank.png", "image/png"), makeImageFile("good.png", "image/png")],
+      { imageOcrAdapter: recoverable.adapter },
+    );
+    expect(recovered.skippedFiles[0]).toMatchObject({ code: "OCR_NO_TEXT" });
+    expect(recovered.parsed.sources[0].id).toBe("source-2");
+
+    const fatal = makeOcrAdapter({
+      textByName: { "huge.png": "x".repeat(ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS + 1) },
+    });
+    await expect(
+      parseAssignmentFilesWithRecovery(
+        [makeImageFile("huge.png", "image/png"), makeFile("trailing", "later.txt")],
+        { imageOcrAdapter: fatal.adapter },
+      ),
+    ).rejects.toSatisfy(expectErrorCode("EXTRACTED_TEXT_TOO_LARGE"));
+    expect(fatal.terminate).toHaveBeenCalledOnce();
   });
 });
 

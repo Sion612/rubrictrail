@@ -18,6 +18,7 @@ const defaultProps = {
   pastedTextError: null,
   isLoadingSample: false,
   uploadStatus: "idle" as const,
+  imageOcrProgress: null,
   uploadError: null,
   partialUploadResult: null,
   onReviewPartialUpload: vi.fn(),
@@ -64,7 +65,7 @@ describe("WelcomeScreen upload controls", () => {
       "RubricTrail parses assignment content locally in this browser; the app does not upload it or send it to an AI service.",
     );
     expect(main).toHaveTextContent(
-      "Use only documents you trust; these limits are not a malicious-document sandbox.",
+      "Use only files you trust; these limits are not a malicious-file sandbox.",
     );
     expect(main).toHaveTextContent(
       "Backups are unencrypted and unsigned; open only one you created or trust.",
@@ -123,6 +124,57 @@ describe("WelcomeScreen upload controls", () => {
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Parsing locally…" })).toBeDisabled();
     expect(screen.getByLabelText("Choose a RubricTrail project backup")).toBeDisabled();
+  });
+
+  it("accepts supported images and announces bounded local OCR progress", () => {
+    render(
+      <WelcomeScreen
+        {...defaultProps}
+        uploadStatus="parsing"
+        imageOcrProgress={{
+          fileName: "fictional-rubric.png",
+          currentFile: 2,
+          totalFiles: 3,
+          phase: "recognizing",
+          progress: 0.42,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("file-input")).toHaveAttribute(
+      "accept",
+      expect.stringContaining("image/webp"),
+    );
+    expect(screen.getByTestId("ocr-progress")).toHaveTextContent(
+      "Recognizing image 2 of 3: fictional-rubric.png (42%)",
+    );
+    expect(screen.getByTestId("ocr-progress")).toHaveAttribute("role", "status");
+  });
+
+  it("announces local OCR progress and accuracy limits in Simplified Chinese", () => {
+    render(
+      <LocaleProvider>
+        <WelcomeScreen
+          {...defaultProps}
+          uploadStatus="parsing"
+          imageOcrProgress={{
+            fileName: "虚构评分标准.png",
+            currentFile: 2,
+            totalFiles: 4,
+            phase: "recognizing",
+            progress: 0.5,
+          }}
+        />
+      </LocaleProvider>,
+    );
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "zh-CN" },
+    });
+
+    expect(screen.getByTestId("ocr-progress")).toHaveTextContent(
+      "正在识别第 2/4 张图片：虚构评分标准.png（50%）",
+    );
+    expect(screen.getByText(/OCR 可能出错，请对照原图核实识别出的要求/u)).toBeInTheDocument();
   });
 
   it("keeps project backup errors separate from assignment upload errors", () => {

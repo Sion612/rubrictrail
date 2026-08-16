@@ -20,14 +20,19 @@
     "open-source"
   ],
   "scripts": {
+    "prepare:ocr": "node scripts/prepare-ocr-assets.mjs all",
+    "predev": "node scripts/prepare-ocr-assets.mjs root",
     "dev": "next dev",
+    "prebuild": "node scripts/prepare-ocr-assets.mjs root",
     "build": "next build",
+    "prebuild:demo": "node scripts/prepare-ocr-assets.mjs demo",
     "build:demo": "next build demo",
     "audit:demo": "node scripts/audit-static-demo.mjs",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && node --test scripts/ocr-asset-audit.test.mjs",
+    "test:ocr-assets": "node --test scripts/ocr-asset-audit.test.mjs",
     "test:deployment-smoke": "node --test scripts/deployment-smoke.test.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -36,6 +41,8 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
+    "@tesseract.js-data/chi_sim": "1.0.0",
+    "@tesseract.js-data/eng": "1.0.0",
     "lucide-react": "1.25.0",
     "mammoth": "1.12.0",
     "next": "16.3.0",
@@ -43,6 +50,8 @@
     "pdfjs-dist": "6.2.108",
     "react": "19.2.7",
     "react-dom": "19.2.7",
+    "tesseract.js": "7.0.0",
+    "tesseract.js-core": "7.0.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

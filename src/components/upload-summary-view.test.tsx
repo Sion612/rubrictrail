@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "@/components/locale-provider";
 import { UploadSummaryView } from "@/components/upload-summary-view";
@@ -45,6 +45,28 @@ afterEach(() => {
 });
 
 describe("UploadSummaryView rubric weighting", () => {
+  it("uses the spanning evidence wrapper for extracted, OCR and missing evidence", () => {
+    const result = completeUpload();
+    result.summary.rubric.criteria[1].evidence = {
+      ...result.summary.rubric.criteria[1].evidence,
+      fileName: "rubric.png",
+      origin: "ocr",
+    };
+    const { container } = render(
+      <UploadSummaryView result={result} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+
+    expect(container.querySelectorAll("details.source-evidence-note")).toHaveLength(6);
+    fireEvent.change(screen.getByTestId("criterion-name-0"), {
+      target: { value: "Manual analysis" },
+    });
+    const row = screen.getByTestId("criterion-name-0").closest(".rubric-editor-row");
+    expect(row?.querySelector(".source-evidence-note--empty")).not.toBeNull();
+    expect(row?.querySelector(".source-evidence-note--empty")?.tagName).toBe("DIV");
+    expect(within(row as HTMLElement).getByText(/No source excerpt/)).toBeInTheDocument();
+    expect(screen.getByText("OCR-derived excerpt — verify against the image")).toBeInTheDocument();
+  });
+
   it("labels OCR-derived sources and evidence as needing image verification", () => {
     const result = completeUpload();
     result.fileNames = ["rubric.png"];
@@ -166,6 +188,116 @@ describe("UploadSummaryView rubric weighting", () => {
     const weightField = remainingWeight.closest(".weight-field");
     expect(weightField).not.toBeNull();
     expect(within(weightField as HTMLElement).getByText("Found in source")).toBeInTheDocument();
+  });
+
+  it("renders the complete-weight total as a focusable rubric-level error", () => {
+    render(
+      <UploadSummaryView result={completeUpload()} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-weight-0"), {
+      target: { value: "20" },
+    });
+    fireEvent.click(screen.getByTestId("create-project"));
+
+    const totalError = document.getElementById("rubric-weight-total");
+    expect(totalError).not.toBeNull();
+    expect(totalError).toHaveClass("rubric-weight-total-error");
+    expect(
+      within(screen.getByTestId("criterion-weight-0").closest(".weight-field") as HTMLElement)
+        .queryByText(/must total 100%/),
+    ).not.toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /must total 100%/ });
+    expect(link).toHaveAttribute("href", "#rubric-weight-total");
+    fireEvent.click(link);
+    expect(totalError).toHaveFocus();
+  });
+
+  it("keeps individual invalid weights attached to their own input", () => {
+    render(
+      <UploadSummaryView result={completeUpload()} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-weight-0"), {
+      target: { value: "-1" },
+    });
+    fireEvent.click(screen.getByTestId("create-project"));
+    expect(screen.getByTestId("criterion-weight-0")).toHaveAttribute(
+      "aria-describedby",
+      "criterion-weight-0-error",
+    );
+  });
+});
+
+describe("UploadSummaryView manual criterion workflow", () => {
+  it("adds exactly one stable row, preserves edits, and focuses the new name", async () => {
+    render(
+      <UploadSummaryView result={completeUpload()} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-name-0"), {
+      target: { value: "Preserved analysis" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add missing criterion" }));
+    await waitFor(() => expect(screen.getByTestId("criterion-name-2")).toHaveFocus());
+    expect(screen.getAllByTestId(/criterion-name-/)).toHaveLength(3);
+    expect(screen.getByTestId("criterion-name-0")).toHaveValue("Preserved analysis");
+
+    fireEvent.change(screen.getByTestId("criterion-name-2"), {
+      target: { value: "First manual criterion" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add missing criterion" }));
+    await waitFor(() => expect(screen.getByTestId("criterion-name-3")).toHaveFocus());
+    expect(screen.getByTestId("criterion-name-2")).toHaveValue("First manual criterion");
+    const rows = document.querySelectorAll("[data-criterion-key]");
+    expect(new Set(Array.from(rows, (row) => row.getAttribute("data-criterion-key")).values()).size)
+      .toBe(rows.length);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove criterion 3" }));
+    expect(screen.queryByDisplayValue("First manual criterion")).not.toBeInTheDocument();
+  });
+
+  it("stops adding criteria at the 50-row cap", () => {
+    render(
+      <UploadSummaryView result={completeUpload()} onBack={vi.fn()} onCreateProject={vi.fn()} />,
+    );
+    const add = screen.getByRole("button", { name: "Add missing criterion" });
+    for (let index = 2; index < 50; index += 1) fireEvent.click(add);
+    expect(screen.getAllByTestId(/criterion-name-/)).toHaveLength(50);
+    expect(add).toBeDisabled();
+    fireEvent.click(add);
+    expect(screen.getAllByTestId(/criterion-name-/)).toHaveLength(50);
+  });
+
+  it("stores a manual PDF source locator without inventing retained evidence", () => {
+    const onCreateProject = vi.fn();
+    const result = completeUpload();
+    result.fileNames = ["fictional-rubric.pdf"];
+    result.sources = [{
+      id: "source-1",
+      fileName: "fictional-rubric.pdf",
+      kind: "pdf",
+      origin: "extracted",
+      pageCount: 2,
+    }];
+    render(
+      <UploadSummaryView result={result} onBack={vi.fn()} onCreateProject={onCreateProject} />,
+    );
+    fireEvent.change(screen.getByTestId("criterion-name-0"), {
+      target: { value: "Manual verification" },
+    });
+    fireEvent.change(screen.getByTestId("criterion-source-0"), {
+      target: { value: "source-1" },
+    });
+    fireEvent.change(screen.getByTestId("criterion-source-page-0"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByTestId("create-project"));
+
+    const criterion = onCreateProject.mock.calls[0][0].criteria[0];
+    expect(criterion.evidence).toBeNull();
+    expect(criterion.manualSourceLocator).toEqual({
+      sourceId: "source-1",
+      fileName: "fictional-rubric.pdf",
+      page: 2,
+    });
   });
 });
 

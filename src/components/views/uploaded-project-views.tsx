@@ -217,8 +217,16 @@ export function UploadedRubricView({
                 {criterion.evidence?.excerpt ?? messages.noExcerpt}
               </span>
               <small>
-                {criterion.evidence?.fileName ?? messages.manuallyEntered}
-                {criterion.evidence?.page ? ` · ${interpolateViewMessage(messages.page, { page: formatNumber(criterion.evidence.page) })}` : ""}
+                {criterion.evidence?.fileName ??
+                  criterion.manualSourceLocator?.fileName ??
+                  messages.manuallyEntered}
+                {criterion.evidence?.page ?? criterion.manualSourceLocator?.page
+                  ? ` · ${interpolateViewMessage(messages.page, {
+                      page: formatNumber(
+                        criterion.evidence?.page ?? criterion.manualSourceLocator?.page ?? 0,
+                      ),
+                    })}`
+                  : ""}
               </small>
             </button>
           </article>

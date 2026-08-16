@@ -10,6 +10,7 @@ import {
   UPLOADED_REVIEW_MAX_CHARACTERS,
 } from "@/lib/uploaded-project";
 import type {
+  ManualSourceLocator,
   PersistedProjectState,
   UploadedCriterionReview,
   UploadedProject,
@@ -77,12 +78,21 @@ const uploadedSourceEvidenceSchema: z.ZodType<UploadedSourceEvidence> = z
     }
   });
 
+const manualSourceLocatorSchema: z.ZodType<ManualSourceLocator> = z
+  .object({
+    sourceId: idSchema,
+    fileName: savedFileNameSchema,
+    page: z.number().int().positive().max(1_000_000).nullable(),
+  })
+  .strict();
+
 const uploadedProjectCriterionSchema: z.ZodType<UploadedProjectCriterion> = z
   .object({
     id: idSchema,
     name: nonBlankString(300),
     weight: z.number().finite().positive().max(100).nullable(),
     evidence: uploadedSourceEvidenceSchema.nullable(),
+    manualSourceLocator: manualSourceLocatorSchema.nullable().optional(),
   })
   .strict();
 
@@ -116,6 +126,14 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
       criterionIds.add(criterion.id);
 
       const evidence = criterion.evidence;
+      const manualSourceLocator = criterion.manualSourceLocator ?? null;
+      if (evidence !== null && manualSourceLocator !== null) {
+        context.addIssue({
+          code: "custom",
+          message: "A criterion cannot retain evidence and a manual source locator",
+          path: ["criteria", index, "manualSourceLocator"],
+        });
+      }
       if (
         evidence !== null &&
         evidence.fileName !== null &&
@@ -164,6 +182,34 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
           } else {
             sourceFileNames.set(evidence.sourceId, evidence.fileName);
           }
+        }
+      }
+      if (manualSourceLocator !== null) {
+        if (!fileNames.has(manualSourceLocator.fileName)) {
+          context.addIssue({
+            code: "custom",
+            message: "Manual source locator filename is not part of the saved project sources",
+            path: ["criteria", index, "manualSourceLocator", "fileName"],
+          });
+        }
+        const sourceIdMatch = CANONICAL_SOURCE_ID.exec(manualSourceLocator.sourceId);
+        const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
+        if (!Number.isSafeInteger(sourceNumber) || sourceNumber > MAX_FILES) {
+          context.addIssue({
+            code: "custom",
+            message: "Manual source locator source id is not canonical",
+            path: ["criteria", index, "manualSourceLocator", "sourceId"],
+          });
+        }
+        const previousFileName = sourceFileNames.get(manualSourceLocator.sourceId);
+        if (previousFileName !== undefined && previousFileName !== manualSourceLocator.fileName) {
+          context.addIssue({
+            code: "custom",
+            message: "One source id cannot name multiple saved files",
+            path: ["criteria", index, "manualSourceLocator", "sourceId"],
+          });
+        } else {
+          sourceFileNames.set(manualSourceLocator.sourceId, manualSourceLocator.fileName);
         }
       }
     });

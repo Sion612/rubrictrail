@@ -3,6 +3,7 @@
 import {
   type CSSProperties,
   type FormEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -93,12 +94,21 @@ function EvidenceNote({
   evidence,
   messages,
   isPasted,
+  children,
 }: {
   evidence: UploadedProjectDraft["criteria"][number]["evidence"];
   messages: IntakeMessages;
   isPasted: boolean;
+  children?: ReactNode;
 }) {
-  if (!evidence) return <small>{messages.evidenceNone}</small>;
+  if (!evidence) {
+    return (
+      <div className="source-evidence-note source-evidence-note--empty">
+        <small>{messages.evidenceNone}</small>
+        {children}
+      </div>
+    );
+  }
   return (
     <details className="source-evidence-note">
       <summary>
@@ -232,17 +242,21 @@ function localizedDraftIssue(
     );
   }
   if (!localizedMessage && issue.targetId.startsWith("criterion-weight-")) {
-    if (issue.message.startsWith("Published rubric weights must total")) {
-      const total = issue.message.match(/currently total ([\d.]+)%/)?.[1] ?? "0";
-      localizedMessage = formatIntakeMessage(messages.errorWeightTotal, { total });
-    } else {
-      localizedMessage = formatIntakeMessage(
-        issue.message.includes("greater than 0")
-          ? messages.errorCriterionWeightRange
-          : messages.errorCriterionWeight,
-        { number: criterionNumber },
-      );
-    }
+    localizedMessage = formatIntakeMessage(
+      issue.message.includes("greater than 0")
+        ? messages.errorCriterionWeightRange
+        : messages.errorCriterionWeight,
+      { number: criterionNumber },
+    );
+  }
+  if (!localizedMessage && issue.targetId === "rubric-weight-total") {
+    const total = issue.message.match(/currently total ([\d.]+)%/)?.[1] ?? "0";
+    localizedMessage = formatIntakeMessage(messages.errorWeightTotal, { total });
+  }
+  if (!localizedMessage && issue.targetId.startsWith("criterion-source-page-")) {
+    localizedMessage = formatIntakeMessage(messages.errorManualPage, {
+      number: criterionNumber,
+    });
   }
 
   return { ...issue, message: localizedMessage ?? issue.message };
@@ -267,6 +281,7 @@ export function UploadSummaryView({
     initialDraft.criteria.map((_, index) => `detected-${index + 1}`),
   );
   const nextCriterionKeyRef = useRef(0);
+  const pendingCriterionFocusKeyRef = useRef<string | null>(null);
   const errorSummaryRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const issues = useMemo(() => validateUploadedProjectDraftIssues(draft), [draft]);
@@ -298,11 +313,41 @@ export function UploadSummaryView({
   const sourceContainsPercentageValues = result.summary.rubric.criteria.some(
     (criterion) => criterion.weight !== null,
   );
+  const manualSources = useMemo(
+    () => (result.sources ?? result.fileNames.map((fileName, index) => ({
+      id: `source-${index + 1}`,
+      fileName,
+      kind: fileName.toLowerCase().endsWith(".pdf") ? "pdf" as const : undefined,
+      origin: "extracted" as const,
+      pageCount: null,
+    }))).map((source, index) => ({
+      id: source.id ?? `source-${index + 1}`,
+      fileName: source.fileName,
+      kind: source.kind,
+      pageCount: source.pageCount ?? null,
+    })),
+    [result.fileNames, result.sources],
+  );
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     headingRef.current?.focus({ preventScroll: true });
   }, []);
+
+  useEffect(() => {
+    const pendingKey = pendingCriterionFocusKeyRef.current;
+    if (!pendingKey) return;
+    const index = criterionKeys.indexOf(pendingKey);
+    if (index < 0) return;
+    pendingCriterionFocusKeyRef.current = null;
+    window.requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        `[data-criterion-key="${pendingKey}"] [data-testid="criterion-name-${index}"]`,
+      );
+      input?.scrollIntoView({ block: "center" });
+      input?.focus({ preventScroll: true });
+    });
+  }, [criterionKeys]);
 
   function updateField<K extends keyof Omit<UploadedProjectDraft, "criteria">>(
     key: K,
@@ -325,22 +370,63 @@ export function UploadSummaryView({
             nextCriterion.name === origin.name
               ? origin.evidence
               : null,
+          manualSourceLocator:
+            origin && nextCriterion.name === origin.name
+              ? origin.manualSourceLocator
+              : criterion.manualSourceLocator,
         };
       }),
     }));
   }
 
   function addCriterion() {
+    if (draft.criteria.length >= 50) return;
     setCriterionOrigins((current) => [...current, null]);
     nextCriterionKeyRef.current += 1;
     const nextCriterionKey = `manual-${nextCriterionKeyRef.current}`;
+    pendingCriterionFocusKeyRef.current = nextCriterionKey;
     setCriterionKeys((current) => [
       ...current,
       nextCriterionKey,
     ]);
     setDraft((current) => ({
       ...current,
-      criteria: [...current.criteria, { name: "", weight: "", evidence: null }],
+      criteria: [...current.criteria, {
+        name: "",
+        weight: "",
+        evidence: null,
+        manualSourceLocator: null,
+      }],
+    }));
+  }
+
+  function updateManualSource(index: number, sourceId: string) {
+    const source = manualSources.find((candidate) => candidate.id === sourceId);
+    setDraft((current) => ({
+      ...current,
+      criteria: current.criteria.map((criterion, criterionIndex) =>
+        criterionIndex === index
+          ? {
+              ...criterion,
+              manualSourceLocator: source
+                ? { sourceId: source.id, fileName: source.fileName, page: null }
+                : null,
+            }
+          : criterion),
+    }));
+  }
+
+  function updateManualPage(index: number, value: string) {
+    setDraft((current) => ({
+      ...current,
+      criteria: current.criteria.map((criterion, criterionIndex) => {
+        if (criterionIndex !== index || !criterion.manualSourceLocator) return criterion;
+        const page = value === "" ? null : Number(value);
+        return {
+          ...criterion,
+          manualSourceLocator: { ...criterion.manualSourceLocator, page },
+        };
+      }),
     }));
   }
 
@@ -662,11 +748,23 @@ export function UploadSummaryView({
             </div>
           ) : null}
 
+          {showErrors && issueByTarget.has("rubric-weight-total") ? (
+            <div
+              id="rubric-weight-total"
+              className="rubric-weight-total-error"
+              tabIndex={-1}
+              aria-describedby="rubric-weight-total-error"
+            >
+              <FieldError issue={issueByTarget.get("rubric-weight-total")} />
+            </div>
+          ) : null}
+
           <div className="rubric-editor-list">
             {draft.criteria.map((criterion, index) => (
               <div
                 className="rubric-editor-row"
                 key={criterionKeys[index]}
+                data-criterion-key={criterionKeys[index]}
               >
                 <span className="criterion-index" aria-hidden="true">{index + 1}</span>
                 <label>
@@ -723,7 +821,47 @@ export function UploadSummaryView({
                 >
                   <Trash2 aria-hidden="true" />
                 </button>
-                <EvidenceNote evidence={criterion.evidence} messages={messages} isPasted={isPasted} />
+                <EvidenceNote evidence={criterion.evidence} messages={messages} isPasted={isPasted}>
+                  {criterion.evidence === null ? (
+                    <div className="manual-source-locator">
+                      <label htmlFor={`criterion-source-${index}`}>
+                        <span>{messages.manualSourceLabel}</span>
+                        <select
+                          id={`criterion-source-${index}`}
+                          data-testid={`criterion-source-${index}`}
+                          value={criterion.manualSourceLocator?.sourceId ?? ""}
+                          onChange={(event) => updateManualSource(index, event.target.value)}
+                        >
+                          <option value="">{messages.manualSourceNone}</option>
+                          {manualSources.map((source) => (
+                            <option key={source.id} value={source.id}>
+                              {sourceDisplayName(source.fileName, messages, isPasted)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {criterion.manualSourceLocator &&
+                      manualSources.find((source) =>
+                        source.id === criterion.manualSourceLocator?.sourceId)?.kind === "pdf" ? (
+                        <label htmlFor={`criterion-source-page-${index}`}>
+                          <span>{messages.manualPdfPageLabel}</span>
+                          <input
+                            {...errorAttributes(`criterion-source-page-${index}`)}
+                            type="number"
+                            min="1"
+                            max="1000000"
+                            step="1"
+                            value={criterion.manualSourceLocator.page ?? ""}
+                            onChange={(event) => updateManualPage(index, event.target.value)}
+                            data-testid={`criterion-source-page-${index}`}
+                          />
+                          <small>{messages.manualPdfPageHint}</small>
+                          <FieldError issue={showErrors ? issueByTarget.get(`criterion-source-page-${index}`) : undefined} />
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </EvidenceNote>
               </div>
             ))}
           </div>

@@ -21,6 +21,15 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
   OCR transcripts remain transient and are not added to project storage or
   backups.
 
+### Fixed
+
+- Fixed rubric confirmation so missing-evidence guidance and aggregate weight
+  errors use readable section-level layouts, and newly added criteria scroll
+  into view with focus on their name field.
+- Clarified that manually added criteria have no retained excerpt, while
+  allowing users to save an optional uploaded-source and PDF-page locator for
+  checking the original rubric without retaining or inventing source text.
+
 ## [0.6.0] - 2026-08-15
 
 ### Added

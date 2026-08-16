@@ -122,6 +122,7 @@ export function draftFromUpload(result: UploadFlowResult): UploadedProjectDraft 
       name: criterion.name,
       weight: criterion.weight === null ? "" : String(criterion.weight),
       evidence: criterion.evidence,
+      manualSourceLocator: null,
     })),
   };
 }
@@ -196,13 +197,30 @@ export function validateUploadedProjectDraftIssues(
         );
       }
     }
+    if (criterion.evidence !== null && criterion.manualSourceLocator !== null) {
+      addIssue(
+        `criterion-source-${index}`,
+        `Criterion ${index + 1}: retained evidence cannot also have a manual source locator.`,
+      );
+    }
+    const manualPage = criterion.manualSourceLocator?.page;
+    if (
+      manualPage !== undefined &&
+      manualPage !== null &&
+      (!Number.isInteger(manualPage) || manualPage <= 0 || manualPage > 1_000_000)
+    ) {
+      addIssue(
+        `criterion-source-page-${index}`,
+        `Criterion ${index + 1}: enter a positive whole PDF page number, or leave it blank.`,
+      );
+    }
   });
   if (
     draft.weightingMode === "complete" &&
     Math.abs(totalWeight - 100) > 0.01
   ) {
     addIssue(
-      draft.criteria.length ? "criterion-weight-0" : "add-criterion",
+      "rubric-weight-total",
       `Published rubric weights must total 100%; they currently total ${totalWeight || 0}%. Check for a missing criterion or a mistyped percentage.`,
     );
   }
@@ -219,6 +237,24 @@ export function createUploadedProject(
 ): UploadedProject {
   const errors = validateUploadedProjectDraft(draft);
   if (errors.length) throw new Error(errors.join(" "));
+  const sources = new Map(
+    (result.sources ?? result.fileNames.map((fileName, index) => ({
+      id: `source-${index + 1}`,
+      fileName,
+    }))).map((source, index) => [
+      source.id ?? `source-${index + 1}`,
+      source.fileName,
+    ]),
+  );
+  for (const criterion of draft.criteria) {
+    if (
+      criterion.manualSourceLocator !== null &&
+      sources.get(criterion.manualSourceLocator.sourceId) !==
+        criterion.manualSourceLocator.fileName
+    ) {
+      throw new Error("A manual source locator must identify one of the included sources.");
+    }
+  }
   const createdAt = new Date().toISOString();
   const retainedWeights = draft.criteria.map((criterion) => {
     const value = criterion.weight.trim();
@@ -250,6 +286,13 @@ export function createUploadedProject(
         criterion.evidence.fileName !== null &&
         result.fileNames.includes(criterion.evidence.fileName)
           ? criterion.evidence
+          : null,
+      manualSourceLocator:
+        criterion.evidence === null &&
+        criterion.manualSourceLocator !== null &&
+        sources.get(criterion.manualSourceLocator.sourceId) ===
+          criterion.manualSourceLocator.fileName
+          ? criterion.manualSourceLocator
           : null,
     })),
     createdAt,

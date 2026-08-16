@@ -119,6 +119,30 @@ describe("RubricTrail project backups", () => {
     }
   });
 
+  it("round-trips a manual PDF locator without inventing an excerpt", () => {
+    const state = uploadedState();
+    state.uploadedProject!.fileNames = ["fictional-rubric.pdf"];
+    state.uploadedProject!.criteria[0] = {
+      ...state.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        fileName: "fictional-rubric.pdf",
+        page: 2,
+      },
+    };
+    const restored = parseProjectBackupText(serializeProjectBackup(state));
+    expect(restored.state.uploadedProject?.criteria[0]).toMatchObject({
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        fileName: "fictional-rubric.pdf",
+        page: 2,
+      },
+    });
+    expect(JSON.stringify(restored)).not.toContain("excerpt");
+  });
+
   it("retains bounded OCR provenance without introducing image or transcript fields", () => {
     const state = uploadedState();
     const project = state.uploadedProject;

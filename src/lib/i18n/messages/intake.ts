@@ -172,6 +172,10 @@ export const intakeEn = {
   criterionPlaceholder: "Criterion name",
   sourceLinkedCriterion: "Source-linked criterion",
   manualCriterion: "Manually entered criterion",
+  manualSourceLabel: "Original source (optional)",
+  manualSourceNone: "No source locator recorded",
+  manualPdfPageLabel: "PDF page (optional)",
+  manualPdfPageHint: "Record the page you checked; this does not retain an excerpt.",
   publishedWeight: "Published weight",
   publishedWeightOptional: "Published weight (if stated)",
   weightAria: "Published weight for criterion {number}",
@@ -265,6 +269,8 @@ export const intakeEn = {
     "Criterion {number}: use an official percentage greater than 0 and no more than 100, or leave it blank if none is published.",
   errorWeightTotal:
     "Published rubric weights must total 100%; they currently total {total}%. Check for a missing criterion or a mistyped percentage.",
+  errorManualPage:
+    "Criterion {number}: enter a positive whole PDF page number, or leave it blank.",
 } as const;
 
 export const intakeZhCN = {
@@ -425,6 +431,10 @@ export const intakeZhCN = {
   criterionPlaceholder: "评分项名称",
   sourceLinkedCriterion: "已关联原文的评分项",
   manualCriterion: "手动输入的评分项",
+  manualSourceLabel: "原始来源（可选）",
+  manualSourceNone: "未记录来源定位",
+  manualPdfPageLabel: "PDF 页码（可选）",
+  manualPdfPageHint: "记录你核对的页码；这不会保留原文摘录。",
   publishedWeight: "已公布权重",
   publishedWeightOptional: "已公布权重（如有）",
   weightAria: "第 {number} 个评分项的已公布权重",
@@ -511,6 +521,7 @@ export const intakeZhCN = {
     "评分项 {number}：请输入大于 0 且不超过 100 的官方百分比；如未公布请留空。",
   errorWeightTotal:
     "已公布评分权重必须合计为 100%；当前合计为 {total}%。请检查是否缺少评分项或输错百分比。",
+  errorManualPage: "评分项 {number}：请输入正整数 PDF 页码，或留空。",
 } satisfies Record<keyof typeof intakeEn, string>;
 
 export type IntakeMessages = {

@@ -1,5 +1,6 @@
 import type { DraftCheckResult } from "@/lib/domain";
 import type {
+  AssignmentFileKind,
   AssignmentFileErrorCode,
   SkippedAssignmentFile,
   UploadedAssignmentSummary,
@@ -12,6 +13,12 @@ export type WorkflowState = "complete" | "in_progress" | "needs_review" | "not_s
 export type AssignmentIntakeMode = "files" | "paste";
 export type RubricWeightingMode = "complete" | "not_complete";
 export type RubricWeightingStatus = "complete" | "incomplete" | "none";
+
+export interface ManualSourceLocator {
+  sourceId: string;
+  fileName: string;
+  page: number | null;
+}
 
 export interface AssignmentFileIntakeError {
   code: AssignmentFileErrorCode | "NO_READABLE_FILES" | "UNKNOWN";
@@ -34,6 +41,8 @@ export interface UploadedProjectCriterion {
   /** A percentage explicitly confirmed from the rubric; never an inferred equal share. */
   weight: number | null;
   evidence: UploadedSourceEvidence | null;
+  /** A user-recorded pointer to the original source, never retained evidence text. */
+  manualSourceLocator?: ManualSourceLocator | null;
 }
 
 export interface UploadedProject {
@@ -83,8 +92,11 @@ export interface UploadFlowResult {
   intakeMethod: AssignmentIntakeMode;
   fileNames: string[];
   sources?: Array<{
+    id?: string;
     fileName: string;
+    kind?: AssignmentFileKind;
     origin: "extracted" | "ocr";
+    pageCount?: number | null;
   }>;
   skippedFiles: SkippedAssignmentFile[];
   totalWords: number;
@@ -102,6 +114,7 @@ export interface UploadedProjectDraft {
     name: string;
     weight: string;
     evidence: UploadedSourceEvidence | null;
+    manualSourceLocator: ManualSourceLocator | null;
   }>;
 }
 

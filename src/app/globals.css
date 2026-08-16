@@ -955,6 +955,8 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 .confirm-field-grid label > span small { color: var(--muted); font-weight: 500; }
 .confirm-field-wide { grid-column: 1 / -1; }
 .source-evidence-note { color: var(--muted); font-size: 0.74rem; }
+.source-evidence-note--empty { display: grid; gap: 10px; min-width: 0; line-height: 1.5; }
+.source-evidence-note--empty > small { display: block; overflow-wrap: anywhere; }
 .source-evidence-note summary { width: fit-content; color: var(--teal-dark); cursor: pointer; }
 .source-evidence-note blockquote { margin: 8px 0 0; padding: 10px 12px; border-left: 3px solid var(--teal); background: white; color: var(--muted); line-height: 1.5; }
 .rubric-editor { margin-top: 34px; }
@@ -970,15 +972,21 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 .weighting-mode-options strong { font-size: 0.8rem; }
 .weighting-mode-options small { margin-top: 4px; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
 .weighting-mode-fieldset > .field-message { margin-top: 8px; }
+.rubric-weight-total-error { min-width: 0; margin-top: 12px; padding: 12px 14px; border-left: 4px solid var(--red); background: var(--red-pale); }
+.rubric-weight-total-error:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
+.rubric-weight-total-error .field-message { display: block; margin: 0; line-height: 1.5; }
 .compact-alert { margin-top: 12px; padding-block: 11px; }
 .compact-alert p { margin: 0; font-size: 0.74rem; }
 .rubric-editor-list { margin-top: 14px; border-top: 1px solid var(--line); }
-.rubric-editor-row { display: grid; grid-template-columns: 32px minmax(0,1fr) 130px 40px; gap: 12px; align-items: end; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.rubric-editor-row { display: grid; grid-template-columns: 32px minmax(240px,1fr) minmax(140px,160px) 40px; gap: 12px; align-items: end; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .rubric-editor-row.without-weight { grid-template-columns: 32px minmax(0,1fr) 40px; }
 .rubric-editor-row .criterion-index { width: 28px; height: 28px; display: grid; place-items: center; align-self: center; border: 1px solid var(--line); border-radius: 50%; color: var(--teal-dark); font-size: 0.76rem; font-weight: 750; }
 .rubric-editor-row label { display: flex; flex-direction: column; gap: 6px; }
 .rubric-editor-row label > small { color: var(--muted); font-size: 0.68rem; }
 .rubric-editor-row .source-evidence-note { grid-column: 2 / -1; }
+.manual-source-locator { display: grid; grid-template-columns: minmax(220px,1fr) minmax(150px,220px); gap: 12px; align-items: start; }
+.manual-source-locator label { min-width: 0; }
+.manual-source-locator select { width: 100%; }
 .input-with-suffix { position: relative; display: block; }
 .input-with-suffix input { padding-right: 30px; }
 .input-with-suffix b { position: absolute; top: 50%; right: 11px; color: var(--muted); transform: translateY(-50%); }
@@ -1300,6 +1308,7 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .rubric-editor-row > .icon-button { grid-column: 3 / 4; grid-row: 2 / 3; }
   .rubric-editor-row.without-weight > .icon-button { grid-row: 1 / 2; }
   .rubric-editor-row .source-evidence-note { grid-column: 2 / -1; }
+  .manual-source-locator { grid-template-columns: 1fr; }
   .project-fact-grid { grid-template-columns: 1fr 1fr; }
   .project-fact-grid > div:nth-child(3) { border-top: 1px solid var(--line); border-left: 0; }
   .project-fact-grid > div:nth-child(4) { border-top: 1px solid var(--line); }

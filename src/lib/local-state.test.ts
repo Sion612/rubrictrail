@@ -189,6 +189,74 @@ describe("local project persistence", () => {
     expect(parsePersistedProjectStateValue(state).ok).toBe(false);
   });
 
+  it("round-trips a manual source locator without creating retained evidence", () => {
+    const state = uploadedState();
+    state.uploadedProject!.fileNames = ["fictional-rubric.pdf"];
+    state.uploadedProject!.criteria[0] = {
+      ...state.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        fileName: "fictional-rubric.pdf",
+        page: 2,
+      },
+    };
+
+    const parsed = parsePersistedProjectStateValue(state);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.state.uploadedProject?.criteria[0]).toMatchObject({
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        fileName: "fictional-rubric.pdf",
+        page: 2,
+      },
+    });
+  });
+
+  it("keeps older uploaded projects valid when the manual locator field is absent", () => {
+    const state = uploadedState() as unknown as Record<string, unknown>;
+    const project = state.uploadedProject as Record<string, unknown>;
+    const [criterion] = project.criteria as Array<Record<string, unknown>>;
+    delete criterion.manualSourceLocator;
+    expect(parsePersistedProjectStateValue(state).ok).toBe(true);
+  });
+
+  it("rejects invalid or contradictory manual source locators", () => {
+    const invented = uploadedState();
+    invented.uploadedProject!.criteria[0] = {
+      ...invented.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        fileName: "invented.pdf",
+        page: 1,
+      },
+    };
+    expect(parsePersistedProjectStateValue(invented).ok).toBe(false);
+
+    const invalidPage = uploadedState();
+    invalidPage.uploadedProject!.criteria[0] = {
+      ...invalidPage.uploadedProject!.criteria[0],
+      evidence: null,
+      manualSourceLocator: {
+        sourceId: "source-1",
+        fileName: "brief.txt",
+        page: 0,
+      },
+    };
+    expect(parsePersistedProjectStateValue(invalidPage).ok).toBe(false);
+
+    const contradictory = uploadedState();
+    contradictory.uploadedProject!.criteria[0].manualSourceLocator = {
+      sourceId: "source-1",
+      fileName: "brief.txt",
+      page: null,
+    };
+    expect(parsePersistedProjectStateValue(contradictory).ok).toBe(false);
+  });
+
   it("preserves optional OCR evidence provenance without changing the state version", () => {
     const state = uploadedState();
     state.uploadedProject!.fileNames = ["rubric.png"];

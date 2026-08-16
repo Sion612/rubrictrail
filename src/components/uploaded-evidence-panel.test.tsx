@@ -116,4 +116,61 @@ describe("UploadedEvidencePanel", () => {
     expect(screen.getByText("Analysis | 100%")).toBe(excerpt);
     expect(document.body).toHaveTextContent("完整来源文本丢弃后");
   });
+
+  it("renders a manual source locator as noninteractive provenance, not retained evidence", () => {
+    const project: UploadedProject = {
+      ...uploadedProject,
+      fileNames: ["fictional-rubric.pdf"],
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: {
+          sourceId: "source-1",
+          fileName: "fictional-rubric.pdf",
+          page: 2,
+        },
+      }],
+    };
+    render(
+      <UploadedEvidencePanel project={project} criterionId="analysis-1" onClose={vi.fn()} />,
+    );
+
+    expect(screen.getByText("Manually added criterion")).toBeInTheDocument();
+    expect(screen.getByText("Recorded source: fictional-rubric.pdf")).toBeInTheDocument();
+    expect(screen.getByText("Recorded page: 2")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "No retained excerpt" })).toBeInTheDocument();
+    expect(screen.getByText(/stores only the source label and optional page locator/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Manually added criterion/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Manually added criterion/ })).not.toBeInTheDocument();
+  });
+
+  it("localizes manual provenance while keeping the recorded source name unchanged", () => {
+    const project: UploadedProject = {
+      ...uploadedProject,
+      fileNames: ["fictional-rubric.pdf"],
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: {
+          sourceId: "source-1",
+          fileName: "fictional-rubric.pdf",
+          page: null,
+        },
+      }],
+    };
+    render(
+      <LocaleProvider>
+        <LanguageSwitcher />
+        <UploadedEvidencePanel project={project} criterionId="analysis-1" onClose={vi.fn()} />
+      </LocaleProvider>,
+    );
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "zh-CN" } });
+
+    expect(screen.getByText("手动添加的评分项")).toBeInTheDocument();
+    expect(screen.getByText("记录的来源：fictional-rubric.pdf")).toBeInTheDocument();
+    expect(screen.getByText("未记录页码")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "未保留来源摘录" })).toBeInTheDocument();
+    expect(screen.getByText(/仅用于定位/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "手动添加的评分项" })).not.toBeInTheDocument();
+  });
 });

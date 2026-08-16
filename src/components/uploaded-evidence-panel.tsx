@@ -62,6 +62,7 @@ export function UploadedEvidencePanel({
   if (!criterionId) return null;
   const criterion = project.criteria.find((item) => item.id === criterionId);
   const evidence = criterion?.evidence;
+  const manualLocator = criterion?.manualSourceLocator ?? null;
 
   return (
     <div className="evidence-panel-shell">
@@ -110,10 +111,19 @@ export function UploadedEvidencePanel({
                   )
                 : messages.manuallyAdded}
             </span>
+            {!evidence && manualLocator ? (
+              <span className="evidence-panel__source-kind">
+                <FileText aria-hidden="true" />
+                {messages.recordedSource.replace("{name}", manualLocator.fileName)}
+              </span>
+            ) : null}
             <span className="evidence-panel__locator">
               <MapPin aria-hidden="true" />
-              {evidence?.page
-                ? messages.recordedPage.replace("{number}", String(evidence.page))
+              {evidence?.page ?? manualLocator?.page
+                ? messages.recordedPage.replace(
+                    "{number}",
+                    String(evidence?.page ?? manualLocator?.page),
+                  )
                 : messages.pageUnavailable}
             </span>
           </div>
@@ -124,7 +134,9 @@ export function UploadedEvidencePanel({
               <h3 id="uploaded-excerpt-title">
                 {evidence?.origin === "ocr"
                   ? messages.ocrRetainedExcerpt
-                  : messages.retainedExcerpt}
+                  : evidence
+                    ? messages.retainedExcerpt
+                    : messages.noRetainedExcerpt}
               </h3>
             </div>
             {evidence ? (
@@ -139,7 +151,9 @@ export function UploadedEvidencePanel({
           <section className="evidence-panel__section" aria-labelledby="local-retention-title">
             <h3 id="local-retention-title">{messages.whatIsRetained}</h3>
             <p className="evidence-panel__explanation">
-              {messages.retentionDescription}
+              {evidence
+                ? messages.retentionDescription
+                : messages.manualRetentionDescription}
             </p>
           </section>
         </div>

@@ -1022,8 +1022,11 @@ export function RubricTrailApp() {
         intakeMethod,
         fileNames: parsed.sources.map((source) => source.fileName),
         sources: parsed.sources.map((source) => ({
+          id: source.id,
           fileName: source.fileName,
+          kind: source.kind,
           origin: source.origin,
+          pageCount: source.pageCount,
         })),
         skippedFiles,
         totalWords: parsed.wordCount,

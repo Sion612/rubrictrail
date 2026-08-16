@@ -2010,6 +2010,12 @@ export function RubricTrailApp() {
       activeView = (
         <ActionPlanView
           plan={plan}
+          assignment={{
+            id: uploaded.id,
+            title: uploaded.title,
+            course: uploaded.course,
+            dueDate: uploaded.dueDate,
+          }}
           onRebalance={rebalancePlan}
           onToggleTask={toggleTask}
           onNavigateDraft={() => navigate("draft")}
@@ -2046,6 +2052,12 @@ export function RubricTrailApp() {
     activeView = (
       <ActionPlanView
         plan={plan}
+        assignment={{
+          id: SAMPLE_ASSIGNMENT.id,
+          title: SAMPLE_ASSIGNMENT.title,
+          course: SAMPLE_ASSIGNMENT.course,
+          dueDate: SAMPLE_ASSIGNMENT.dueAt.slice(0, 10),
+        }}
         onRebalance={rebalancePlan}
         onToggleTask={toggleTask}
         onNavigateDraft={() => navigate("draft")}

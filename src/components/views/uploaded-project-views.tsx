@@ -18,6 +18,7 @@ import {
 import type { ActionPlan } from "@/lib/domain";
 import { daysBetween } from "@/lib/plan";
 import { UPLOADED_READINESS } from "@/lib/readiness";
+import { sourceRegistryNumber } from "@/lib/source-labels";
 import {
   hasPublishedRubricWeights,
   isConfirmedUploadedReview,
@@ -101,7 +102,13 @@ export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProp
                   <FileText aria-hidden="true" />
                   <span>
                     <strong>{source.fileName}</strong>
-                    <small>{sourceDescription(source)} · {messages.sourceNotStored}</small>
+                    <small>
+                      {sourceDescription(source)} ·{" "}
+                      {interpolateViewMessage(messages.sourceNumberSuffix, {
+                        number: sourceRegistryNumber(source.id),
+                      })}{" "}
+                      · {messages.sourceNotStored}
+                    </small>
                   </span>
                 </li>
               ))
@@ -249,13 +256,19 @@ export function UploadedRubricView({
               className="evidence-source-button"
               type="button"
               onClick={() => onOpenEvidence(criterion.id)}
-              aria-label={interpolateViewMessage(messages.openSource, { criterion: criterion.name })}
+              aria-label={`${
+                sourceState.kind === "retained"
+                  ? messages.viewRetainedAction
+                  : sourceState.kind === "manual"
+                    ? messages.editSourceAction
+                    : messages.addSourceAction
+              }: ${criterion.name}`}
             >
               <span>
                 {criterion.evidence?.excerpt ??
                   (sourceState.kind === "manual"
-                    ? messages.manualLocatorPreview
-                    : messages.noSourcePreview)}
+                    ? messages.editSourceAction
+                    : messages.addSourceAction)}
               </span>
               <small>
                 {criterion.evidence?.fileName ?? manualSource?.fileName ?? messages.manuallyEntered}

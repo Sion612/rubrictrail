@@ -10,6 +10,7 @@ export default defineConfig({
     "i18n.spec.ts",
     "ocr-intake.spec.ts",
     "rubric-confirmation-hotfix.spec.ts",
+    "source-locator-edit.spec.ts",
     "static-export.spec.ts",
   ],
   fullyParallel: false,

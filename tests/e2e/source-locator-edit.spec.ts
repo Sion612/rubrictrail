@@ -1,0 +1,113 @@
+import { expect, test, type Page } from "@playwright/test";
+
+const APP_PATH = (() => {
+  const configured = process.env.PLAYWRIGHT_APP_PATH?.trim() || "/";
+  const withLeadingSlash = configured.startsWith("/") ? configured : `/${configured}`;
+  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
+})();
+
+function pdfText(lines: string[]): string {
+  return [
+    "BT",
+    "/F1 12 Tf",
+    "72 740 Td",
+    ...lines.flatMap((line, index) => [
+      index === 0 ? "" : "0 -20 Td",
+      `(${line.replace(/[()\\]/gu, "\\$&")}) Tj`,
+    ]).filter(Boolean),
+    "ET",
+  ].join("\n");
+}
+
+function twoPagePdf(): Buffer {
+  const pages = [
+    [
+      "Assignment title: Locator Edit Report",
+      "Deadline: 24 September 2026",
+      "Word count: 1500 words",
+      "Use APA 7 referencing.",
+      "Rubric",
+      "Criterion Alpha | 50%",
+    ],
+    ["Criterion Beta | 50%"],
+  ];
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 7 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ...pages.map((lines) => {
+      const content = pdfText(lines);
+      return `<< /Length ${Buffer.byteLength(content, "ascii")} >>\nstream\n${content}\nendstream`;
+    }),
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf, "ascii"));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(pdf, "ascii");
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "ascii");
+}
+
+function visibleWorkflowButton(page: Page, label: string) {
+  return page
+    .locator("nav.mobile-workflow:visible, aside.workflow-rail:visible")
+    .getByRole("button", { name: new RegExp(`(?:^|\\s)${label}(?:\\s|$)`) })
+    .first();
+}
+
+test("post-creation locator add, edit, and remove persist without confirming Check", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(APP_PATH);
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload();
+  await page.getByTestId("file-input").setInputFiles({
+    name: "locator-edit.pdf",
+    mimeType: "application/pdf",
+    buffer: twoPagePdf(),
+  });
+  await expect(page.getByRole("heading", { name: "Confirm what the assignment says." })).toBeVisible();
+  await page.getByRole("button", { name: "Add missing criterion" }).click();
+  await page.getByTestId("criterion-name-2").fill("Unlinked manual criterion");
+  await page.getByTestId("criterion-weight-0").fill("45");
+  await page.getByTestId("criterion-weight-1").fill("45");
+  await page.getByTestId("criterion-weight-2").fill("10");
+  await page.getByTestId("create-project").click();
+  await visibleWorkflowButton(page, "Rubric").click();
+  await page.getByRole("button", { name: /Add source location: Unlinked manual criterion/ }).click();
+  await page.getByTestId("add-locator").click();
+  await expect(page.getByTestId("locator-source")).toBeFocused();
+  await page.getByTestId("locator-source").selectOption("source-1");
+  await page.getByTestId("locator-page").fill("3");
+  await page.getByTestId("save-locator").click();
+  await expect(page.getByTestId("locator-page-error")).toContainText("1 to 2");
+  await page.getByTestId("locator-page").fill("2");
+  await page.getByTestId("save-locator").click();
+  await expect(page.getByText("Source location saved in this browser")).toBeVisible();
+  await expect(page.getByText("1manual locators")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Close evidence panel" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await visibleWorkflowButton(page, "Progress").click();
+  await expect(page.getByText("Manual source locations still need checking")).toBeVisible();
+  await visibleWorkflowButton(page, "Check").click();
+  await page.getByRole("combobox", { name: "Rubric criterion" }).selectOption("unlinked-manual-criterion-3");
+  await expect(page.getByRole("checkbox", { name: /The source is traceable/ })).not.toBeChecked();
+
+  await page.reload();
+  await visibleWorkflowButton(page, "Rubric").click();
+  await page.getByRole("button", { name: /View or edit source location: Unlinked manual criterion/ }).click();
+  await expect(page.getByText("Manually recorded page: 2")).toBeVisible();
+  await page.getByTestId("edit-locator").click();
+  await page.getByTestId("locator-page").fill("1");
+  await page.getByTestId("save-locator").click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("remove-locator").click();
+  await expect(page.getByTestId("add-locator")).toBeVisible();
+});

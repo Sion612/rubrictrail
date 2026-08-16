@@ -1,31 +1,63 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { FileText, MapPin, Quote, X } from "lucide-react";
 import { useLocalizedMessages } from "@/components/locale-provider";
 import { workspaceEn, workspaceZhCN } from "@/lib/i18n/messages/workspace";
+import { locatorEn, locatorZhCN } from "@/lib/i18n/messages/locator";
+import { parseOptionalPdfPage, sourceOptionLabel } from "@/lib/source-labels";
 import { resolveUploadedProjectSource } from "@/lib/uploaded-project";
-import type { UploadedProject } from "@/lib/ui-types";
+import type { ManualSourceLocator, UploadedProject } from "@/lib/ui-types";
+import styles from "./uploaded-evidence-panel.module.css";
+
+export type ManualSourceLocatorSaveOutcome = "saved" | "tab-only" | "failed";
 
 interface UploadedEvidencePanelProps {
   project: UploadedProject;
   criterionId: string | null;
   onClose: () => void;
+  onSaveManualSourceLocator?: (
+    criterionId: string,
+    locator: ManualSourceLocator | null,
+  ) => Promise<ManualSourceLocatorSaveOutcome>;
 }
 
 export function UploadedEvidencePanel({
   project,
   criterionId,
   onClose,
+  onSaveManualSourceLocator,
 }: UploadedEvidencePanelProps) {
-  const messages = useLocalizedMessages(workspaceEn, workspaceZhCN);
+  const workspace = useLocalizedMessages(workspaceEn, workspaceZhCN);
+  const locator = useLocalizedMessages(locatorEn, locatorZhCN);
+  const messages = { ...workspace, ...locator };
   const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
+  const editRef = useRef<HTMLButtonElement>(null);
+  const selectorRef = useRef<HTMLSelectElement>(null);
   const onCloseRef = useRef(onClose);
+  const sourceSelectId = useId();
+  const pageInputId = useId();
+  const [editorCriterionId, setEditorCriterionId] = useState<string | null>(null);
+  const editing = editorCriterionId === criterionId;
+  const [sourceId, setSourceId] = useState("");
+  const [pageValue, setPageValue] = useState("");
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [focusTarget, setFocusTarget] = useState<"add" | "edit" | null>(null);
+  const editingRef = useRef(false);
+  const criterion = project.criteria.find((item) => item.id === criterionId);
+  const evidence = criterion?.evidence ?? null;
+  const manualLocator = criterion?.manualSourceLocator ?? null;
 
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  useEffect(() => {
+    editingRef.current = editing;
+  }, [editing]);
 
   useEffect(() => {
     if (!criterionId) return;
@@ -34,12 +66,20 @@ export function UploadedEvidencePanel({
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        if (editingRef.current) {
+          event.preventDefault();
+          event.stopPropagation();
+          setEditorCriterionId(null);
+          setPageError(null);
+          setFocusTarget(manualLocator ? "edit" : "add");
+          return;
+        }
         onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
       const focusable = panelRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), a[href], select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
       );
       if (!focusable?.length) return;
       const first = focusable[0];
@@ -58,14 +98,25 @@ export function UploadedEvidencePanel({
       window.removeEventListener("keydown", onKeyDown);
       previous?.focus({ preventScroll: true });
     };
-  }, [criterionId]);
+  }, [criterionId, manualLocator]);
+
+  useEffect(() => {
+    if (editing) {
+      selectorRef.current?.focus({ preventScroll: true });
+    }
+  }, [editing]);
+
+  useEffect(() => {
+    if (!focusTarget) return;
+    const node = focusTarget === "add" ? addRef.current : editRef.current;
+    node?.focus({ preventScroll: true });
+  }, [focusTarget, editing]);
 
   if (!criterionId) return null;
-  const criterion = project.criteria.find((item) => item.id === criterionId);
-  const evidence = criterion?.evidence;
-  const manualLocator = criterion?.manualSourceLocator ?? null;
   const evidenceSource = resolveUploadedProjectSource(project, evidence?.sourceId);
   const manualSource = resolveUploadedProjectSource(project, manualLocator?.sourceId);
+  const canEditLocator = Boolean(onSaveManualSourceLocator) && evidence === null;
+  const selectedSource = project.sources?.find((source) => source.id === sourceId) ?? null;
   const sourcePageDescription = (
     source: typeof evidenceSource,
     page: number | null | undefined,
@@ -92,6 +143,89 @@ export function UploadedEvidencePanel({
     }
     return messages.pageUnavailable;
   };
+
+  function startEditing() {
+    setSourceId(manualLocator?.sourceId ?? "");
+    setPageValue(manualLocator?.page == null ? "" : String(manualLocator.page));
+    setPageError(null);
+    setEditorCriterionId(criterionId);
+  }
+
+  function cancelEditing() {
+    setEditorCriterionId(null);
+    setPageError(null);
+    setFocusTarget(manualLocator ? "edit" : "add");
+  }
+
+  function changeSource(nextSourceId: string) {
+    setSourceId(nextSourceId);
+    setPageValue("");
+    setPageError(null);
+  }
+
+  async function saveLocator() {
+    if (!onSaveManualSourceLocator || !criterionId) return;
+    if (!sourceId) {
+      setPageError(messages.locatorSourceRequired);
+      return;
+    }
+    const source = project.sources?.find((item) => item.id === sourceId);
+    if (!source) {
+      setPageError(messages.locatorSourceRequired);
+      return;
+    }
+    let page: number | null = null;
+    if (source.kind === "pdf") {
+      const parsed = parseOptionalPdfPage(pageValue, source.pageCount);
+      if (!parsed.ok) {
+        setPageError(
+          messages.locatorPageInvalid.replace(
+            "{pages}",
+            String(source.pageCount ?? ""),
+          ),
+        );
+        return;
+      }
+      page = parsed.page;
+    }
+    setSaving(true);
+    try {
+      await onSaveManualSourceLocator(criterionId, { sourceId, page });
+      setEditorCriterionId(null);
+      setFocusTarget("edit");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeLocator() {
+    if (!onSaveManualSourceLocator || !criterionId) return;
+    const confirmed = window.confirm(messages.removeLocatorConfirm);
+    if (!confirmed) {
+      editRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSaveManualSourceLocator(criterionId, null);
+      setEditorCriterionId(null);
+      setFocusTarget("add");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const nonPdfHint = selectedSource
+    ? selectedSource.kind === "pdf"
+      ? null
+      : selectedSource.intakeMethod === "paste"
+        ? messages.pastedHasNoPage
+        : ["png", "jpeg", "webp"].includes(selectedSource.kind)
+          ? messages.imageHasNoPdfPage
+          : selectedSource.kind === "docx"
+            ? messages.docxHasNoStablePage
+            : messages.textHasNoPage
+    : null;
 
   return (
     <div className="evidence-panel-shell">
@@ -183,6 +317,121 @@ export function UploadedEvidencePanel({
               </p>
             )}
           </section>
+
+          {canEditLocator ? (
+            <section className={`evidence-panel__section ${styles.editor}`} aria-labelledby="locator-editor-title">
+              <h3 id="locator-editor-title">{messages.locatorEditorTitle}</h3>
+              {!project.sources?.length ? (
+                <p className="evidence-panel__explanation" data-testid="legacy-registry-guidance">
+                  {messages.legacyRegistryGuidance}
+                </p>
+              ) : editing ? (
+                <form
+                  className={styles.form}
+                  noValidate
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveLocator();
+                  }}
+                >
+                  <label htmlFor={sourceSelectId}>
+                    <span>{messages.locatorSourceLabel}</span>
+                    <select
+                      id={sourceSelectId}
+                      ref={selectorRef}
+                      data-testid="locator-source"
+                      value={sourceId}
+                      onChange={(event) => changeSource(event.target.value)}
+                    >
+                      <option value="">{messages.locatorSourceNone}</option>
+                      {project.sources.map((source) => (
+                        <option key={source.id} value={source.id}>
+                          {sourceOptionLabel(source, messages.sourceWord)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {selectedSource?.kind === "pdf" ? (
+                    <label htmlFor={pageInputId}>
+                      <span>{messages.locatorPdfPageLabel}</span>
+                      <input
+                        id={pageInputId}
+                        data-testid="locator-page"
+                        type="number"
+                        min={1}
+                        max={selectedSource.pageCount ?? undefined}
+                        step={1}
+                        value={pageValue}
+                        onChange={(event) => {
+                          setPageValue(event.target.value);
+                          setPageError(null);
+                        }}
+                        aria-invalid={pageError ? true : undefined}
+                        aria-describedby={pageError ? "locator-page-error" : "locator-page-hint"}
+                      />
+                      <small id="locator-page-hint">
+                        {messages.locatorPdfPageHint.replace(
+                          "{pages}",
+                          String(selectedSource.pageCount ?? ""),
+                        )}
+                      </small>
+                    </label>
+                  ) : nonPdfHint ? (
+                    <p className="evidence-panel__explanation" data-testid="locator-no-page">
+                      {nonPdfHint}
+                    </p>
+                  ) : null}
+                  {pageError ? (
+                    <p className="field-message" id="locator-page-error" data-testid="locator-page-error">
+                      {pageError}
+                    </p>
+                  ) : null}
+                  <div className={styles.actions}>
+                    <button className="button button-secondary" type="button" onClick={cancelEditing} disabled={saving}>
+                      {messages.locatorCancel}
+                    </button>
+                    <button className="button button-primary" type="submit" disabled={saving} data-testid="save-locator">
+                      {messages.locatorSave}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className={styles.actions}>
+                  {manualLocator ? (
+                    <>
+                      <button
+                        ref={editRef}
+                        className="button button-secondary"
+                        type="button"
+                        onClick={startEditing}
+                        data-testid="edit-locator"
+                      >
+                        {messages.editSourceLocation}
+                      </button>
+                      <button
+                        className="button button-secondary"
+                        type="button"
+                        onClick={() => void removeLocator()}
+                        data-testid="remove-locator"
+                      >
+                        {messages.removeSourceLocation}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      ref={addRef}
+                      className="button button-primary"
+                      type="button"
+                      onClick={startEditing}
+                      data-testid="add-locator"
+                    >
+                      {messages.addSourceLocation}
+                    </button>
+                  )}
+                </div>
+              )}
+            </section>
+          ) : null}
 
           <section className="evidence-panel__section" aria-labelledby="local-retention-title">
             <h3 id="local-retention-title">{messages.whatIsRetained}</h3>

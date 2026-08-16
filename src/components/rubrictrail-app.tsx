@@ -65,13 +65,16 @@ import {
   serializeProjectBackup,
 } from "@/lib/project-backup";
 import {
+  applyManualSourceLocator,
   buildUploadedPlanTemplates,
+  invalidateUploadedReviewAfterLocatorChange,
   isConfirmedUploadedReview,
   todayIso,
 } from "@/lib/uploaded-project";
 import type {
   AssignmentFileIntakeError,
   AssignmentIntakeMode,
+  ManualSourceLocator,
   NoticeState,
   PastedTextIntakeError,
   PersistedProjectState,
@@ -1757,6 +1760,56 @@ export function RubricTrailApp() {
     });
   }
 
+  async function saveManualSourceLocator(
+    criterionId: string,
+    locator: ManualSourceLocator | null,
+  ): Promise<"saved" | "tab-only" | "failed"> {
+    const current = latestProject.current;
+    if (!current.uploadedProject) return "failed";
+    try {
+      const nextProject = applyManualSourceLocator(
+        current.uploadedProject,
+        criterionId,
+        locator,
+      );
+      const existingReview = current.uploadedCriterionReviews.find(
+        (review) => review.criterionId === criterionId,
+      );
+      const nextReview = invalidateUploadedReviewAfterLocatorChange(existingReview);
+      updateProject({
+        ...current,
+        uploadedProject: nextProject,
+        uploadedCriterionReviews: nextReview
+          ? [
+              ...current.uploadedCriterionReviews.filter(
+                (review) => review.criterionId !== criterionId,
+              ),
+              nextReview,
+            ]
+          : current.uploadedCriterionReviews,
+      });
+    } catch {
+      showNotice({ tone: "warning", message: appText("notice.locatorFailed") });
+      return "failed";
+    }
+    const outcome = await flushPendingProject();
+    if (outcome === "saved") {
+      showNotice({
+        tone: "success",
+        message: locator
+          ? appText("notice.locatorSaved")
+          : appText("notice.locatorRemoved"),
+      });
+      return "saved";
+    }
+    if (outcome === "blocked") {
+      showNotice({ tone: "warning", message: appText("notice.locatorTabOnly") });
+      return "tab-only";
+    }
+    showNotice({ tone: "warning", message: appText("notice.locatorFailed") });
+    return "failed";
+  }
+
   function toggleReadiness(id: string) {
     updateProject((current) => ({
       ...current,
@@ -2033,7 +2086,7 @@ export function RubricTrailApp() {
     : sampleStepStates(project, plan.completionPercent, currentDraftResult !== null);
   const evidencePanel = selectedEvidenceId
     ? uploaded
-      ? <UploadedEvidencePanel project={uploaded} criterionId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />
+      ? <UploadedEvidencePanel project={uploaded} criterionId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} onSaveManualSourceLocator={saveManualSourceLocator} />
       : <EvidencePanel analysis={SAMPLE_ASSIGNMENT} evidenceId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />
     : null;
 

@@ -64,6 +64,7 @@ const uploadedSourceEvidenceSchema: z.ZodType<UploadedSourceEvidence> = z
     excerpt: nonBlankString(4_096),
     startOffset: z.number().int().nonnegative().max(20_000_000),
     endOffset: z.number().int().nonnegative().max(20_000_000),
+    origin: z.enum(["extracted", "ocr"]).optional(),
   })
   .strict()
   .superRefine((evidence, context) => {

@@ -35,7 +35,7 @@ flowchart LR
 | Layer | Responsibility | Main files |
 | --- | --- | --- |
 | Product shell | Project type, navigation, real step states, notices | `src/components/rubrictrail-app.tsx`, `workspace-shell.tsx` |
-| Source intake | Browser-local TXT, DOCX and text-PDF parsing plus bounded pasted plain text | `src/lib/files/parse-assignment-files.ts`, `src/lib/pasted-text-intake.ts` |
+| Source intake | Browser-local TXT, DOCX and text-PDF parsing, lazy local image OCR, plus bounded pasted plain text | `src/lib/files/parse-assignment-files.ts`, `src/lib/files/local-image-ocr.ts`, `src/lib/pasted-text-intake.ts` |
 | Confirmation | Editable criteria, an explicit complete/not-complete choice and a 100% gate only for complete weighting | `src/components/upload-summary-view.tsx` |
 | Uploaded project | Compact persisted model and generic task templates | `src/lib/uploaded-project.ts` |
 | Planning | Deterministic dependency and capacity scheduling | `src/lib/plan.ts` |
@@ -109,6 +109,18 @@ failures stop the complete batch instead; RubricTrail does not use file order to
 silently discard later sources. Pasted synthetic TXT sources remain strict and
 must all succeed.
 
+PNG, JPEG and WebP inputs are checked against their declared type and magic
+bytes, decoded to obtain dimensions, and rejected above 16,384 pixels per side
+or 20,000,000 decoded pixels before recognition. The parser lazily imports a
+single Tesseract.js worker for the image portion of one batch, recognizes files
+sequentially with `eng+chi_sim`, and terminates the worker in a `finally` path.
+Pinned worker, LSTM core and trained-data assets are copied by
+`scripts/prepare-ocr-assets.mjs` into a same-origin `/ocr/` build directory;
+`workerBlobURL: false` and `cacheMethod: none` avoid CDN fallback, blob-worker
+lifetime ambiguity and persistent language-data storage. Recoverable image
+decode/OCR failures enter the existing explicit partial-batch decision, while
+the existing combined character, line and word budgets remain fatal.
+
 TXT decoding is strict UTF-8. A malformed byte sequence is a recoverable
 per-file error, never replacement-decoded content. Persisted evidence must carry
 both a canonical source id and a filename present in the compact project source
@@ -121,7 +133,8 @@ The persisted uploaded project includes:
 - confirmed title, course label, deadline, word count and citation style;
 - source-label or filename list and aggregate extracted word count;
 - criterion names, `weightingStatus`, per-criterion published percentages or
-  `null`, and short retained source excerpts with recorded source labels;
+  `null`, and short retained source excerpts with recorded source labels and an
+  optional `ocr` origin marker;
 - task completion, self-check text and checklist state.
 
 It excludes original files and full uploaded or pasted source text. Pasted
@@ -267,11 +280,14 @@ See [LIVE_AI_ARCHITECTURE.md](./LIVE_AI_ARCHITECTURE.md).
 
 ## Performance and accessibility choices
 
-- PDF.js and Mammoth are dynamically imported only for their file types.
-- File-count, byte, PDF-page and merged-text limits bound accepted work and
+- PDF.js, Mammoth and Tesseract.js are dynamically imported only for their file
+  types. OCR worker/core/language assets are absent from initial HTML and served
+  from the application origin only when an image is selected.
+- File-count, byte, image-dimension, PDF-page and merged-text limits bound accepted work and
   retained parser output, but they are not a CPU or peak-memory sandbox. PDF
   metadata is loaded before page-count checks, one page's text items can be
-  materialized before its text is counted, and DOCX decompression occurs before
+  materialized before its text is counted, image decode/OCR allocates memory and
+  CPU before recognized text can be counted, and DOCX decompression occurs before
   extracted-text limits can be applied. Parsing is currently not cancellable;
   do not open deliberately malicious documents.
 - Plan generation and template creation are memoized by their real inputs.

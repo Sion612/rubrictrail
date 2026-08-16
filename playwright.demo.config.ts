@@ -5,7 +5,12 @@ const appPath = process.env.PLAYWRIGHT_APP_PATH || "/rubrictrail/";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: ["core-flow.spec.ts", "i18n.spec.ts", "static-export.spec.ts"],
+  testMatch: [
+    "core-flow.spec.ts",
+    "i18n.spec.ts",
+    "ocr-intake.spec.ts",
+    "static-export.spec.ts",
+  ],
   fullyParallel: false,
   forbidOnly: isCi,
   retries: 0,

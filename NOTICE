@@ -3,3 +3,11 @@ Copyright 2026 Sion612
 
 The LumaLane sample brief, rubric, draft and related fictional data are original
 demonstration materials distributed as part of RubricTrail under Apache-2.0.
+
+RubricTrail's optional local image OCR uses Tesseract.js and
+tesseract.js-core 7.0.0, distributed under Apache-2.0. The pinned English and
+Simplified Chinese language-data packages are distributed under their declared
+MIT package licenses and contain data derived from the Apache-2.0 Tesseract
+tessdata project. The OCR runtime and trained data are copied into the built
+application and loaded from the same origin; no selected image is uploaded by
+RubricTrail.

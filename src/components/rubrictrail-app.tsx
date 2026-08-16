@@ -30,6 +30,8 @@ import {
   ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS,
   ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES,
   ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS,
+  ASSIGNMENT_IMAGE_MAX_DIMENSION,
+  ASSIGNMENT_IMAGE_MAX_PIXELS,
   ASSIGNMENT_PDF_MAX_PAGES,
   ASSIGNMENT_PDFS_MAX_TOTAL_PAGES,
   AssignmentFileBatchParseError,
@@ -37,6 +39,7 @@ import {
   buildUploadedAssignmentSummary,
   parseAssignmentFiles,
   parseAssignmentFilesWithRecovery,
+  type AssignmentImageOcrProgress,
 } from "@/lib/files/parse-assignment-files";
 import {
   createPastedAssignmentFiles,
@@ -254,6 +257,29 @@ function fileErrorRecovery(locale: Locale): Record<
     title: messages["file.encoding.title"],
     message: messages["file.encoding.message"],
     preferredRecovery: "files",
+  },
+  INVALID_IMAGE: {
+    title: messages["file.image.title"],
+    message: messages["file.image.message"],
+    preferredRecovery: "files",
+  },
+  IMAGE_DIMENSIONS_TOO_LARGE: {
+    title: messages["file.imageDimensions.title"],
+    message: formatAppMessage(messages["file.imageDimensions.message"], {
+      dimension: ASSIGNMENT_IMAGE_MAX_DIMENSION.toLocaleString(numberLocale),
+      pixels: ASSIGNMENT_IMAGE_MAX_PIXELS.toLocaleString(numberLocale),
+    }),
+    preferredRecovery: "files",
+  },
+  OCR_UNAVAILABLE: {
+    title: messages["file.ocrUnavailable.title"],
+    message: messages["file.ocrUnavailable.message"],
+    preferredRecovery: "paste",
+  },
+  OCR_NO_TEXT: {
+    title: messages["file.ocrEmpty.title"],
+    message: messages["file.ocrEmpty.message"],
+    preferredRecovery: "paste",
   },
   SCANNED_NO_TEXT: {
     title: messages["file.scanned.title"],
@@ -510,6 +536,8 @@ export function RubricTrailApp() {
   const [partialUploadResult, setPartialUploadResult] =
     useState<UploadFlowResult | null>(null);
   const [uploadStatus, setUploadStatus] = useState<"idle" | "parsing" | "error">("idle");
+  const [imageOcrProgress, setImageOcrProgress] =
+    useState<AssignmentImageOcrProgress | null>(null);
   const [uploadError, setUploadError] = useState<AssignmentFileIntakeError | null>(null);
   const [intakeMode, setIntakeMode] = useState<AssignmentIntakeMode>("files");
   const [pastedBrief, setPastedBrief] = useState("");
@@ -943,6 +971,7 @@ export function RubricTrailApp() {
     setUploadResult(null);
     setPartialUploadResult(null);
     setUploadError(null);
+    setImageOcrProgress(null);
     setPastedTextError(null);
     setPastedBrief("");
     setPastedRubric("");
@@ -975,10 +1004,15 @@ export function RubricTrailApp() {
     setPastedTextError(null);
     setBackupError(null);
     try {
+      const ocrOptions = {
+        onImageOcrProgress: (progress: AssignmentImageOcrProgress) => {
+          if (operationId === intakeRunId.current) setImageOcrProgress(progress);
+        },
+      };
       const recovered = intakeMethod === "files"
-        ? await parseAssignmentFilesWithRecovery(files)
+        ? await parseAssignmentFilesWithRecovery(files, ocrOptions)
         : {
-            parsed: await parseAssignmentFiles(files),
+            parsed: await parseAssignmentFiles(files, ocrOptions),
             skippedFiles: [],
           };
       if (operationId !== intakeRunId.current) return;
@@ -987,6 +1021,10 @@ export function RubricTrailApp() {
       const nextResult: UploadFlowResult = {
         intakeMethod,
         fileNames: parsed.sources.map((source) => source.fileName),
+        sources: parsed.sources.map((source) => ({
+          fileName: source.fileName,
+          origin: source.origin,
+        })),
         skippedFiles,
         totalWords: parsed.wordCount,
         summary,
@@ -997,9 +1035,11 @@ export function RubricTrailApp() {
         setUploadResult(nextResult);
       }
       setUploadStatus("idle");
+      setImageOcrProgress(null);
     } catch (error) {
       if (operationId !== intakeRunId.current) return;
       setUploadStatus("error");
+      setImageOcrProgress(null);
       if (intakeMethod === "paste") {
         setPastedTextError(friendlyPastedParseError(error, locale));
       } else {
@@ -1869,6 +1909,7 @@ export function RubricTrailApp() {
           pastedTextError={pastedTextError}
           isLoadingSample={isLoadingSample}
           uploadStatus={uploadStatus}
+          imageOcrProgress={imageOcrProgress}
           uploadError={localizedUploadError}
           onImportBackup={importProjectBackup}
           isImportingBackup={isImportingBackup}

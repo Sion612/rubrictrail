@@ -22,7 +22,10 @@ import { CommunityLinks } from "@/components/community-links";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
 import { BRAND } from "@/lib/brand";
-import type { AssignmentFileErrorCode } from "@/lib/files/parse-assignment-files";
+import type {
+  AssignmentFileErrorCode,
+  AssignmentImageOcrProgress,
+} from "@/lib/files/parse-assignment-files";
 import {
   formatIntakeMessage,
   intakeEn,
@@ -53,6 +56,7 @@ interface WelcomeScreenProps {
   pastedTextError: PastedTextIntakeError | null;
   isLoadingSample: boolean;
   uploadStatus: "idle" | "parsing" | "error";
+  imageOcrProgress?: AssignmentImageOcrProgress | null;
   uploadError: AssignmentFileIntakeError | null;
   partialUploadResult: UploadFlowResult | null;
   onReviewPartialUpload: () => void;
@@ -74,6 +78,10 @@ const FILE_ISSUE_MESSAGE_KEY: Record<AssignmentFileErrorCode, keyof IntakeMessag
   TOTAL_PDF_PAGES_TOO_LARGE: "issuePdfsTooLong",
   EMPTY_FILE: "issueEmpty",
   INVALID_TEXT_ENCODING: "issueEncoding",
+  INVALID_IMAGE: "issueInvalidImage",
+  IMAGE_DIMENSIONS_TOO_LARGE: "issueImageDimensions",
+  OCR_UNAVAILABLE: "issueOcrUnavailable",
+  OCR_NO_TEXT: "issueOcrNoText",
   SCANNED_NO_TEXT: "issueScanned",
   ENCRYPTED_PDF: "issueEncrypted",
   PARSER_UNAVAILABLE: "issueParser",
@@ -138,6 +146,7 @@ export function WelcomeScreen({
   pastedTextError,
   isLoadingSample,
   uploadStatus,
+  imageOcrProgress = null,
   uploadError,
   partialUploadResult,
   onReviewPartialUpload,
@@ -167,6 +176,19 @@ export function WelcomeScreen({
   const selectedFileCount = partialUploadResult
     ? partialUploadResult.fileNames.length + partialUploadResult.skippedFiles.length
     : 0;
+  const ocrProgressLabel = imageOcrProgress
+    ? formatIntakeMessage(
+        imageOcrProgress.phase === "recognizing"
+          ? messages.ocrRecognizing
+          : messages.ocrLoading,
+        {
+          file: imageOcrProgress.fileName,
+          current: imageOcrProgress.currentFile,
+          total: imageOcrProgress.totalFiles,
+          progress: Math.round((imageOcrProgress.progress ?? 0) * 100),
+        },
+      )
+    : null;
   const flow = [
     [messages.flowBriefTitle, messages.flowBriefDetail],
     [messages.flowRubricTitle, messages.flowRubricDetail],
@@ -426,13 +448,18 @@ export function WelcomeScreen({
                   ref={fileInputRef}
                   className="visually-hidden"
                   type="file"
-                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                  accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg,image/webp"
                   multiple
                   aria-label={messages.fileInputAria}
                   disabled={isWelcomeBusy}
                   onChange={handleInput}
                   data-testid="file-input"
                 />
+                {ocrProgressLabel ? (
+                  <p className="field-message" role="status" data-testid="ocr-progress">
+                    {ocrProgressLabel}
+                  </p>
+                ) : null}
               </div>
 
               {uploadError ? (

@@ -2,6 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
+import { auditOcrAssets } from "./ocr-asset-audit.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputRoot = path.join(repositoryRoot, "demo", "out");
@@ -54,6 +55,7 @@ for (const file of files) {
 }
 
 const indexHtml = await readFile(indexPath, "utf8");
+const ocrAssets = await auditOcrAssets(outputRoot, indexHtml);
 const initialAssets = new Set();
 for (const match of indexHtml.matchAll(/(?:src|href)="([^"]+)"/giu)) {
   const reference = match[1];
@@ -93,6 +95,9 @@ for (const asset of initialAssets) {
 
 console.log(
   `Initial static assets: ${initialAssets.size} unique JS/CSS files, ${initialRawBytes} raw bytes, ${initialGzipBytes} gzip bytes.`,
+);
+console.log(
+  `Deferred local OCR assets: ${ocrAssets.fileCount} files, ${ocrAssets.totalBytes} bytes (not referenced by initial HTML).`,
 );
 if (initialGzipBytes > INITIAL_ASSET_GZIP_BUDGET_BYTES) {
   throw new Error(

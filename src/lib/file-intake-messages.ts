@@ -2,13 +2,15 @@ import {
   ASSIGNMENT_EXTRACTED_TEXT_MAX_CHARACTERS,
   ASSIGNMENT_EXTRACTED_TEXT_MAX_LINES,
   ASSIGNMENT_EXTRACTED_TEXT_MAX_WORDS,
+  ASSIGNMENT_IMAGE_MAX_DIMENSION,
+  ASSIGNMENT_IMAGE_MAX_PIXELS,
   ASSIGNMENT_PDF_MAX_PAGES,
   ASSIGNMENT_PDFS_MAX_TOTAL_PAGES,
   type AssignmentFileErrorCode,
 } from "@/lib/files/parse-assignment-files";
 
 const FILE_ISSUE_REASONS: Record<AssignmentFileErrorCode, string> = {
-  UNSUPPORTED_FILE_TYPE: "The format is not supported; use PDF, DOCX or TXT.",
+  UNSUPPORTED_FILE_TYPE: "The format is not supported; use PDF, DOCX, TXT, PNG, JPEG or WebP.",
   INVALID_FILE_NAME: "The file name is blank or longer than 255 characters.",
   FILE_TOO_LARGE: "The file is larger than the 10 MiB per-file limit.",
   TOO_MANY_FILES: "The selection contains more than 10 files.",
@@ -20,6 +22,10 @@ const FILE_ISSUE_REASONS: Record<AssignmentFileErrorCode, string> = {
   TOTAL_PDF_PAGES_TOO_LARGE: `The selected PDFs contain more than ${ASSIGNMENT_PDFS_MAX_TOTAL_PAGES.toLocaleString("en-US")} pages combined.`,
   EMPTY_FILE: "No readable text was found.",
   INVALID_TEXT_ENCODING: "The TXT file is not valid UTF-8 text.",
+  INVALID_IMAGE: "The image is damaged or does not match its declared PNG, JPEG or WebP type.",
+  IMAGE_DIMENSIONS_TOO_LARGE: `The image exceeds the ${ASSIGNMENT_IMAGE_MAX_DIMENSION.toLocaleString("en-US")}-pixel side or ${ASSIGNMENT_IMAGE_MAX_PIXELS.toLocaleString("en-US")}-pixel decoded-image limit.`,
+  OCR_UNAVAILABLE: "Local English and Simplified Chinese OCR is unavailable.",
+  OCR_NO_TEXT: "Local OCR found no readable English or Simplified Chinese text.",
   SCANNED_NO_TEXT: "No selectable text was found; this may be a scan.",
   ENCRYPTED_PDF: "The PDF is password-protected.",
   PARSER_UNAVAILABLE: "The local document reader is unavailable.",

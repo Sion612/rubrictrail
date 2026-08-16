@@ -1,5 +1,8 @@
 allowBuilds:
   sharp: true
+  # Tesseract's postinstall only prints an OpenCollective message; RubricTrail
+  # does not need or permit that dependency script during installation.
+  tesseract.js: false
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - lucide-react@1.25.0

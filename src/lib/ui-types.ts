@@ -82,6 +82,10 @@ export interface PersistedProjectState {
 export interface UploadFlowResult {
   intakeMethod: AssignmentIntakeMode;
   fileNames: string[];
+  sources?: Array<{
+    fileName: string;
+    origin: "extracted" | "ocr";
+  }>;
   skippedFiles: SkippedAssignmentFile[];
   totalWords: number;
   summary: UploadedAssignmentSummary;

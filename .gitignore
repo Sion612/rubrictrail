@@ -6,6 +6,8 @@ out/
 coverage/
 playwright-report/
 test-results/
+public/ocr/
+demo/public/ocr/
 .env*
 !.env.example
 *.tsbuildinfo

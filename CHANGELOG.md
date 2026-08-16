@@ -2,6 +2,25 @@
 
 All notable changes will be recorded here. Versions follow Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- Added lazy, same-origin, browser-local English and Simplified Chinese OCR for
+  PNG, JPEG and WebP assignment screenshots and photos, with visible progress,
+  explicit OCR provenance and mixed-batch recovery.
+- Added deterministic local OCR asset preparation/integrity auditing and real
+  desktop/mobile static-demo coverage that rejects cross-origin and Live-route
+  requests while exercising the worker, core and both language models.
+
+### Security
+
+- Added image magic-byte/decode validation, 16,384-pixel side and 20,000,000
+  decoded-pixel limits, pinned runtime/language assets, worker cleanup and the
+  existing selection-wide text budgets for OCR output. Original images and full
+  OCR transcripts remain transient and are not added to project storage or
+  backups.
+
 ## [0.6.0] - 2026-08-15
 
 ### Added

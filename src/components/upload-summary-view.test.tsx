@@ -45,6 +45,34 @@ afterEach(() => {
 });
 
 describe("UploadSummaryView rubric weighting", () => {
+  it("labels OCR-derived sources and evidence as needing image verification", () => {
+    const result = completeUpload();
+    result.fileNames = ["rubric.png"];
+    result.sources = [{ fileName: "rubric.png", origin: "ocr" }];
+    for (const criterion of result.summary.rubric.criteria) {
+      criterion.evidence = {
+        ...criterion.evidence,
+        fileName: "rubric.png",
+        origin: "ocr",
+      };
+    }
+
+    render(
+      <UploadSummaryView
+        result={result}
+        onBack={vi.fn()}
+        onCreateProject={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("ocr-source-notice")).toHaveTextContent(
+      "read with local OCR",
+    );
+    expect(
+      screen.getAllByText("OCR-derived excerpt — verify against the image"),
+    ).toHaveLength(2);
+  });
+
   it("defaults to published only for a complete official 100% breakdown", () => {
     render(
       <UploadSummaryView

@@ -9,6 +9,8 @@ export default defineConfig([
     ".next/**",
     "demo/.next/**",
     "demo/out/**",
+    "demo/public/ocr/**",
+    "public/ocr/**",
     "coverage/**",
     "playwright-report/**",
     "test-results/**",

@@ -15,6 +15,7 @@ import type {
   UploadedCriterionReview,
   UploadedProject,
   UploadedProjectCriterion,
+  UploadedProjectSource,
 } from "@/lib/ui-types";
 
 export const STORAGE_KEY = "rubrictrail.project.v3";
@@ -81,8 +82,18 @@ const uploadedSourceEvidenceSchema: z.ZodType<UploadedSourceEvidence> = z
 const manualSourceLocatorSchema: z.ZodType<ManualSourceLocator> = z
   .object({
     sourceId: idSchema,
-    fileName: savedFileNameSchema,
     page: z.number().int().positive().max(1_000_000).nullable(),
+  })
+  .strict();
+
+const uploadedProjectSourceSchema: z.ZodType<UploadedProjectSource> = z
+  .object({
+    id: idSchema,
+    fileName: savedFileNameSchema,
+    kind: z.enum(["txt", "docx", "pdf", "png", "jpeg", "webp"]),
+    origin: z.enum(["extracted", "ocr"]),
+    intakeMethod: z.enum(["files", "paste"]),
+    pageCount: z.number().int().positive().max(1_000_000).nullable(),
   })
   .strict();
 
@@ -105,6 +116,7 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
     wordCount: z.number().int().positive().max(50_000),
     citationStyle: nonBlankString(160),
     fileNames: z.array(savedFileNameSchema).min(1).max(MAX_FILES),
+    sources: z.array(uploadedProjectSourceSchema).min(1).max(MAX_FILES).optional(),
     extractedWordCount: z.number().int().nonnegative().max(5_000_000),
     weightingStatus: z.enum(["complete", "incomplete", "none"]),
     criteria: z.array(uploadedProjectCriterionSchema).min(1).max(MAX_CRITERIA),
@@ -113,8 +125,83 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
   .strict()
   .superRefine((project, context) => {
     const fileNames = new Set(project.fileNames);
+    const sourcesById = new Map<string, UploadedProjectSource>();
     const sourceFileNames = new Map<string, string>();
     const criterionIds = new Set<string>();
+
+    if (project.sources) {
+      if (
+        project.fileNames.length !== project.sources.length ||
+        project.fileNames.some(
+          (fileName, index) => fileName !== project.sources?.[index]?.fileName,
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Saved filenames must match the compact source registry in source order",
+          path: ["fileNames"],
+        });
+      }
+
+      project.sources.forEach((source, index) => {
+        const sourceIdMatch = CANONICAL_SOURCE_ID.exec(source.id);
+        const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
+        if (!Number.isSafeInteger(sourceNumber)) {
+          context.addIssue({
+            code: "custom",
+            message: "Project source id is not canonical",
+            path: ["sources", index, "id"],
+          });
+        }
+        if (sourcesById.has(source.id)) {
+          context.addIssue({
+            code: "custom",
+            message: `Duplicate project source id: ${source.id}`,
+            path: ["sources", index, "id"],
+          });
+        } else {
+          sourcesById.set(source.id, source);
+        }
+
+        const isImage = ["png", "jpeg", "webp"].includes(source.kind);
+        if (source.intakeMethod === "paste") {
+          if (
+            source.kind !== "txt" ||
+            source.origin !== "extracted" ||
+            source.pageCount !== null
+          ) {
+            context.addIssue({
+              code: "custom",
+              message: "Pasted sources must be extracted plain text without pagination",
+              path: ["sources", index],
+            });
+          }
+        } else if (source.kind === "pdf") {
+          if (source.origin !== "extracted" || source.pageCount === null) {
+            context.addIssue({
+              code: "custom",
+              message: "PDF sources require extracted origin and a real page count",
+              path: ["sources", index],
+            });
+          }
+        } else if (isImage) {
+          if (source.origin !== "ocr" || source.pageCount !== null) {
+            context.addIssue({
+              code: "custom",
+              message: "Image sources require OCR origin without PDF pagination",
+              path: ["sources", index],
+            });
+          }
+        } else if (source.origin !== "extracted" || source.pageCount !== null) {
+          context.addIssue({
+            code: "custom",
+            message: "TXT and DOCX sources require extracted origin without pagination",
+            path: ["sources", index],
+          });
+        }
+      });
+    }
+
     project.criteria.forEach((criterion, index) => {
       if (criterionIds.has(criterion.id)) {
         context.addIssue({
@@ -134,17 +221,6 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
           path: ["criteria", index, "manualSourceLocator"],
         });
       }
-      if (
-        evidence !== null &&
-        evidence.fileName !== null &&
-        !fileNames.has(evidence.fileName)
-      ) {
-        context.addIssue({
-          code: "custom",
-          message: "Criterion evidence filename is not part of the saved project sources",
-          path: ["criteria", index, "evidence", "fileName"],
-        });
-      }
       if (evidence !== null) {
         if (evidence.sourceId === null || evidence.fileName === null) {
           context.addIssue({
@@ -156,7 +232,7 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
         if (evidence.sourceId !== null) {
           const sourceIdMatch = CANONICAL_SOURCE_ID.exec(evidence.sourceId);
           const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
-          if (!Number.isSafeInteger(sourceNumber) || sourceNumber > MAX_FILES) {
+          if (!Number.isSafeInteger(sourceNumber)) {
             context.addIssue({
               code: "custom",
               message: "Criterion evidence source id is not canonical",
@@ -172,44 +248,98 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
           });
         }
         if (evidence.sourceId !== null && evidence.fileName !== null) {
-          const previousFileName = sourceFileNames.get(evidence.sourceId);
-          if (previousFileName !== undefined && previousFileName !== evidence.fileName) {
-            context.addIssue({
-              code: "custom",
-              message: "One criterion evidence source id cannot name multiple files",
-              path: ["criteria", index, "evidence", "fileName"],
-            });
+          const source = project.sources ? sourcesById.get(evidence.sourceId) : undefined;
+          if (project.sources) {
+            if (!source) {
+              context.addIssue({
+                code: "custom",
+                message: "Criterion evidence source id is not in the project source registry",
+                path: ["criteria", index, "evidence", "sourceId"],
+              });
+            } else {
+              if (evidence.fileName !== source.fileName) {
+                context.addIssue({
+                  code: "custom",
+                  message: "Criterion evidence filename does not match its canonical source",
+                  path: ["criteria", index, "evidence", "fileName"],
+                });
+              }
+              if (evidence.origin !== source.origin) {
+                context.addIssue({
+                  code: "custom",
+                  message: "Criterion evidence origin does not match its canonical source",
+                  path: ["criteria", index, "evidence", "origin"],
+                });
+              }
+              if (
+                source.kind === "pdf"
+                  ? evidence.page === null || evidence.page > (source.pageCount ?? 0)
+                  : evidence.page !== null
+              ) {
+                context.addIssue({
+                  code: "custom",
+                  message: "Criterion evidence page does not match the source pagination model",
+                  path: ["criteria", index, "evidence", "page"],
+                });
+              }
+            }
           } else {
-            sourceFileNames.set(evidence.sourceId, evidence.fileName);
+            if (!fileNames.has(evidence.fileName)) {
+              context.addIssue({
+                code: "custom",
+                message: "Criterion evidence filename is not part of the saved project sources",
+                path: ["criteria", index, "evidence", "fileName"],
+              });
+            }
+            const previousFileName = sourceFileNames.get(evidence.sourceId);
+            if (previousFileName !== undefined && previousFileName !== evidence.fileName) {
+              context.addIssue({
+                code: "custom",
+                message: "One criterion evidence source id cannot name multiple files",
+                path: ["criteria", index, "evidence", "fileName"],
+              });
+            } else {
+              sourceFileNames.set(evidence.sourceId, evidence.fileName);
+            }
           }
         }
       }
       if (manualSourceLocator !== null) {
-        if (!fileNames.has(manualSourceLocator.fileName)) {
+        if (!project.sources) {
           context.addIssue({
             code: "custom",
-            message: "Manual source locator filename is not part of the saved project sources",
-            path: ["criteria", index, "manualSourceLocator", "fileName"],
+            message: "Manual source locators require a compact project source registry",
+            path: ["criteria", index, "manualSourceLocator"],
           });
+        } else {
+          const source = sourcesById.get(manualSourceLocator.sourceId);
+          if (!source) {
+            context.addIssue({
+              code: "custom",
+              message: "Manual source locator source id is not in the project source registry",
+              path: ["criteria", index, "manualSourceLocator", "sourceId"],
+            });
+          } else if (
+            source.kind === "pdf"
+              ? manualSourceLocator.page !== null &&
+                manualSourceLocator.page > (source.pageCount ?? 0)
+              : manualSourceLocator.page !== null
+          ) {
+            context.addIssue({
+              code: "custom",
+              message: "Manual source locator page does not match the source pagination model",
+              path: ["criteria", index, "manualSourceLocator", "page"],
+            });
+          }
         }
         const sourceIdMatch = CANONICAL_SOURCE_ID.exec(manualSourceLocator.sourceId);
         const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
-        if (!Number.isSafeInteger(sourceNumber) || sourceNumber > MAX_FILES) {
+        if (!Number.isSafeInteger(sourceNumber)) {
           context.addIssue({
             code: "custom",
             message: "Manual source locator source id is not canonical",
             path: ["criteria", index, "manualSourceLocator", "sourceId"],
           });
-        }
-        const previousFileName = sourceFileNames.get(manualSourceLocator.sourceId);
-        if (previousFileName !== undefined && previousFileName !== manualSourceLocator.fileName) {
-          context.addIssue({
-            code: "custom",
-            message: "One source id cannot name multiple saved files",
-            path: ["criteria", index, "manualSourceLocator", "sourceId"],
-          });
-        } else {
-          sourceFileNames.set(manualSourceLocator.sourceId, manualSourceLocator.fileName);
         }
       }
     });

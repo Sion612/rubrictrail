@@ -2,6 +2,7 @@ import type { DraftCheckResult } from "@/lib/domain";
 import type {
   AssignmentFileKind,
   AssignmentFileErrorCode,
+  AssignmentSourceOrigin,
   SkippedAssignmentFile,
   UploadedAssignmentSummary,
   UploadedSourceEvidence,
@@ -16,8 +17,16 @@ export type RubricWeightingStatus = "complete" | "incomplete" | "none";
 
 export interface ManualSourceLocator {
   sourceId: string;
-  fileName: string;
   page: number | null;
+}
+
+export interface UploadedProjectSource {
+  id: string;
+  fileName: string;
+  kind: AssignmentFileKind;
+  origin: AssignmentSourceOrigin;
+  intakeMethod: AssignmentIntakeMode;
+  pageCount: number | null;
 }
 
 export interface AssignmentFileIntakeError {
@@ -53,6 +62,8 @@ export interface UploadedProject {
   wordCount: number;
   citationStyle: string;
   fileNames: string[];
+  /** Compact source metadata. Optional only for projects saved before this registry existed. */
+  sources?: UploadedProjectSource[];
   extractedWordCount: number;
   /** Whether the retained official percentages form a complete 100% breakdown. */
   weightingStatus: RubricWeightingStatus;
@@ -91,13 +102,7 @@ export interface PersistedProjectState {
 export interface UploadFlowResult {
   intakeMethod: AssignmentIntakeMode;
   fileNames: string[];
-  sources?: Array<{
-    id?: string;
-    fileName: string;
-    kind?: AssignmentFileKind;
-    origin: "extracted" | "ocr";
-    pageCount?: number | null;
-  }>;
+  sources: UploadedProjectSource[];
   skippedFiles: SkippedAssignmentFile[];
   totalWords: number;
   summary: UploadedAssignmentSummary;

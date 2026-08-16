@@ -340,6 +340,14 @@ describe("WelcomeScreen upload controls", () => {
         partialUploadResult={{
           intakeMethod: "files",
           fileNames: ["brief.txt"],
+          sources: [{
+            id: "source-1",
+            fileName: "brief.txt",
+            kind: "txt",
+            origin: "extracted",
+            intakeMethod: "files",
+            pageCount: null,
+          }],
           skippedFiles: [
             {
               inputIndex: 1,

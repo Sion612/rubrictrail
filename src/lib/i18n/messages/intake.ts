@@ -172,10 +172,16 @@ export const intakeEn = {
   criterionPlaceholder: "Criterion name",
   sourceLinkedCriterion: "Source-linked criterion",
   manualCriterion: "Manually entered criterion",
-  manualSourceLabel: "Original source (optional)",
+  manualSourceLabel: "Original source location (optional)",
   manualSourceNone: "No source locator recorded",
+  manualSourceNumber: "Source {number}",
   manualPdfPageLabel: "PDF page (optional)",
-  manualPdfPageHint: "Record the page you checked; this does not retain an excerpt.",
+  manualPdfPageHint: "This PDF contains {pages} pages. You may leave the page blank.",
+  manualImagePageHint: "Image sources do not have PDF page numbers.",
+  manualTextPageHint: "Plain-text sources do not have page numbers.",
+  manualDocxPageHint:
+    "RubricTrail cannot reliably record DOCX page numbers because raw-text extraction has no stable pagination.",
+  manualPastePageHint: "Pasted text has no page number.",
   publishedWeight: "Published weight",
   publishedWeightOptional: "Published weight (if stated)",
   weightAria: "Published weight for criterion {number}",
@@ -271,6 +277,9 @@ export const intakeEn = {
     "Published rubric weights must total 100%; they currently total {total}%. Check for a missing criterion or a mistyped percentage.",
   errorManualPage:
     "Criterion {number}: enter a positive whole PDF page number, or leave it blank.",
+  errorManualPageRange:
+    "Criterion {number}: enter a whole PDF page from 1 to {pages}, or leave it blank.",
+  errorManualSource: "Criterion {number}: choose an included source, or leave it blank.",
 } as const;
 
 export const intakeZhCN = {
@@ -431,10 +440,15 @@ export const intakeZhCN = {
   criterionPlaceholder: "评分项名称",
   sourceLinkedCriterion: "已关联原文的评分项",
   manualCriterion: "手动输入的评分项",
-  manualSourceLabel: "原始来源（可选）",
+  manualSourceLabel: "原文位置（可选）",
   manualSourceNone: "未记录来源定位",
+  manualSourceNumber: "来源 {number}",
   manualPdfPageLabel: "PDF 页码（可选）",
-  manualPdfPageHint: "记录你核对的页码；这不会保留原文摘录。",
+  manualPdfPageHint: "这份 PDF 共 {pages} 页；页码可以留空。",
+  manualImagePageHint: "图片来源没有 PDF 页码。",
+  manualTextPageHint: "纯文本来源没有页码。",
+  manualDocxPageHint: "RubricTrail 无法可靠记录 DOCX 页码，因为原始文本提取没有稳定分页。",
+  manualPastePageHint: "粘贴文本没有页码。",
   publishedWeight: "已公布权重",
   publishedWeightOptional: "已公布权重（如有）",
   weightAria: "第 {number} 个评分项的已公布权重",
@@ -522,6 +536,8 @@ export const intakeZhCN = {
   errorWeightTotal:
     "已公布评分权重必须合计为 100%；当前合计为 {total}%。请检查是否缺少评分项或输错百分比。",
   errorManualPage: "评分项 {number}：请输入正整数 PDF 页码，或留空。",
+  errorManualPageRange: "评分项 {number}：请输入 1 到 {pages} 之间的 PDF 整数页码，或留空。",
+  errorManualSource: "评分项 {number}：请选择已包含的来源，或留空。",
 } satisfies Record<keyof typeof intakeEn, string>;
 
 export type IntakeMessages = {

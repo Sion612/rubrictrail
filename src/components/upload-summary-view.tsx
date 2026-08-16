@@ -41,6 +41,7 @@ import type {
   UploadFlowResult,
   UploadedProject,
   UploadedProjectDraft,
+  UploadedProjectSource,
 } from "@/lib/ui-types";
 
 interface UploadSummaryViewProps {
@@ -88,6 +89,31 @@ function sourceDisplayName(value: string, messages: IntakeMessages, isPasted: bo
   if (/^Pasted assignment brief\.txt$/i.test(value)) return messages.pastedBriefSource;
   if (/^Pasted rubric\.txt$/i.test(value)) return messages.pastedRubricSource;
   return value;
+}
+
+function sourceNumber(sourceId: string): string {
+  return sourceId.match(/^source-(\d+)$/u)?.[1] ?? sourceId;
+}
+
+function sourceOptionLabel(
+  source: UploadedProjectSource,
+  messages: IntakeMessages,
+): string {
+  return `${sourceDisplayName(source.fileName, messages, source.intakeMethod === "paste")} · ${source.kind.toUpperCase()} · ${formatIntakeMessage(messages.manualSourceNumber, { number: sourceNumber(source.id) })}`;
+}
+
+function nonPdfPageHint(
+  source: UploadedProjectSource,
+  messages: IntakeMessages,
+): string | null {
+  if (source.kind === "pdf") return null;
+  if (source.intakeMethod === "paste") return messages.manualPastePageHint;
+  if (["png", "jpeg", "webp"].includes(source.kind)) {
+    return messages.manualImagePageHint;
+  }
+  return source.kind === "docx"
+    ? messages.manualDocxPageHint
+    : messages.manualTextPageHint;
 }
 
 function EvidenceNote({
@@ -254,7 +280,14 @@ function localizedDraftIssue(
     localizedMessage = formatIntakeMessage(messages.errorWeightTotal, { total });
   }
   if (!localizedMessage && issue.targetId.startsWith("criterion-source-page-")) {
-    localizedMessage = formatIntakeMessage(messages.errorManualPage, {
+    const pages = issue.message.match(/from 1 to (\d+)/u)?.[1];
+    localizedMessage = formatIntakeMessage(
+      pages ? messages.errorManualPageRange : messages.errorManualPage,
+      { number: criterionNumber, pages: pages ?? "" },
+    );
+  }
+  if (!localizedMessage && issue.targetId.startsWith("criterion-source-")) {
+    localizedMessage = formatIntakeMessage(messages.errorManualSource, {
       number: criterionNumber,
     });
   }
@@ -284,7 +317,10 @@ export function UploadSummaryView({
   const pendingCriterionFocusKeyRef = useRef<string | null>(null);
   const errorSummaryRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const issues = useMemo(() => validateUploadedProjectDraftIssues(draft), [draft]);
+  const issues = useMemo(
+    () => validateUploadedProjectDraftIssues(draft, result.sources),
+    [draft, result.sources],
+  );
   const displayedIssues = useMemo(
     () => issues.map((issue) => localizedDraftIssue(issue, messages)),
     [issues, messages],
@@ -307,27 +343,12 @@ export function UploadSummaryView({
   ).length;
   const isPasted = result.intakeMethod === "paste";
   const isPartial = result.skippedFiles.length > 0;
-  const ocrSourceCount =
-    result.sources?.filter((source) => source.origin === "ocr").length ?? 0;
+  const ocrSourceCount = result.sources.filter((source) => source.origin === "ocr").length;
   const selectedFileCount = result.fileNames.length + result.skippedFiles.length;
   const sourceContainsPercentageValues = result.summary.rubric.criteria.some(
     (criterion) => criterion.weight !== null,
   );
-  const manualSources = useMemo(
-    () => (result.sources ?? result.fileNames.map((fileName, index) => ({
-      id: `source-${index + 1}`,
-      fileName,
-      kind: fileName.toLowerCase().endsWith(".pdf") ? "pdf" as const : undefined,
-      origin: "extracted" as const,
-      pageCount: null,
-    }))).map((source, index) => ({
-      id: source.id ?? `source-${index + 1}`,
-      fileName: source.fileName,
-      kind: source.kind,
-      pageCount: source.pageCount ?? null,
-    })),
-    [result.fileNames, result.sources],
-  );
+  const manualSources = result.sources;
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -409,7 +430,7 @@ export function UploadSummaryView({
           ? {
               ...criterion,
               manualSourceLocator: source
-                ? { sourceId: source.id, fileName: source.fileName, page: null }
+                ? { sourceId: source.id, page: null }
                 : null,
             }
           : criterion),
@@ -760,7 +781,14 @@ export function UploadSummaryView({
           ) : null}
 
           <div className="rubric-editor-list">
-            {draft.criteria.map((criterion, index) => (
+            {draft.criteria.map((criterion, index) => {
+              const selectedManualSource = manualSources.find(
+                (source) => source.id === criterion.manualSourceLocator?.sourceId,
+              );
+              const sourceKindHint = selectedManualSource
+                ? nonPdfPageHint(selectedManualSource, messages)
+                : null;
+              return (
               <div
                 className="rubric-editor-row"
                 key={criterionKeys[index]}
@@ -835,35 +863,40 @@ export function UploadSummaryView({
                           <option value="">{messages.manualSourceNone}</option>
                           {manualSources.map((source) => (
                             <option key={source.id} value={source.id}>
-                              {sourceDisplayName(source.fileName, messages, isPasted)}
+                              {sourceOptionLabel(source, messages)}
                             </option>
                           ))}
                         </select>
+                        <FieldError issue={showErrors ? issueByTarget.get(`criterion-source-${index}`) : undefined} />
                       </label>
                       {criterion.manualSourceLocator &&
-                      manualSources.find((source) =>
-                        source.id === criterion.manualSourceLocator?.sourceId)?.kind === "pdf" ? (
+                      selectedManualSource?.kind === "pdf" ? (
                         <label htmlFor={`criterion-source-page-${index}`}>
                           <span>{messages.manualPdfPageLabel}</span>
                           <input
                             {...errorAttributes(`criterion-source-page-${index}`)}
                             type="number"
                             min="1"
-                            max="1000000"
+                            max={selectedManualSource.pageCount ?? undefined}
                             step="1"
                             value={criterion.manualSourceLocator.page ?? ""}
                             onChange={(event) => updateManualPage(index, event.target.value)}
                             data-testid={`criterion-source-page-${index}`}
                           />
-                          <small>{messages.manualPdfPageHint}</small>
+                          <small>
+                            {formatIntakeMessage(messages.manualPdfPageHint, {
+                              pages: selectedManualSource.pageCount ?? "",
+                            })}
+                          </small>
                           <FieldError issue={showErrors ? issueByTarget.get(`criterion-source-page-${index}`) : undefined} />
                         </label>
-                      ) : null}
+                      ) : sourceKindHint ? <small>{sourceKindHint}</small> : null}
                     </div>
                   ) : null}
                 </EvidenceNote>
               </div>
-            ))}
+              );
+            })}
           </div>
 
           <button

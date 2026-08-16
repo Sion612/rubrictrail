@@ -1026,6 +1026,7 @@ export function RubricTrailApp() {
           fileName: source.fileName,
           kind: source.kind,
           origin: source.origin,
+          intakeMethod,
           pageCount: source.pageCount,
         })),
         skippedFiles,

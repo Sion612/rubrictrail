@@ -22,6 +22,7 @@ import {
   hasPublishedRubricWeights,
   isConfirmedUploadedReview,
   todayIso,
+  uploadedCriterionSourceState,
   UPLOADED_REVIEW_MAX_CHARACTERS,
 } from "@/lib/uploaded-project";
 import type {
@@ -53,6 +54,18 @@ export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProp
       : project.weightingStatus === "incomplete"
         ? messages.incompleteWeights
         : messages.noWeights;
+  const sourceDescription = (source: NonNullable<UploadedProject["sources"]>[number]) => {
+    if (source.intakeMethod === "paste") return messages.sourcePastedKind;
+    if (source.kind === "pdf") {
+      return interpolateViewMessage(messages.sourcePdfPages, {
+        count: formatNumber(source.pageCount ?? 0),
+      });
+    }
+    return interpolateViewMessage(
+      source.origin === "ocr" ? messages.sourceOcrKind : messages.sourceExtractedKind,
+      { kind: source.kind.toUpperCase() },
+    );
+  };
   return (
     <div className="view-stack uploaded-brief-view">
       <header className="view-header">
@@ -82,9 +95,19 @@ export function UploadedBriefView({ project, onNavigate }: UploadedBriefViewProp
           <span>{interpolateViewMessage(messages.sourceWords, { count: formatNumber(project.extractedWordCount) })}</span>
         </div>
         <ul>
-          {project.fileNames.map((fileName) => (
-            <li key={fileName}><FileText aria-hidden="true" /><span><strong>{fileName}</strong><small>{messages.sourceNotStored}</small></span></li>
-          ))}
+          {project.sources
+            ? project.sources.map((source) => (
+                <li key={source.id}>
+                  <FileText aria-hidden="true" />
+                  <span>
+                    <strong>{source.fileName}</strong>
+                    <small>{sourceDescription(source)} · {messages.sourceNotStored}</small>
+                  </span>
+                </li>
+              ))
+            : project.fileNames.map((fileName, index) => (
+                <li key={`${index}:${fileName}`}><FileText aria-hidden="true" /><span><strong>{fileName}</strong><small>{messages.sourceNotStored}</small></span></li>
+              ))}
         </ul>
       </section>
 
@@ -149,6 +172,12 @@ export function UploadedRubricView({
   const recordedWeightCount = project.criteria.filter(
     (criterion) => criterion.weight !== null,
   ).length;
+  const sourceStates = project.criteria.map((criterion) =>
+    uploadedCriterionSourceState(project, criterion),
+  );
+  const retainedCount = sourceStates.filter((state) => state.kind === "retained").length;
+  const manualLocatorCount = sourceStates.filter((state) => state.kind === "manual").length;
+  const unlinkedCount = sourceStates.filter((state) => state.kind === "none").length;
   return (
     <div className="view-stack uploaded-rubric-view">
       <header className="view-header split-header">
@@ -177,15 +206,20 @@ export function UploadedRubricView({
 
       <div className="rubric-summary-band">
         <div><strong>{formatNumber(project.criteria.length)}</strong><span>{messages.criteria}</span></div>
-        <div><strong>{formatNumber(project.criteria.filter((item) => item.evidence).length)}</strong><span>{messages.sourceLinked}</span></div>
-        <div><strong>{formatNumber(project.criteria.filter((item) => !item.evidence).length)}</strong><span>{messages.manuallyConfirmed}</span></div>
+        <div><strong>{formatNumber(retainedCount)}</strong><span>{messages.sourceLinked}</span></div>
+        <div><strong>{formatNumber(manualLocatorCount)}</strong><span>{messages.manuallyConfirmed}</span></div>
+        <div><strong>{formatNumber(unlinkedCount)}</strong><span>{messages.sourceUnlinked}</span></div>
       </div>
 
       <section className="uploaded-rubric-table" aria-label={messages.rubricAria}>
         <div className="uploaded-rubric-head" aria-hidden="true">
           <span>{messages.criterion}</span><span>{project.weightingStatus === "none" ? messages.weighting : messages.publishedWeight}</span><span>{messages.status}</span><span>{messages.evidenceSource}</span>
         </div>
-        {project.criteria.map((criterion, index) => (
+        {project.criteria.map((criterion, index) => {
+          const sourceState = sourceStates[index];
+          const manualLocator = criterion.manualSourceLocator ?? null;
+          const manualSource = sourceState.kind === "manual" ? sourceState.source : null;
+          return (
           <article key={criterion.id} className="uploaded-rubric-row">
             <div className="criterion-title">
               <span>{formatNumber(index + 1)}</span>
@@ -203,9 +237,13 @@ export function UploadedRubricView({
             <strong className={`criterion-weight ${criterion.weight === null ? "not-published" : ""}`}>
               {criterion.weight === null ? messages.notRecorded : `${formatNumber(criterion.weight)}%`}
             </strong>
-            <span className={criterion.evidence ? "verified-state" : "manual-state"}>
-              {criterion.evidence ? <CheckCircle2 aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
-              {criterion.evidence ? messages.sourceLinkedState : messages.manualCheck}
+            <span className={sourceState.kind === "retained" ? "verified-state" : "manual-state"}>
+              {sourceState.kind === "retained" ? <CheckCircle2 aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
+              {sourceState.kind === "retained"
+                ? messages.sourceLinkedState
+                : sourceState.kind === "manual"
+                  ? messages.manualLocatorState
+                  : messages.noSourceState}
             </span>
             <button
               className="evidence-source-button"
@@ -214,23 +252,25 @@ export function UploadedRubricView({
               aria-label={interpolateViewMessage(messages.openSource, { criterion: criterion.name })}
             >
               <span>
-                {criterion.evidence?.excerpt ?? messages.noExcerpt}
+                {criterion.evidence?.excerpt ??
+                  (sourceState.kind === "manual"
+                    ? messages.manualLocatorPreview
+                    : messages.noSourcePreview)}
               </span>
               <small>
-                {criterion.evidence?.fileName ??
-                  criterion.manualSourceLocator?.fileName ??
-                  messages.manuallyEntered}
-                {criterion.evidence?.page ?? criterion.manualSourceLocator?.page
+                {criterion.evidence?.fileName ?? manualSource?.fileName ?? messages.manuallyEntered}
+                {criterion.evidence?.page ?? manualLocator?.page
                   ? ` · ${interpolateViewMessage(messages.page, {
                       page: formatNumber(
-                        criterion.evidence?.page ?? criterion.manualSourceLocator?.page ?? 0,
+                        criterion.evidence?.page ?? manualLocator?.page ?? 0,
                       ),
                     })}`
                   : ""}
               </small>
             </button>
           </article>
-        ))}
+          );
+        })}
       </section>
 
       <div className="integrity-note">
@@ -477,6 +517,12 @@ export function UploadedProgressView({
       : { value: interpolateViewMessage(messages.days, { count: formatNumber(deadlineDays) }), label: messages.untilDeadline, overdue: false };
   const nextTask = plan.tasks.find((task) => !task.completed);
   const nextUnchecked = project.criteria.find((criterion) => !completeReviewIds.has(criterion.id));
+  const manualLocatorCriteria = project.criteria.filter(
+    (criterion) => uploadedCriterionSourceState(project, criterion).kind === "manual",
+  );
+  const unlinkedCriteria = project.criteria.filter(
+    (criterion) => uploadedCriterionSourceState(project, criterion).kind === "none",
+  );
   const checklistIncomplete = checksComplete < UPLOADED_READINESS.length;
   const nextHeading = nextTask ? localizeSystemText(nextTask.title, locale) : (nextUnchecked
     ? interpolateViewMessage(messages.selfCheckCriterion, { criterion: nextUnchecked.name })
@@ -562,8 +608,9 @@ export function UploadedProgressView({
           <ul>
             {plan.capacityRisk ? <li><AlertTriangle aria-hidden="true" /><div><strong>{messages.scheduleCapacity}</strong><p>{localizeSystemText(plan.capacityRisk.message, locale)}</p></div></li> : null}
             {nextUnchecked ? <li><FileCheck2 aria-hidden="true" /><div><strong>{interpolateViewMessage(messages.criterionUnchecked, { criterion: nextUnchecked.name })}</strong><p>{messages.saveRealEvidence}</p></div></li> : null}
-            {project.criteria.some((criterion) => !criterion.evidence) ? <li><Link2 aria-hidden="true" /><div><strong>{messages.manualEntries}</strong><p>{messages.compareOriginal}</p></div></li> : null}
-            {!plan.capacityRisk && !nextUnchecked && project.criteria.every((criterion) => criterion.evidence) ? <li><CheckCircle2 aria-hidden="true" /><div><strong>{messages.noEvidenceRisks}</strong><p>{messages.completeHumanChecklist}</p></div></li> : null}
+            {manualLocatorCriteria.length ? <li><Link2 aria-hidden="true" /><div><strong>{messages.manualLocatorRisk}</strong><p>{messages.manualLocatorRiskDescription}</p></div></li> : null}
+            {unlinkedCriteria.length ? <li><AlertTriangle aria-hidden="true" /><div><strong>{messages.unlinkedRisk}</strong><p>{messages.unlinkedRiskDescription}</p></div></li> : null}
+            {!plan.capacityRisk && !nextUnchecked && !manualLocatorCriteria.length && !unlinkedCriteria.length ? <li><CheckCircle2 aria-hidden="true" /><div><strong>{messages.noEvidenceRisks}</strong><p>{messages.completeHumanChecklist}</p></div></li> : null}
           </ul>
         </section>
 

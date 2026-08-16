@@ -32,6 +32,48 @@ The final language-preference, notification, narrow-screen, accessibility,
 phase-splitting and dependency-security changes were all included in the exact
 main revision tested above.
 
+### Issue #23 deployment reliability candidate
+
+The Issue #23 working-tree change is intentionally separate from the exact-main
+v0.6.0 evidence above. Its focused local verification on 15 August 2026
+observed:
+
+| Command | Observed result |
+| --- | --- |
+| `pnpm test:deployment-smoke` | 14/14 deterministic Node tests passed for the bounded candidate-created freshness query, exact candidate and workflow identity, `run_number`/rerun semantics, complete pagination without ordering assumptions, lifetime-history isolation, superseded and newer failed runs, workflow structure and least privilege, read-only API failure handling, marker validation, bounded retries, `src`/`href`/`srcset` same-origin assets and disabled Live paths |
+| `PAGES_BASE_PATH=/rubrictrail pnpm build:demo` | Static export completed successfully |
+| `pnpm audit:demo` | The normal 44-file export passed; the deployment-shaped 45-file export also passed after adding a marker containing only the current 40-character commit SHA |
+| `pnpm check` | ESLint, TypeScript, 298/298 Vitest tests and the production build passed |
+| `PLAYWRIGHT_APP_PATH=/rubrictrail/ pnpm test:e2e:demo --workers=1` | 30/30 static-demo Chromium executions passed against the generated artifact |
+
+The deployment workflow now queries the read-only Actions API before building.
+Successful and unsuccessful CI conclusions use separate concurrency groups,
+and successful candidates use GitHub's documented maximum queue instead of the
+single-pending default. A successful `main` push candidate can proceed only if
+the same CI workflow has no successful run with a larger `run_number`; an older
+candidate is recorded as superseded, while a newer failed run cannot replace a
+queued successful candidate. The read-only query is bounded to runs created at
+or after the triggering candidate, so the repository's lifetime successful-run
+count cannot permanently exhaust GitHub's search limit. It reads and
+deduplicates every page in that window instead of assuming API ordering, and it
+validates the candidate's run ID, workflow ID, SHA, `run_number`, `run_attempt`
+and original `created_at`. Because reruns retain `run_number` while incrementing
+`run_attempt`, rerunning an older run cannot make it supersede a newer commit.
+The check fails closed if the bounded window itself exceeds the documented
+1,000-result search limit, or if pagination changes, is incomplete, or omits the
+exact candidate. GitHub's paginated REST response is not a transactional
+snapshot, so this is conservative consistency checking rather than an atomic
+history read. The deployment artifact adds `deployment.txt`, whose complete
+contents are the validated 40-character SHA. After `actions/deploy-pages`, a
+separate read-only job performs bounded,
+cache-busted GET checks for the homepage, marker and same-origin HTML-linked
+`src`, `href` and `srcset` assets, plus GET and POST checks that both static Live
+paths remain non-2xx.
+
+These are local implementation and generated-artifact results. They do not
+claim that the new post-deploy smoke has run against GitHub Pages; that requires
+a future exact-main deployment workflow run.
+
 The initial static JS/CSS measurement fell from the pre-splitting baseline of
 1,318,791 raw / 368,095 gzip bytes to 1,235,028 raw / 346,687 gzip bytes: a
 6.35% raw and 5.82% gzip reduction. This scoped pass did not meet a separate

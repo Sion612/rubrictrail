@@ -34,6 +34,14 @@ if (!files.includes(indexPath)) {
   throw new Error("The static demo does not contain an index.html entry point.");
 }
 
+const deploymentMarkerPath = path.join(outputRoot, "deployment.txt");
+if (files.includes(deploymentMarkerPath)) {
+  const deploymentMarker = await readFile(deploymentMarkerPath, "utf8");
+  if (!/^[0-9a-f]{40}$/u.test(deploymentMarker)) {
+    throw new Error("The deployment marker must contain only one complete commit SHA.");
+  }
+}
+
 for (const file of files) {
   if (!textExtensions.has(path.extname(file).toLowerCase())) continue;
   const content = await readFile(file, "utf8");

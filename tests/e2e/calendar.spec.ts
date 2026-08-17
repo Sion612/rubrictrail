@@ -201,35 +201,29 @@ test("task toggle from an empty month does not snap back the visible month", asy
   test.setTimeout(90_000);
   await openSampleCalendar(page);
 
+  // Sample calendar starts in August 2026.
+  await expect(page.getByRole("heading", { name: "August 2026" })).toBeVisible();
+
   // Navigate forward to October — a month with no tasks due.
   await page.getByRole("button", { name: "Next month" }).click();
-  await page.getByRole("button", { name: "Next month" }).click();
+  await expect(page.getByRole("heading", { name: "September 2026" })).toBeVisible();
   await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
 
   // Click a specific day cell in October to anchor the selection.
   await page.getByTestId("calendar-day-2026-10-15").click();
+  await expect(page.getByTestId("calendar-day-2026-10-15")).toHaveAttribute("aria-pressed", "true");
 
-  // Navigate back to a month with tasks, select a task day, and toggle it.
+  // Navigate back to August where tasks are located.
   await page.getByRole("button", { name: "Previous month" }).click();
   await page.getByRole("button", { name: "Previous month" }).click();
-  await page.getByRole("button", { name: "Previous month" }).click();
-  await expect(page.getByRole("heading", { name: "July 2026" })).toBeVisible();
-
-  // Go to August where tasks actually are.
-  await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByRole("heading", { name: "August 2026" })).toBeVisible();
 
-  // Click a day with tasks and toggle one.
+  // Click August 17 where p1 is scheduled (frozen time is 2026-08-17).
+  await page.getByTestId("calendar-day-2026-08-17").click();
   const firstTask = page.getByTestId("calendar-task-p1");
-  // Find p1's day and click it.
-  const p1Day = page.getByTestId("calendar-day-2026-08-03");
-  if (await p1Day.count() > 0) {
-    await p1Day.click();
-  }
-  if (await firstTask.count() > 0) {
-    await firstTask.getByRole("checkbox").check();
-  }
+  await expect(firstTask).toBeVisible();
+  await firstTask.getByRole("checkbox").check();
 
   // Now navigate forward to October again.
   await page.getByRole("button", { name: "Next month" }).click();

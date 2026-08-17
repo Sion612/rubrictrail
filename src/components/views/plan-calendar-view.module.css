@@ -1,0 +1,22 @@
+.calendar { display: grid; gap: 16px; min-width: 0; }
+.intro, .privacy, .empty { color: var(--muted); font-size: 0.78rem; line-height: 1.5; overflow-wrap: anywhere; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; }
+.nav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.nav h2 { margin: 0; font-size: 1rem; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 0.72rem; }
+.grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.grid th, .grid td { width: 14.28%; border: 1px solid var(--line); vertical-align: top; }
+.grid th { padding: 8px 4px; font-size: 0.72rem; }
+.day { width: 100%; min-height: 92px; display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 0; background: white; text-align: left; cursor: pointer; overflow: hidden; }
+.selected { outline: 2px solid var(--teal); }
+.outside .day { color: var(--muted); background: var(--surface-alt); }
+.flag { display: block; font-size: 0.62rem; }
+.chip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; }
+.completed { text-decoration: line-through; color: var(--muted); }
+.blocked { font-style: italic; }
+.overdue { font-weight: 700; }
+.beyond { box-shadow: inset 3px 0 0 var(--amber, #c47b17); padding-left: 6px; }
+.agendaItem { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.agendaActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag { font-size: 0.66rem; border: 1px solid var(--line); padding: 1px 6px; }

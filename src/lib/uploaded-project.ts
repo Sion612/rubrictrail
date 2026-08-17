@@ -4,6 +4,7 @@ import {
   type PlanTaskTemplate,
 } from "@/lib/domain";
 import type {
+  ManualSourceLocator,
   UploadFlowResult,
   UploadedCriterionReview,
   UploadedProject,
@@ -131,7 +132,7 @@ export function draftFromUpload(result: UploadFlowResult): UploadedProjectDraft 
 
 export function validateUploadedProjectDraftIssues(
   draft: UploadedProjectDraft,
-  sources: UploadedProjectSource[] = [],
+  sources: UploadedProjectSource[],
 ): UploadedProjectDraftIssue[] {
   const issues: UploadedProjectDraftIssue[] = [];
   const addIssue = (targetId: string, message: string) => {
@@ -265,9 +266,92 @@ export function validateUploadedProjectDraftIssues(
 
 export function validateUploadedProjectDraft(
   draft: UploadedProjectDraft,
-  sources: UploadedProjectSource[] = [],
+  sources: UploadedProjectSource[],
 ): string[] {
   return validateUploadedProjectDraftIssues(draft, sources).map((issue) => issue.message);
+}
+
+export function validateUploadedProjectDraftFields(
+  draft: UploadedProjectDraft,
+): string[] {
+  const fieldOnlyDraft: UploadedProjectDraft = {
+    ...draft,
+    criteria: draft.criteria.map((criterion) => ({
+      ...criterion,
+      evidence: null,
+      manualSourceLocator: null,
+    })),
+  };
+  return validateUploadedProjectDraft(fieldOnlyDraft, []);
+}
+
+export function manualSourceLocatorsEqual(
+  left: ManualSourceLocator | null | undefined,
+  right: ManualSourceLocator | null | undefined,
+): boolean {
+  if (left == null && right == null) return true;
+  if (left == null || right == null) return false;
+  return left.sourceId === right.sourceId && left.page === right.page;
+}
+
+export function invalidateUploadedReviewAfterLocatorChange(
+  review: UploadedCriterionReview | undefined,
+): UploadedCriterionReview | undefined {
+  if (!review) return undefined;
+  return {
+    ...review,
+    sourceTraceable: false,
+    updatedAt: null,
+  };
+}
+
+export function applyManualSourceLocator(
+  project: UploadedProject,
+  criterionId: string,
+  locator: ManualSourceLocator | null,
+): UploadedProject {
+  if (!project.sources?.length) {
+    throw new Error("This older project does not contain a verifiable source registry.");
+  }
+  const criterion = project.criteria.find((item) => item.id === criterionId);
+  if (!criterion) {
+    throw new Error("The selected criterion is not part of this project.");
+  }
+  if (criterion.evidence !== null) {
+    throw new Error("Retained source evidence cannot be overwritten from this panel.");
+  }
+  if (locator !== null) {
+    const source = project.sources.find((item) => item.id === locator.sourceId);
+    if (!source) {
+      throw new Error("Choose an included source.");
+    }
+    if (source.kind === "pdf") {
+      const page = locator.page;
+      if (
+        page !== null &&
+        (!Number.isInteger(page) ||
+          page <= 0 ||
+          source.pageCount === null ||
+          page > source.pageCount)
+      ) {
+        throw new Error(
+          source.pageCount
+            ? `Enter a whole PDF page from 1 to ${source.pageCount}, or leave it blank.`
+            : "Only PDF sources may have a page number.",
+        );
+      }
+    } else if (locator.page !== null) {
+      throw new Error("Only PDF sources may have a page number.");
+    }
+  }
+  return {
+    ...project,
+    criteria: project.criteria.map((item) =>
+      item.id === criterionId
+        ? { ...item, manualSourceLocator: locator }
+        : item,
+    ),
+  };
 }
 
 export function resolveUploadedProjectSource(

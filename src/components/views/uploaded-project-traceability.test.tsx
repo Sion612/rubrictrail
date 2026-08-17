@@ -94,11 +94,11 @@ describe("uploaded project traceability", () => {
 
     const register = screen.getByRole("region", { name: "Sources used for this project" });
     expect(within(register).getByText("same-name.pdf")).toBeInTheDocument();
-    expect(within(register).getByText("PDF · 3 pages · Full source text not stored")).toBeInTheDocument();
+    expect(within(register).getByText(/PDF · 3 pages · Source 1 · Full source text not stored/)).toBeInTheDocument();
     expect(within(register).getByText("rubric.png")).toBeInTheDocument();
-    expect(within(register).getByText("PNG · local OCR · Full source text not stored")).toBeInTheDocument();
+    expect(within(register).getByText(/PNG · local OCR · Source 2 · Full source text not stored/)).toBeInTheDocument();
     expect(within(register).getByText("same-name.txt")).toBeInTheDocument();
-    expect(within(register).getByText("TXT · extracted text · Full source text not stored")).toBeInTheDocument();
+    expect(within(register).getByText(/TXT · extracted text · Source 3 · Full source text not stored/)).toBeInTheDocument();
   });
 
   it("keeps retained evidence, manual locators, and unlinked criteria as three distinct rubric states", () => {
@@ -117,11 +117,11 @@ describe("uploaded project traceability", () => {
     expect(screen.getByText("Source-linked")).toBeInTheDocument();
     expect(screen.getByText("Manual source locator")).toBeInTheDocument();
     expect(screen.getByText("No source linked")).toBeInTheDocument();
-    expect(screen.getByText("Manual source location only — no retained excerpt.")).toBeInTheDocument();
-    expect(screen.getByText("No source location or retained excerpt.")).toBeInTheDocument();
+    expect(screen.getByText("View or edit source location")).toBeInTheDocument();
+    expect(screen.getByText("Add source location")).toBeInTheDocument();
     expect(screen.getByText("same-name.pdf · p.3")).toBeInTheDocument();
 
-    screen.getAllByRole("button", { name: /Open source for/ }).forEach((button) => button.click());
+    screen.getAllByRole("button", { name: /source location|retained source evidence/i }).forEach((button) => button.click());
     expect(onOpenEvidence.mock.calls.map(([criterionId]) => criterionId)).toEqual([
       "retained-criterion",
       "manual-criterion",

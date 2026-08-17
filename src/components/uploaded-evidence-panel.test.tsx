@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { LocaleProvider } from "@/components/locale-provider";
@@ -14,10 +14,10 @@ const uploadedProject: UploadedProject = {
   dueDate: "2026-09-24",
   wordCount: 2_500,
   citationStyle: "APA 7",
-  fileNames: ["brief.txt"],
+  fileNames: ["rubric.pdf"],
   sources: [{
     id: "source-1",
-    fileName: "brief.txt",
+    fileName: "rubric.pdf",
     kind: "pdf",
     origin: "extracted",
     intakeMethod: "files",
@@ -32,7 +32,7 @@ const uploadedProject: UploadedProject = {
       weight: 100,
       evidence: {
         sourceId: "source-1",
-        fileName: "brief.txt",
+        fileName: "rubric.pdf",
         page: 4,
         excerpt: "Analysis | 100%",
         startOffset: 40,
@@ -95,7 +95,7 @@ describe("UploadedEvidencePanel", () => {
       />,
     );
 
-    expect(screen.getByText("Recorded source: brief.txt")).toBeInTheDocument();
+    expect(screen.getByText("Recorded source: rubric.pdf")).toBeInTheDocument();
     expect(screen.getByText("Recorded page: 4")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", {
@@ -123,7 +123,7 @@ describe("UploadedEvidencePanel", () => {
       target: { value: "zh-CN" },
     });
 
-    expect(screen.getByText("记录的来源：brief.txt")).toBeInTheDocument();
+    expect(screen.getByText("记录的来源：rubric.pdf")).toBeInTheDocument();
     expect(screen.getByText("记录的页码：4")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", {
@@ -361,5 +361,168 @@ describe("UploadedEvidencePanel", () => {
     expect(screen.queryByText("Page not available")).not.toBeInTheDocument();
     expect(screen.queryByText("Page not entered")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "No retained excerpt" })).toBeInTheDocument();
+  });
+
+  it("keeps retained evidence read-only even when a save callback exists", () => {
+    render(
+      <UploadedEvidencePanel
+        project={uploadedProject}
+        criterionId="analysis-1"
+        onClose={vi.fn()}
+        onSaveManualSourceLocator={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("add-locator")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("edit-locator")).not.toBeInTheDocument();
+    expect(screen.getByText("Recorded source: rubric.pdf")).toBeInTheDocument();
+  });
+
+  it("adds, validates, and saves a PDF locator without auto-confirming evidence", async () => {
+    const onSave = vi.fn().mockResolvedValue("saved");
+    const project: UploadedProject = {
+      ...uploadedProject,
+      fileNames: ["rubric.pdf", "rubric.pdf", "notes.txt", "scan.webp"],
+      sources: [
+        { id: "source-1", fileName: "rubric.pdf", kind: "pdf", origin: "extracted", intakeMethod: "files", pageCount: 2 },
+        { id: "source-3", fileName: "rubric.pdf", kind: "pdf", origin: "extracted", intakeMethod: "files", pageCount: 2 },
+        { id: "source-4", fileName: "notes.txt", kind: "txt", origin: "extracted", intakeMethod: "files", pageCount: null },
+        { id: "source-5", fileName: "scan.webp", kind: "webp", origin: "ocr", intakeMethod: "files", pageCount: null },
+      ],
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: null,
+      }],
+    };
+    render(
+      <UploadedEvidencePanel
+        project={project}
+        criterionId="analysis-1"
+        onClose={vi.fn()}
+        onSaveManualSourceLocator={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("add-locator"));
+    expect(screen.getByTestId("locator-source")).toHaveFocus();
+    expect(screen.getByRole("option", { name: "rubric.pdf · PDF · Source 1" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "rubric.pdf · PDF · Source 3" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("locator-source"), { target: { value: "source-1" } });
+    for (const invalid of ["0", "-1", "1.5", "3", "999"]) {
+      fireEvent.change(screen.getByTestId("locator-page"), { target: { value: invalid } });
+      fireEvent.click(screen.getByTestId("save-locator"));
+      expect(onSave).not.toHaveBeenCalled();
+      expect(screen.getByTestId("locator-page-error")).toHaveTextContent("1 to 2");
+    }
+    fireEvent.change(screen.getByTestId("locator-page"), { target: { value: "" } });
+    fireEvent.change(screen.getByTestId("locator-source"), { target: { value: "source-3" } });
+    expect(screen.getByTestId("locator-page")).toHaveValue(null);
+    fireEvent.change(screen.getByTestId("locator-page"), { target: { value: "2" } });
+    fireEvent.change(screen.getByTestId("locator-source"), { target: { value: "source-5" } });
+    expect(screen.queryByTestId("locator-page")).not.toBeInTheDocument();
+    expect(screen.getByTestId("locator-no-page")).toHaveTextContent("Image sources do not have PDF page numbers");
+    fireEvent.change(screen.getByTestId("locator-source"), { target: { value: "source-1" } });
+    fireEvent.change(screen.getByTestId("locator-page"), { target: { value: "2" } });
+    fireEvent.click(screen.getByTestId("save-locator"));
+    expect(onSave).toHaveBeenCalledWith("analysis-1", { sourceId: "source-1", page: 2 });
+  });
+
+  it("cancels without saving and shows legacy guidance without a guessed selector", () => {
+    const onSave = vi.fn();
+    const project: UploadedProject = {
+      ...uploadedProject,
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: { sourceId: "source-1", page: 2 },
+      }],
+    };
+    const { rerender } = render(
+      <UploadedEvidencePanel
+        project={project}
+        criterionId="analysis-1"
+        onClose={vi.fn()}
+        onSaveManualSourceLocator={onSave}
+      />,
+    );
+    expect(screen.getByTestId("edit-locator")).toBeInTheDocument();
+    expect(screen.getByTestId("remove-locator")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("edit-locator"));
+    fireEvent.change(screen.getByTestId("locator-source"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Manually recorded page: 2")).toBeInTheDocument();
+
+    const legacy: UploadedProject = { ...project, sources: undefined };
+    rerender(
+      <UploadedEvidencePanel
+        project={legacy}
+        criterionId="analysis-1"
+        onClose={vi.fn()}
+        onSaveManualSourceLocator={onSave}
+      />,
+    );
+    expect(screen.getByTestId("legacy-registry-guidance")).toBeInTheDocument();
+    expect(screen.queryByTestId("locator-source")).not.toBeInTheDocument();
+  });
+
+  it("reports a missing source on the source field and keeps a failed save editable", async () => {
+    const onSave = vi.fn().mockResolvedValue("failed");
+    const project: UploadedProject = {
+      ...uploadedProject,
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: null,
+      }],
+    };
+    render(
+      <UploadedEvidencePanel
+        project={project}
+        criterionId="analysis-1"
+        onClose={vi.fn()}
+        onSaveManualSourceLocator={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("add-locator"));
+    fireEvent.click(screen.getByTestId("save-locator"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByTestId("locator-source-error")).toHaveTextContent("Choose an included source.");
+    expect(screen.getByTestId("locator-source")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByTestId("locator-page-error")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("locator-source"), { target: { value: "source-1" } });
+    fireEvent.change(screen.getByTestId("locator-page"), { target: { value: "2" } });
+    fireEvent.click(screen.getByTestId("save-locator"));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith("analysis-1", { sourceId: "source-1", page: 2 }));
+    expect(screen.getByTestId("locator-source")).toBeInTheDocument();
+    expect(screen.getByTestId("locator-save-error")).toHaveTextContent("could not be saved");
+    expect(screen.getByTestId("locator-page")).toHaveValue(2);
+  });
+
+  it("removes a locator by saving a null location", async () => {
+    const onSave = vi.fn().mockResolvedValue("saved");
+    const project: UploadedProject = {
+      ...uploadedProject,
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: { sourceId: "source-1", page: 2 },
+      }],
+    };
+    render(
+      <UploadedEvidencePanel
+        project={project}
+        criterionId="analysis-1"
+        onClose={vi.fn()}
+        onSaveManualSourceLocator={onSave}
+      />,
+    );
+    const confirm = window.confirm;
+    window.confirm = vi.fn(() => true);
+    fireEvent.click(screen.getByTestId("remove-locator"));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith("analysis-1", null));
+    expect(window.confirm).toHaveBeenCalled();
+    window.confirm = confirm;
   });
 });

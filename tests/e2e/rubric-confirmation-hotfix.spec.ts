@@ -110,8 +110,17 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 async function openEvidence(page: Page, criterionName: string) {
-  await page.getByRole("button", { name: new RegExp(`Open source for ${criterionName}`) }).click();
+  await page.getByRole("button", {
+    name: new RegExp(
+      `(?:View retained source evidence|View or edit source location|Add source location): ${criterionName}`,
+    ),
+  }).click();
   return page.getByRole("dialog");
+}
+
+async function closeEvidence(page: Page) {
+  await page.getByRole("dialog").getByRole("button", { name: /Close evidence panel|关闭原文依据面板/ }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -253,33 +262,33 @@ test("source traceability survives parsing, reload, and backup restoration", asy
   let dialog = await openEvidence(page, "Criterion Alpha");
   await expect(dialog).toContainText("Recorded page: 1");
   await expect(dialog).toContainText("Criterion Alpha | 50%");
-  await dialog.getByRole("button", { name: "Close evidence panel" }).click();
+  await closeEvidence(page);
   dialog = await openEvidence(page, "Criterion Beta");
   await expect(dialog).toContainText("Recorded page: 3");
-  await dialog.getByRole("button", { name: "Close evidence panel" }).click();
+  await closeEvidence(page);
   dialog = await openEvidence(page, "Manual locator criterion");
   await expect(dialog).toContainText("Manually linked source: fictional-three-page-rubric.pdf");
   await expect(dialog).toContainText("Manually recorded page: 2");
   await expect(dialog).toContainText("No retained excerpt");
-  await dialog.getByRole("button", { name: "Close evidence panel" }).click();
+  await closeEvidence(page);
   dialog = await openEvidence(page, "Unlinked manual criterion");
   await expect(dialog).toContainText("No source linked");
   await expect(dialog).not.toContainText("Page not available");
-  await dialog.getByRole("button", { name: "Close evidence panel" }).click();
+  await closeEvidence(page);
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Confirm what earns marks." })).toBeVisible();
   dialog = await openEvidence(page, "Manual locator criterion");
   await expect(dialog).toContainText("Manually recorded page: 2");
-  await dialog.getByRole("button", { name: "Close evidence panel" }).click();
+  await closeEvidence(page);
 
   await page.getByRole("combobox", { name: /language|语言/i }).selectOption("zh-CN");
-  await page.getByRole("button", { name: /打开Manual locator criterion的来源/ }).click();
+  await page.getByRole("button", { name: /查看或编辑来源定位: Manual locator criterion/ }).click();
   dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("手动关联来源：fictional-three-page-rubric.pdf");
   await expect(dialog).toContainText("手动记录页码：2");
   await expect(dialog).toContainText("未保留来源摘录");
-  await dialog.getByRole("button", { name: "关闭原文依据面板" }).click();
+  await closeEvidence(page);
   await page.setViewportSize({ width: 320, height: 844 });
   await expectNoHorizontalOverflow(page);
   await page.getByRole("combobox", { name: /language|语言/i }).selectOption("en");
@@ -327,14 +336,14 @@ test("source traceability survives parsing, reload, and backup restoration", asy
   await visibleWorkflowButton(page, /Rubric/).click();
   dialog = await openEvidence(page, "Criterion Alpha");
   await expect(dialog).toContainText("Recorded page: 1");
-  await dialog.getByRole("button", { name: "Close evidence panel" }).click();
+  await closeEvidence(page);
   dialog = await openEvidence(page, "Criterion Beta");
   await expect(dialog).toContainText("Recorded page: 3");
-  await dialog.getByRole("button", { name: "Close evidence panel" }).click();
+  await closeEvidence(page);
   dialog = await openEvidence(page, "Manual locator criterion");
   await expect(dialog).toContainText("Manually recorded page: 2");
   await expect(dialog).toContainText("No retained excerpt");
-  await dialog.getByRole("button", { name: "Close evidence panel" }).click();
+  await closeEvidence(page);
 
   await visibleWorkflowButton(page, /Check/).click();
   await page.getByRole("combobox", { name: "Rubric criterion" }).selectOption("manual-locator-criterion-3");
@@ -356,6 +365,7 @@ test("a two-page PDF rejects page 3 before project creation", async ({ page }) =
     mimeType: "application/pdf",
     buffer: twoPageRubricPdf(),
   });
+  await expect(page.getByRole("heading", { name: "Confirm what the assignment says." })).toBeVisible();
   await page.getByRole("button", { name: "Add missing criterion" }).click();
   await page.getByTestId("criterion-name-2").fill("Manual verification criterion");
   await page.getByTestId("criterion-weight-0").fill("45");

@@ -342,8 +342,11 @@ describe("UploadSummaryView manual criterion workflow", () => {
       target: { value: "source-1" },
     });
     const page = screen.getByTestId("criterion-source-page-0");
-    fireEvent.change(page, { target: { value: "3" } });
-    fireEvent.click(screen.getByTestId("create-project"));
+    for (const invalid of ["0", "-1", "1.5", "3", "999"]) {
+      fireEvent.change(page, { target: { value: invalid } });
+      fireEvent.click(screen.getByTestId("create-project"));
+      expect(onCreateProject).not.toHaveBeenCalled();
+    }
 
     expect(onCreateProject).not.toHaveBeenCalled();
     expect(

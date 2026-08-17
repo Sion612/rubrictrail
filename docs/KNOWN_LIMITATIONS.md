@@ -1,16 +1,23 @@
 # Known limitations
 
-1. **Confirmation, not semantic extraction.** Custom uploads and pasted text use
+1. **Calendar dates are targets, not appointments.** The Plan Calendar and `.ics`
+   export use each task's target completion date. RubricTrail does not invent
+   study-time blocks, reminders, provider sync or subscription URLs. Importing
+   an `.ics` file may cause an external calendar provider to store assignment
+   metadata.
+2. **Older projects cannot guess sources.** Projects saved before the compact
+   source registry cannot add a locator until the original files are re-imported.
+3. **Confirmation, not semantic extraction.** Custom uploads and pasted text use
    conservative local parsing. Users must compare all confirmed fields and
    criteria with the authoritative assignment source.
-2. **Manual draft judgment.** Custom-project self-checks record what a user
+4. **Manual draft judgment.** Custom-project self-checks record what a user
    selected; they do not verify argument quality, facts, citations or grades.
-3. **Planning depth is not a grade goal.** Choosing `focused`, `standard`,
+5. **Planning depth is not a grade goal.** Choosing `focused`, `standard`,
    `thorough` or `extended` changes task scope and scheduling time allowance
    only. It does not express a target mark, estimate the likelihood of an
    outcome or predict a grade. State v3 retains the old numeric `targetGrade`
    field only as a backward-compatible internal encoding for that choice.
-4. **Image OCR is bounded and probabilistic.** PNG, JPEG and WebP files use
+6. **Image OCR is bounded and probabilistic.** PNG, JPEG and WebP files use
    local English and Simplified Chinese OCR. Results can be wrong, especially
    for handwriting, low contrast, unusual layouts or other scripts, so every
    OCR-derived field and excerpt must be checked against the original image.
@@ -23,7 +30,7 @@
    for Chinese assignments.
    TXT files must be valid UTF-8; files saved in another encoding are rejected
    with instructions to save a UTF-8 copy or paste the text.
-5. **Partial recovery is explicit and per-file.** A mixed batch can continue
+7. **Partial recovery is explicit and per-file.** A mixed batch can continue
    with its readable subset only after explicit confirmation. This includes
    omitting one PDF above the 200-page per-file limit. Choosing files again
    replaces the whole batch; it does not append one repaired file to the
@@ -32,11 +39,11 @@
    batch and never select later files for omission based on their order. Every
    selected PDF with readable page-count metadata contributes to the 400-page
    total, including one later offered for omission because it exceeds 200 pages.
-6. **Retained excerpts are not the authoritative source.** RubricTrail validates
+8. **Retained excerpts are not the authoritative source.** RubricTrail validates
    the compact source label and excerpt shape when saving or restoring, but it
    discards full source text and cannot later re-verify the excerpt against the
    original document. Re-check the original before relying on it.
-7. **Resource limits are not a full sandbox.** Real-file intake is limited to 10
+9. **Resource limits are not a full sandbox.** Real-file intake is limited to 10
    files, 10 MiB each and 25 MiB combined; PDFs are limited to 200 pages each and
    400 pages per selection; merged text is limited to 2,000,000 normalized
    characters, 50,000 merged lines and 100,000 merged whitespace-delimited
@@ -48,7 +55,7 @@
    cancellable. The internal direct-string summary overload also applies the
    2,000,000-character ceiling to raw input before normalization. Do not open
    deliberately malicious documents.
-8. **Weight availability needs human confirmation.** A parser `null` means that
+10. **Weight availability needs human confirmation.** A parser `null` means that
    RubricTrail did not confidently extract a weight; it does not prove that the
    school published no weights. Users must check the authoritative source and
    explicitly choose whether it contains a complete percentage breakdown. A
@@ -57,9 +64,9 @@
    stores unknown values as `null`, but none of those values weights the plan;
    incomplete and unweighted rubrics use the same neutral planning starting
    point. Missing percentages are never guessed or automatically completed.
-9. **Simple rubric parser.** Explicit lines such as `Analysis | 30%` work best.
+11. **Simple rubric parser.** Explicit lines such as `Analysis | 30%` work best.
    Complex tables may require manual repair in the confirmation screen.
-10. **Manual portability only.** There is no account, automatic sync,
+12. **Manual portability only.** There is no account, automatic sync,
     collaboration or multi-project dashboard. Simultaneous tabs are detected and
     autosave is paused, but edits are not merged; download either version before
     choosing which one to keep. A versioned JSON backup can move one project
@@ -74,15 +81,15 @@
     only a content-free tombstone, but a still-open older tab can write its key
     again afterward. Close older tabs before resetting sensitive work.
     Without Web Locks, mutation fails closed and edits remain only in that tab.
-11. **Close-time saving is best effort.** Autosave waits 250 ms, while hidden-page
+13. **Close-time saving is best effort.** Autosave waits 250 ms, while hidden-page
     and `pagehide` handlers start an asynchronous flush. A close during the
     debounce, browser shutdown or force-kill may stop that work and lose the last
     uncommitted edit. Download a backup before closing when the interface reports
     tab-only changes.
-12. **Local-first is not complete offline support.** Files and project content are
+14. **Local-first is not complete offline support.** Files and project content are
     processed in the browser after the app loads, but there is no service worker
     guarantee that the application can be loaded or reopened without its host.
-13. **Bilingual interface is not source translation.** The single application
+15. **Bilingual interface is not source translation.** The single application
     URL supports English and Simplified Chinese product controls and stores that
     preference separately from projects and backups. Uploaded or pasted source
     content, project titles, course names, criteria, excerpts and draft notes
@@ -91,16 +98,16 @@
     numeric dates blank. Chinese materials require manual confirmation. There is
     no separate `/zh-CN` route or language-specific server-rendered page, and the
     optional Live API's machine-readable errors remain English.
-14. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal
+16. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal
     demo, not semantic evaluation or a predicted grade.
-15. **No public Live service.** The optional server adapter lacks the full rate,
+17. **No public Live service.** The optional server adapter lacks the full rate,
     budget, abuse and consent controls required for a public deployment.
-16. **The public demo is static-only.** It is deployed at
+18. **The public demo is static-only.** It is deployed at
     <https://sion612.github.io/rubrictrail/>, omits the Live API and Node
     response-header configuration, and is subject to GitHub Pages' HTTPS,
     caching and response-header policy. GitHub still receives ordinary page and
     asset request metadata.
-17. **Browser storage is origin-scoped.** `localStorage` is shared by scripts on
+19. **Browser storage is origin-scoped.** `localStorage` is shared by scripts on
     the same origin; the `/rubrictrail` path is not an isolation boundary. Do not
     colocate the demo with unrelated or untrusted scripts when project content is
     sensitive.

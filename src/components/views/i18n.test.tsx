@@ -77,6 +77,12 @@ describe("core view localization", () => {
         <ChineseControl />
         <ActionPlanView
           plan={plan}
+          assignment={{
+            id: SAMPLE_ASSIGNMENT.id,
+            title: SAMPLE_ASSIGNMENT.title,
+            course: SAMPLE_ASSIGNMENT.course,
+            dueDate: SAMPLE_ASSIGNMENT.dueAt.slice(0, 10),
+          }}
           onRebalance={vi.fn()}
           onToggleTask={onToggleTask}
           onNavigateDraft={vi.fn()}
@@ -146,6 +152,12 @@ describe("core view localization", () => {
         />
         <ActionPlanView
           plan={plan}
+          assignment={{
+            id: SAMPLE_ASSIGNMENT.id,
+            title: SAMPLE_ASSIGNMENT.title,
+            course: SAMPLE_ASSIGNMENT.course,
+            dueDate: SAMPLE_ASSIGNMENT.dueAt.slice(0, 10),
+          }}
           onRebalance={vi.fn()}
           onToggleTask={vi.fn()}
           onNavigateDraft={vi.fn()}

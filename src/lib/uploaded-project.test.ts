@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { generateActionPlan } from "@/lib/plan";
 import {
+  applyManualSourceLocator,
+  manualSourceLocatorsEqual,
   buildUploadedPlanTemplates,
   createUploadedProject,
   draftFromUpload,
+  invalidateUploadedReviewAfterLocatorChange,
   isConfirmedUploadedReview,
   normalizeDateForInput,
   validateUploadedProjectDraft,
@@ -82,10 +85,11 @@ describe("uploaded project workflow", () => {
   });
 
   it("requires user-confirmed fields and weights totalling 100", () => {
-    const draft = draftFromUpload(completeUpload());
-    expect(validateUploadedProjectDraft(draft)).toEqual([]);
+    const upload = completeUpload();
+    const draft = draftFromUpload(upload);
+    expect(validateUploadedProjectDraft(draft, upload.sources)).toEqual([]);
     draft.criteria[0].weight = "39";
-    expect(validateUploadedProjectDraft(draft)).toContain(
+    expect(validateUploadedProjectDraft(draft, upload.sources)).toContain(
       "Published rubric weights must total 100%; they currently total 99%. Check for a missing criterion or a mistyped percentage.",
     );
   });
@@ -95,7 +99,7 @@ describe("uploaded project workflow", () => {
     const titleDraft = draftFromUpload(upload);
     titleDraft.title = "Strategy Report\nNo existing project will be removed";
 
-    expect(validateUploadedProjectDraft(titleDraft)).toContain(
+    expect(validateUploadedProjectDraft(titleDraft, upload.sources)).toContain(
       "Use a single-line assignment title without control or bidirectional formatting characters.",
     );
     expect(() => createUploadedProject(upload, titleDraft)).toThrow(
@@ -104,7 +108,7 @@ describe("uploaded project workflow", () => {
 
     const courseDraft = draftFromUpload(upload);
     courseDraft.course = "BUS302\u202Etxt.exe";
-    expect(validateUploadedProjectDraft(courseDraft)).toContain(
+    expect(validateUploadedProjectDraft(courseDraft, upload.sources)).toContain(
       "Use a single-line course or module name without control or bidirectional formatting characters.",
     );
     expect(() => createUploadedProject(upload, courseDraft)).toThrow(
@@ -113,10 +117,11 @@ describe("uploaded project workflow", () => {
   });
 
   it("requires an explicit choice when published weights are incomplete", () => {
-    const draft = draftFromUpload(incompleteWeightUpload());
+    const upload = incompleteWeightUpload();
+    const draft = draftFromUpload(upload);
 
     expect(draft.weightingMode).toBeNull();
-    expect(validateUploadedProjectDraft(draft)).toContain(
+    expect(validateUploadedProjectDraft(draft, upload.sources)).toContain(
       "Choose whether the official rubric provides a complete percentage breakdown.",
     );
   });
@@ -126,7 +131,7 @@ describe("uploaded project workflow", () => {
     const draft = draftFromUpload(upload);
     draft.weightingMode = "not_complete";
 
-    expect(validateUploadedProjectDraft(draft)).toEqual([]);
+    expect(validateUploadedProjectDraft(draft, upload.sources)).toEqual([]);
     const project = createUploadedProject(upload, draft);
     expect(project.weightingStatus).toBe("incomplete");
     expect(project.criteria.map((criterion) => criterion.weight)).toEqual([
@@ -158,7 +163,7 @@ describe("uploaded project workflow", () => {
     const draft = draftFromUpload(upload);
     draft.weightingMode = "not_complete";
 
-    expect(validateUploadedProjectDraft(draft)).toEqual([]);
+    expect(validateUploadedProjectDraft(draft, upload.sources)).toEqual([]);
     const project = createUploadedProject(upload, draft);
     expect(project.weightingStatus).toBe("none");
     expect(project.criteria.map((criterion) => criterion.weight)).toEqual([
@@ -168,34 +173,35 @@ describe("uploaded project workflow", () => {
   });
 
   it("validates an optional partial percentage without requiring missing values", () => {
-    const draft = draftFromUpload(incompleteWeightUpload());
+    const upload = incompleteWeightUpload();
+    const draft = draftFromUpload(upload);
     draft.weightingMode = "not_complete";
     draft.criteria[0].weight = "not-a-number";
 
-    expect(validateUploadedProjectDraft(draft)).toContain(
+    expect(validateUploadedProjectDraft(draft, upload.sources)).toContain(
       "Criterion 1: use an official percentage greater than 0 and no more than 100, or leave it blank if none is published.",
     );
     draft.criteria[0].weight = "";
-    expect(validateUploadedProjectDraft(draft)).toEqual([]);
+    expect(validateUploadedProjectDraft(draft, upload.sources)).toEqual([]);
   });
 
   it("rejects calendar-invalid and resource-exhausting project inputs", () => {
     const upload = completeUpload();
     const invalidDate = draftFromUpload(upload);
     invalidDate.dueDate = "2026-02-31";
-    expect(validateUploadedProjectDraft(invalidDate)).toContain(
+    expect(validateUploadedProjectDraft(invalidDate, upload.sources)).toContain(
       "Add a real calendar deadline.",
     );
 
     const hugeProject = draftFromUpload(upload);
     hugeProject.wordCount = "50001";
-    expect(validateUploadedProjectDraft(hugeProject)).toContain(
+    expect(validateUploadedProjectDraft(hugeProject, upload.sources)).toContain(
       "Keep the word count at or below 50,000 words.",
     );
 
     const farFuture = draftFromUpload(upload);
     farFuture.dueDate = `${Number(new Date().getFullYear()) + 5}-09-24`;
-    expect(validateUploadedProjectDraft(farFuture)).toContain(
+    expect(validateUploadedProjectDraft(farFuture, upload.sources)).toContain(
       "Choose a deadline within the next four years.",
     );
   });
@@ -281,5 +287,50 @@ describe("uploaded project workflow", () => {
     expect(plan.tasks.at(-1)?.id).toBe("submission-qa");
     expect(plan.tasks.flatMap((task) => task.rubricLinks).every((link) => criterionIds.has(link.criterionId))).toBe(true);
     expect(plan.rubricProgress).toHaveLength(3);
+  });
+
+  it("applies a manual locator to one criterion and invalidates only source-traceable review state", () => {
+    const upload = completeUpload();
+    const project = createUploadedProject(upload, draftFromUpload(upload));
+    const editable = {
+      ...project,
+      criteria: project.criteria.map((criterion, index) =>
+        index === 0 ? { ...criterion, evidence: null } : criterion,
+      ),
+    };
+    const updated = applyManualSourceLocator(editable, editable.criteria[0].id, {
+      sourceId: "source-1",
+      page: null,
+    });
+    expect(updated.criteria[0].manualSourceLocator).toEqual({
+      sourceId: "source-1",
+      page: null,
+    });
+    expect(updated.criteria[1].manualSourceLocator).toBeNull();
+    expect(updated.criteria[0].evidence).toBeNull();
+
+    const review = invalidateUploadedReviewAfterLocatorChange({
+      criterionId: project.criteria[0].id,
+      draftText: "A traceable paragraph with enough detail.",
+      evidenceVisible: true,
+      linkExplained: true,
+      sourceTraceable: true,
+      updatedAt: "2026-08-12T00:00:00.000Z",
+    });
+    expect(review?.sourceTraceable).toBe(false);
+    expect(review?.updatedAt).toBeNull();
+    expect(review?.evidenceVisible).toBe(true);
+    expect(review?.linkExplained).toBe(true);
+    expect(review?.draftText).toContain("traceable paragraph");
+  });
+
+  it("treats identical locators as unchanged so a no-op save can skip invalidation", () => {
+    expect(manualSourceLocatorsEqual(null, null)).toBe(true);
+    expect(manualSourceLocatorsEqual(undefined, null)).toBe(true);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: 2 }, { sourceId: "source-1", page: 2 })).toBe(true);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: null }, { sourceId: "source-1", page: null })).toBe(true);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: 2 }, { sourceId: "source-1", page: 1 })).toBe(false);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: 2 }, { sourceId: "source-2", page: 2 })).toBe(false);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: 2 }, null)).toBe(false);
   });
 });

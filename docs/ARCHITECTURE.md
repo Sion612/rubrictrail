@@ -39,6 +39,9 @@ flowchart LR
 | Confirmation | Editable criteria, an explicit complete/not-complete choice and a 100% gate only for complete weighting | `src/components/upload-summary-view.tsx` |
 | Uploaded project | Compact persisted model and generic task templates | `src/lib/uploaded-project.ts` |
 | Planning | Deterministic dependency and capacity scheduling | `src/lib/plan.ts` |
+| Calendar presentation | Transient month/agenda view of Action Plan dates | `src/components/views/plan-calendar-view.tsx`, `src/lib/date-only.ts` |
+| ICS export | Browser-local all-day snapshot of remaining tasks | `src/lib/icalendar.ts` |
+| Manual locator editing | Post-creation Add/Edit/Remove for criteria without retained evidence | `src/components/uploaded-evidence-panel.tsx` |
 | Uploaded checks | Human evidence-trail checklist, no automatic score | `uploaded-project-views.tsx` |
 | Sample contract | Strict source, evidence, rubric and feedback schemas | `src/lib/domain.ts`, `src/lib/sample-data.ts` |
 | Persistence | Revisioned authoritative Web Storage record, exclusive Web Locks mutation, state-v3 validation, tombstones, compatibility-lineage checks and explicit privacy purge | `src/lib/local-state.ts` |

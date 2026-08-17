@@ -383,7 +383,7 @@ test("real upload can create and persist a source-linked local project", async (
   await page.getByRole("button", { name: "Review rubric" }).click();
   await expect(page.getByRole("heading", { name: "Confirm what earns marks." })).toBeVisible();
   await expectWorkspaceAtTop(page);
-  const evidenceButton = page.getByRole("button", { name: "Open source for Strategic analysis" });
+  const evidenceButton = page.getByRole("button", { name: "View retained source evidence: Strategic analysis" });
   await evidenceButton.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("Strategic analysis | 40%");

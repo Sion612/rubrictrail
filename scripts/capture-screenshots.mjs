@@ -40,7 +40,7 @@ try {
   await createProject(desktop);
   await desktop.getByRole("button", { name: "Review rubric" }).click();
   await desktop.waitForFunction(() => window.scrollY === 0);
-  await desktop.getByRole("button", { name: "Open source for Strategic analysis" }).click();
+  await desktop.getByRole("button", { name: "View retained source evidence: Strategic analysis" }).click();
   await desktop.getByTestId("toast").waitFor({ state: "detached", timeout: 5_000 });
   await desktop.evaluate(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });

@@ -1,0 +1,5 @@
+.editor { display: grid; gap: 12px; min-width: 0; }
+.form { display: grid; gap: 12px; min-width: 0; }
+.form label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.form select, .form input { width: 100%; min-width: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -65,13 +65,17 @@ import {
   serializeProjectBackup,
 } from "@/lib/project-backup";
 import {
+  applyManualSourceLocator,
   buildUploadedPlanTemplates,
+  invalidateUploadedReviewAfterLocatorChange,
   isConfirmedUploadedReview,
+  manualSourceLocatorsEqual,
   todayIso,
 } from "@/lib/uploaded-project";
 import type {
   AssignmentFileIntakeError,
   AssignmentIntakeMode,
+  ManualSourceLocator,
   NoticeState,
   PastedTextIntakeError,
   PersistedProjectState,
@@ -1757,6 +1761,57 @@ export function RubricTrailApp() {
     });
   }
 
+  async function saveManualSourceLocator(
+    criterionId: string,
+    locator: ManualSourceLocator | null,
+  ): Promise<"saved" | "tab-only" | "failed"> {
+    const current = latestProject.current;
+    if (!current.uploadedProject) return "failed";
+    const criterion = current.uploadedProject.criteria.find((item) => item.id === criterionId);
+    if (!criterion) return "failed";
+    if (manualSourceLocatorsEqual(criterion.manualSourceLocator, locator)) {
+      return "saved";
+    }
+    try {
+      const nextProject = applyManualSourceLocator(
+        current.uploadedProject,
+        criterionId,
+        locator,
+      );
+      const existingReview = current.uploadedCriterionReviews.find(
+        (review) => review.criterionId === criterionId,
+      );
+      const nextReview = invalidateUploadedReviewAfterLocatorChange(existingReview);
+      updateProject({
+        ...current,
+        uploadedProject: nextProject,
+        uploadedCriterionReviews: nextReview
+          ? [
+              ...current.uploadedCriterionReviews.filter(
+                (review) => review.criterionId !== criterionId,
+              ),
+              nextReview,
+            ]
+          : current.uploadedCriterionReviews,
+      });
+    } catch {
+      showNotice({ tone: "warning", message: appText("notice.locatorFailed") });
+      return "failed";
+    }
+    const outcome = await flushPendingProject();
+    if (outcome === "saved") {
+      showNotice({
+        tone: "success",
+        message: locator
+          ? appText("notice.locatorSaved")
+          : appText("notice.locatorRemoved"),
+      });
+      return "saved";
+    }
+    showNotice({ tone: "warning", message: appText("notice.locatorTabOnly") });
+    return "tab-only";
+  }
+
   function toggleReadiness(id: string) {
     updateProject((current) => ({
       ...current,
@@ -1957,6 +2012,12 @@ export function RubricTrailApp() {
       activeView = (
         <ActionPlanView
           plan={plan}
+          assignment={{
+            id: uploaded.id,
+            title: uploaded.title,
+            course: uploaded.course,
+            dueDate: uploaded.dueDate,
+          }}
           onRebalance={rebalancePlan}
           onToggleTask={toggleTask}
           onNavigateDraft={() => navigate("draft")}
@@ -1993,6 +2054,12 @@ export function RubricTrailApp() {
     activeView = (
       <ActionPlanView
         plan={plan}
+        assignment={{
+          id: SAMPLE_ASSIGNMENT.id,
+          title: SAMPLE_ASSIGNMENT.title,
+          course: SAMPLE_ASSIGNMENT.course,
+          dueDate: SAMPLE_ASSIGNMENT.dueAt.slice(0, 10),
+        }}
         onRebalance={rebalancePlan}
         onToggleTask={toggleTask}
         onNavigateDraft={() => navigate("draft")}
@@ -2033,7 +2100,7 @@ export function RubricTrailApp() {
     : sampleStepStates(project, plan.completionPercent, currentDraftResult !== null);
   const evidencePanel = selectedEvidenceId
     ? uploaded
-      ? <UploadedEvidencePanel project={uploaded} criterionId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />
+      ? <UploadedEvidencePanel project={uploaded} criterionId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} onSaveManualSourceLocator={saveManualSourceLocator} />
       : <EvidencePanel analysis={SAMPLE_ASSIGNMENT} evidenceId={selectedEvidenceId} onClose={() => setSelectedEvidenceId(null)} />
     : null;
 

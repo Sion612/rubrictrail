@@ -33,6 +33,19 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ## What works today
 
+### v0.7.0 release candidate: source editing, Calendar and local ICS
+
+The v0.7.0 package adds:
+
+- post-creation Add / Edit / Remove for manual source locators;
+- a Plan Calendar of target completion dates;
+- a browser-local `.ics` snapshot of remaining tasks and the deadline.
+
+This candidate has not yet been merged to `main` or published as a GitHub
+Release. The public GitHub Pages demo still reflects the last deployed main
+build until that separate release phase completes. Calendar dates are not
+appointments, and `.ics` import may be stored by an external calendar provider.
+
 ### v0.6.0: English and Simplified Chinese interface
 
 v0.6.0 adds **Interface language / 界面语言** on the

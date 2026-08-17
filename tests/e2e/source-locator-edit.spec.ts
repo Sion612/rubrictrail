@@ -140,4 +140,27 @@ test("post-creation locator add, edit, and remove persist without confirming Che
   await visibleWorkflowButton(page, "Rubric").click();
   await page.getByRole("button", { name: /View or edit source location: Unlinked manual criterion/ }).click();
   await expect(page.getByText("Manually recorded page: 1")).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("remove-locator").click();
+  await expect(page.getByTestId("add-locator")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Close evidence panel" }).click();
+  await page.reload();
+  await visibleWorkflowButton(page, "Rubric").click();
+  await expect(page.getByRole("button", { name: /Add source location: Unlinked manual criterion/ })).toBeVisible();
+  await page.getByRole("button", { name: /Add source location: Unlinked manual criterion/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("No source linked");
+  await page.getByRole("dialog").getByRole("button", { name: "Close evidence panel" }).click();
+  await visibleWorkflowButton(page, "Check").click();
+  await page.getByRole("combobox", { name: "Rubric criterion" }).selectOption("unlinked-manual-criterion-3");
+  await expect(page.getByLabel("The source is traceable")).not.toBeChecked();
+
+  await page.getByLabel("Project backup options").click();
+  const removedBackup = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Download backup/ }).click();
+  const removedPath = await removedBackup.then((item) => item.path());
+  expect(removedPath).not.toBeNull();
+  const { readFile } = await import("node:fs/promises");
+  const removedBackupText = await readFile(removedPath!, "utf8");
+  expect(removedBackupText).not.toMatch(/"manualSourceLocator":\s*\{\s*"sourceId":\s*"source-1"/);
 });

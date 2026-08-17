@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock3, Download } from "lucide-react";
 import type { ActionPlan, PlanTask } from "@/lib/domain";
 import {
@@ -54,27 +54,31 @@ function preferredDate(plan: ActionPlan, assignment: CalendarExportAssignment): 
   return assignment.dueDate || plan.profile.dueDate || plan.profile.asOfDate;
 }
 
-function monthStillUseful(
+function selectionStillValid(
   date: string,
   plan: ActionPlan,
   assignment: CalendarExportAssignment,
 ): boolean {
-  const month = startOfMonth(date);
-  if (startOfMonth(assignment.dueDate) === month) return true;
-  if (startOfMonth(plan.profile.asOfDate) === month) return true;
-  return plan.tasks.some((task) => startOfMonth(task.dueDate) === month);
+  if (date === assignment.dueDate || date === plan.profile.asOfDate) return true;
+  return plan.tasks.some((task) => task.dueDate === date);
 }
 
-function resolveSelectedDate(
+function reconcileSelectedDate(
   current: string,
   plan: ActionPlan,
   assignment: CalendarExportAssignment,
 ): string {
-  if (plan.tasks.length > 0 && plan.tasks.every((task) => task.completed)) {
-    return assignment.dueDate;
-  }
-  if (monthStillUseful(current, plan, assignment)) return current;
+  if (selectionStillValid(current, plan, assignment)) return current;
   return preferredDate(plan, assignment);
+}
+
+function scheduleSignature(plan: ActionPlan, assignment: CalendarExportAssignment): string {
+  return [
+    assignment.dueDate,
+    plan.profile.asOfDate,
+    plan.profile.dueDate,
+    ...plan.tasks.map((task) => `${task.id}:${task.dueDate}:${Number(task.completed)}`),
+  ].join("|");
 }
 
 function taskFlags(task: PlanTask, plan: ActionPlan, assignment: CalendarExportAssignment): CalendarTaskFlags {
@@ -112,11 +116,18 @@ export function PlanCalendarView({
   const [selectedDate, setSelectedDate] = useState(() => preferredDate(plan, assignment));
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const resolvedSelected = resolveSelectedDate(selectedDate, plan, assignment);
-  if (resolvedSelected !== selectedDate) {
-    setSelectedDate(resolvedSelected);
-    setVisibleMonth(startOfMonth(resolvedSelected));
-  }
+  const signature = scheduleSignature(plan, assignment);
+  const lastSignatureRef = useRef(signature);
+
+  useEffect(() => {
+    if (lastSignatureRef.current === signature) return;
+    lastSignatureRef.current = signature;
+    setSelectedDate((current) => {
+      const next = reconcileSelectedDate(current, plan, assignment);
+      setVisibleMonth(startOfMonth(next));
+      return next;
+    });
+  }, [signature, plan, assignment]);
 
   const tasksByDate = useMemo(() => {
     const grouped = new Map<string, PlanTask[]>();
@@ -300,7 +311,10 @@ export function PlanCalendarView({
                         stateText,
                       ].filter(Boolean).join(". ")}
                       aria-pressed={isSelected}
-                      onClick={() => setSelectedDate(date)}
+                      onClick={() => {
+                        setSelectedDate(date);
+                        setVisibleMonth(startOfMonth(date));
+                      }}
                     >
                       <span>{formatNumber(Number(date.slice(8)))}</span>
                       {isDeadline ? <span className={styles.flag}>{messages.assignmentDeadline}</span> : null}

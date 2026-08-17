@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActionPlanView } from "@/components/views/action-plan-view";
-import { addCalendarMonths } from "@/lib/date-only";
 import { DEFAULT_PLAN_INPUT, generateActionPlan } from "@/lib/plan";
 import { SAMPLE_ASSIGNMENT } from "@/lib/sample-data";
 
@@ -54,7 +53,7 @@ describe("plan calendar presentation", () => {
     expect(onToggleTask).toHaveBeenCalledWith(firstIncomplete!.id);
   });
 
-  it("keeps the selected week in the visible month and exposes a status legend", async () => {
+  it("lets Previous and Next reach empty months and keeps the selected week in that month", async () => {
     const plan = generateActionPlan(DEFAULT_PLAN_INPUT);
     render(
       <ActionPlanView
@@ -69,13 +68,61 @@ describe("plan calendar presentation", () => {
     await waitFor(() => expect(screen.getByTestId("plan-calendar-grid")).toBeInTheDocument());
     expect(screen.getByTestId("calendar-legend")).toHaveTextContent("Task status");
     expect(screen.getByTestId("plan-calendar-grid").querySelector("button ul")).toBeNull();
-    const firstIncomplete = plan.tasks.find((task) => !task.completed);
-    expect(firstIncomplete).toBeTruthy();
-    const initialHeading = screen.getByRole("heading", { level: 2 }).textContent;
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "June 2026" })).toBeInTheDocument());
+    expect(screen.getByTestId("calendar-day-2026-06-20")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("No tasks have a target completion date in this week.")).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
-    const moved = addCalendarMonths(firstIncomplete!.dueDate, 1);
-    await waitFor(() => expect(screen.getByRole("heading", { level: 2 }).textContent).not.toBe(initialHeading));
-    expect(screen.getByTestId(`calendar-day-${moved}`)).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("heading", { name: "Selected week" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "October 2026" })).toBeInTheDocument());
+    expect(screen.getByTestId("calendar-day-2026-10-20")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/The assignment deadline is outside this month/)).toBeInTheDocument();
+  });
+
+  it("still allows month navigation after every task is complete", async () => {
+    const seed = generateActionPlan(DEFAULT_PLAN_INPUT);
+    const plan = generateActionPlan({
+      ...DEFAULT_PLAN_INPUT,
+      completedTaskIds: seed.tasks.map((task) => task.id),
+    });
+    render(
+      <ActionPlanView
+        plan={plan}
+        assignment={assignment}
+        onRebalance={vi.fn()}
+        onToggleTask={vi.fn()}
+        onNavigateDraft={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("plan-calendar"));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "September 2026" })).toBeInTheDocument());
+    expect(screen.getByTestId("calendar-day-2026-09-07")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "August 2026" })).toBeInTheDocument());
+    expect(screen.getByTestId("calendar-day-2026-08-07")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "October 2026" })).toBeInTheDocument());
+    expect(screen.getByTestId("calendar-day-2026-10-07")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("moves a late sample task later when weekly hours drop from 10 to 5", () => {
+    const input = {
+      weeklyHours: 10,
+      planningDepth: "standard" as const,
+      startDate: "2026-08-17",
+      dueDate: "2026-09-07",
+      asOfDate: "2026-08-17",
+      completedTaskIds: ["p1"],
+    };
+    const standard = generateActionPlan(input);
+    const reduced = generateActionPlan({ ...input, weeklyHours: 5 });
+    const lateId = "p13";
+    expect(standard.tasks.find((task) => task.id === lateId)?.dueDate).toBe("2026-08-28");
+    expect(reduced.tasks.find((task) => task.id === lateId)?.dueDate).toBe("2026-09-11");
   });
 });

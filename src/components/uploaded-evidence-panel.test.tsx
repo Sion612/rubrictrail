@@ -499,4 +499,30 @@ describe("UploadedEvidencePanel", () => {
     expect(screen.getByTestId("locator-save-error")).toHaveTextContent("could not be saved");
     expect(screen.getByTestId("locator-page")).toHaveValue(2);
   });
+
+  it("removes a locator by saving a null location", async () => {
+    const onSave = vi.fn().mockResolvedValue("saved");
+    const project: UploadedProject = {
+      ...uploadedProject,
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: { sourceId: "source-1", page: 2 },
+      }],
+    };
+    render(
+      <UploadedEvidencePanel
+        project={project}
+        criterionId="analysis-1"
+        onClose={vi.fn()}
+        onSaveManualSourceLocator={onSave}
+      />,
+    );
+    const confirm = window.confirm;
+    window.confirm = vi.fn(() => true);
+    fireEvent.click(screen.getByTestId("remove-locator"));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith("analysis-1", null));
+    expect(window.confirm).toHaveBeenCalled();
+    window.confirm = confirm;
+  });
 });

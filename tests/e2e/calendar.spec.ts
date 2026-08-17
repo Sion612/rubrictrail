@@ -74,7 +74,7 @@ test("sample calendar stays transient and exports a local ICS snapshot", async (
   expect(stored).not.toContain("\"calendar\"");
 });
 
-test("calendar completion, rebalance, focus, and status labels stay in one month", async ({ page }) => {
+test("calendar completion, rebalance, focus, and empty-month navigation stay consistent", async ({ page }) => {
   test.setTimeout(90_000);
   await openSampleCalendar(page);
   const firstTask = page.getByTestId("calendar-task-p1");
@@ -87,13 +87,32 @@ test("calendar completion, rebalance, focus, and status labels stay in one month
 
   await page.getByTestId("plan-calendar").click();
   await expect(page.getByTestId("plan-calendar-grid")).toBeVisible();
-  const before = await page.getByTestId("calendar-task-p2").innerText();
+  await page.getByTestId("calendar-day-2026-08-28").click();
+  await expect(page.getByTestId("calendar-task-p13")).toContainText("28 Aug 2026");
   await page.getByTestId("weekly-hours").selectOption("5");
   await page.getByTestId("rebalance-plan").click();
   await expect(page.getByTestId("plan-calendar-grid")).toBeVisible();
-  await expect(page.locator("#plan-calendar-title")).toBeVisible();
-  const after = await page.getByTestId("calendar-task-p2").innerText();
-  expect(after === before || after.includes("Target completion")).toBe(true);
+  await page.getByTestId("calendar-day-2026-08-28").click();
+  await expect(page.getByTestId("calendar-task-p13")).toHaveCount(0);
+  await page.getByRole("button", { name: "Next month" }).click();
+  await expect(page.getByRole("heading", { name: "September 2026" })).toBeVisible();
+  await page.getByTestId("calendar-day-2026-09-11").click();
+  await expect(page.getByTestId("calendar-task-p13")).toContainText("11 Sept 2026");
+  await page.getByTestId("plan-task-list").click();
+  await expect(page.getByTestId("task-p13")).toContainText("Due 11 Sept");
+
+  await page.getByTestId("plan-calendar").click();
+  await expect(page.getByTestId("plan-calendar-grid")).toBeVisible();
+  await page.getByRole("button", { name: "Next month" }).click();
+  await expect(page.getByRole("heading", { name: "September 2026" })).toBeVisible();
+  await page.getByRole("button", { name: "Next month" }).click();
+  await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
+  await expect(page.getByText(/The assignment deadline is outside this month/)).toBeVisible();
+  await page.getByRole("button", { name: "Previous month" }).click();
+  await page.getByRole("button", { name: "Previous month" }).click();
+  await page.getByRole("button", { name: "Previous month" }).click();
+  await expect(page.getByRole("heading", { name: "July 2026" })).toBeVisible();
+  await expect(page.getByText("No tasks have a target completion date in this week.")).toBeVisible();
 });
 
 test("uploaded project calendar and Chinese ICS stay localized", async ({ page }) => {

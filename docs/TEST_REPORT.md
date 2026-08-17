@@ -22,10 +22,10 @@ merge to `main`, a git tag, a GitHub Release or a public Pages deployment.
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 31 Vitest files / 378 tests plus 3 OCR asset-audit Node tests passed |
+| `pnpm test` | 31 Vitest files / 381 tests plus 3 OCR asset-audit Node tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed |
 | `PLAYWRIGHT_PRODUCTION=true PLAYWRIGHT_APP_PATH=/ pnpm test:e2e --workers=1` | 48/48 desktop and mobile Chromium executions passed through `next start` |
-| `pnpm audit:demo` | Passed for 62 exported files; 14 initial JS/CSS files totalled 1,262,230 raw / 354,557 gzip bytes, below the unchanged 357,000-byte gzip budget; 10 deferred OCR files totalled 16,850,033 bytes |
+| `pnpm audit:demo` | Passed for 62 exported files; 14 initial JS/CSS files totalled 1,262,230 raw / 354,558 gzip bytes, below the unchanged 357,000-byte gzip budget; 10 deferred OCR files totalled 16,850,033 bytes |
 | `PLAYWRIGHT_APP_PATH=/rubrictrail/ pnpm test:e2e:demo --workers=1` | 48/48 desktop and mobile Chromium executions passed against the static `/rubrictrail` artifact |
 
 New browser coverage in this candidate:

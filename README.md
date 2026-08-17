@@ -33,7 +33,7 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ## What works today
 
-### v0.7.0 release candidate: source editing, Calendar and local ICS
+### v0.7.0: source editing, Calendar and local ICS
 
 The v0.7.0 package adds:
 
@@ -41,9 +41,7 @@ The v0.7.0 package adds:
 - a Plan Calendar of target completion dates;
 - a browser-local `.ics` snapshot of remaining tasks and the deadline.
 
-This candidate has not yet been merged to `main` or published as a GitHub
-Release. The public GitHub Pages demo still reflects the last deployed main
-build until that separate release phase completes. Calendar dates are not
+The public demo now serves the verified v0.7.0 build. Calendar dates are not
 appointments, and `.ics` import may be stored by an external calendar provider.
 
 ### v0.6.0: English and Simplified Chinese interface
@@ -55,7 +53,7 @@ Chinese on one URL, remembers the choice in the separate
 language, title, controls, errors, dates and numbers without reopening or
 rewriting the project. On the first visit, Simplified Chinese browser
 preferences select Chinese; other language preferences default to English. The
-public demo now serves the verified v0.6.0 build.
+v0.6.0 public demo first shipped this bilingual interface.
 
 The switch changes product interface text only. RubricTrail never translates
 uploaded or pasted source content, project titles, course names, rubric

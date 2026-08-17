@@ -1,34 +1,47 @@
 # Verification report
 
-The v0.7.0 release candidate adds post-creation locator editing, a transient
-Plan Calendar and a browser-local `.ics` snapshot. Exact-main CI, a GitHub
-Release and public Pages freshness for v0.7.0 are not claimed here; those
-belong to a later merge-and-release phase. The historical v0.6.0 exact-main
-evidence below remains the last published main verification.
-
-## v0.7.0 release-candidate local verification
-
 Date: 17 August 2026
 Runtime: bundled Node.js 24 locally; the repository remains pinned to pnpm
 11.9.0 for CI and contributor installs.
-Worktree: isolated `feat/v0.7.0-calendar` from `origin/main`
-[`07852a5`](https://github.com/Sion612/rubrictrail/commit/07852a5).
+Browser method: Playwright projects at desktop 1440×900 and narrow 390×844
+Chromium sizes against a fresh production build served by `next start`, plus
+the generated static demo served at `/rubrictrail`. Calendar scenarios freeze
+Playwright's clock at 2026-08-17 so month expectations do not depend on the
+wall-clock date.
 
-This section records local source, build and generated-artifact results for
-the Phase 1 release candidate only. It does not claim remote PR CI success, a
-merge to `main`, a git tag, a GitHub Release or a public Pages deployment.
+This report describes the v0.7.0 release at exact main commit
+[`3ee8b76`](https://github.com/Sion612/rubrictrail/commit/3ee8b76ee1c57a45f7ae1352a8c404f65c2ebd79).
+[GitHub Actions run 31993864121](https://github.com/Sion612/rubrictrail/actions/runs/31993864121)
+completed the quality, production-browser and static-demo gates on that
+revision after one failed-job rerun.
+
+Attempt 1 of that run kept `quality` and `pages-static` successful and failed
+one production-browser execution: `[mobile-chrome] ›
+tests/e2e/rubric-confirmation-hotfix.spec.ts:361` (`a two-page PDF rejects
+page 3 before project creation`), with 47 passed and 1 failed. The same test
+passed on `desktop-chrome` in that attempt and on both Chromium projects in
+the already-successful `pages-static` job. Attempt 2 reran only the failed
+browser job against the unchanged SHA
+`3ee8b76ee1c57a45f7ae1352a8c404f65c2ebd79` and passed 48/48, including that
+test. No third rerun was performed. The first-attempt failure is recorded as
+a CI flake; product code was not changed.
+
+## Automated gates
 
 | Command | Observed result |
 | --- | --- |
-| `pnpm lint` | Passed with zero warnings |
-| `pnpm typecheck` | Passed |
-| `pnpm test` | 31 Vitest files / 381 tests plus 3 OCR asset-audit Node tests passed |
-| `pnpm build` | Next.js 16.3.0 production build passed |
-| `PLAYWRIGHT_PRODUCTION=true PLAYWRIGHT_APP_PATH=/ pnpm test:e2e --workers=1` | 48/48 desktop and mobile Chromium executions passed through `next start` |
-| `pnpm audit:demo` | Passed for 62 exported files; 14 initial JS/CSS files totalled 1,262,230 raw / 354,558 gzip bytes, below the unchanged 357,000-byte gzip budget; 10 deferred OCR files totalled 16,850,033 bytes |
-| `PLAYWRIGHT_APP_PATH=/rubrictrail/ pnpm test:e2e:demo --workers=1` | 48/48 desktop and mobile Chromium executions passed against the static `/rubrictrail` artifact |
+| `pnpm lint` | Exact-main GitHub Actions: passed with zero warnings |
+| `pnpm typecheck` | Exact-main GitHub Actions: passed |
+| `pnpm test` | Exact-main GitHub Actions: 31 Vitest files / 381 tests plus 3 OCR asset-audit Node tests passed |
+| `pnpm test:deployment-smoke` | Exact-main GitHub Actions: 14/14 passed |
+| `pnpm build` | Exact-main GitHub Actions: Next.js 16.3.0 production build passed |
+| `pnpm test:e2e --workers=1` | Exact-main GitHub Actions attempt 2: 48/48 desktop and mobile Chromium executions passed through `next start` |
+| `pnpm build:demo` | Exact-main GitHub Actions: static export for `/rubrictrail` completed successfully |
+| `pnpm audit:demo` | Exact-main GitHub Actions: passed for 62 exported files; 14 initial JS/CSS files totalled 1,262,276 raw / 354,590 gzip bytes, below the unchanged 357,000-byte gzip budget |
+| `pnpm test:e2e:demo --workers=1` | Exact-main GitHub Actions: 48/48 desktop and mobile Chromium executions passed against the static `/rubrictrail` artifact |
+| `pnpm audit --audit-level high` | Exact-main GitHub Actions: no known vulnerabilities found |
 
-New browser coverage in this candidate:
+New browser coverage in this release:
 
 - post-creation Add / Edit / Remove of a manual source locator without
   confirming Check;
@@ -47,8 +60,7 @@ New browser coverage in this candidate:
 - changing a locator unconfirms only source-traceability and survives backup
   restore.
 
-The public GitHub Pages demo still reflects the last deployed main build
-until the separate release phase completes.
+## Historical v0.6.0 exact-main evidence
 
 Date: 15 August 2026
 Runtime: bundled Node.js 24 locally; the repository remains pinned to pnpm 11.9.0
@@ -64,7 +76,7 @@ This report describes the v0.6.0 release candidate at exact main commit
 completed the quality, production-browser and static-demo gates successfully on
 that revision.
 
-## Automated gates
+### Historical automated gates
 
 | Command | Observed result |
 | --- | --- |
@@ -161,30 +173,42 @@ the earlier baseline.
 
 ## Deployment evidence
 
-[Deploy Pages run 31881113364](https://github.com/Sion612/rubrictrail/actions/runs/31881113364)
-checked out, rebuilt and audited exact main SHA `67ff04a`, then completed both
-its build and `github-pages` deployment jobs. The generated artifact, rather
-than the live host, is what passed the 30/30 static CI browser executions.
+[Deploy Pages run 31996091011](https://github.com/Sion612/rubrictrail/actions/runs/31996091011)
+checked out, rebuilt and audited exact main SHA `3ee8b76`, then completed its
+freshness, build, `github-pages` deployment and official live-smoke jobs. The
+generated artifact, rather than the live host, is what passed the 48/48 static
+CI browser executions.
 
 A separate live HTTP smoke check observed:
 
 - `https://sion612.github.io/rubrictrail/` at 200 over HTTPS;
-- the expected v0.6.0 bilingual metadata in the deployed HTML;
-- both absent `/rubrictrail/api/live/*` routes at 404 for GET.
+- `https://sion612.github.io/rubrictrail/deployment.txt` equal to
+  `3ee8b76ee1c57a45f7ae1352a8c404f65c2ebd79`;
+- official `scripts/smoke-pages.mjs` passed after 1 attempt for that SHA,
+  including same-origin HTML-linked assets;
+- both absent `/rubrictrail/api/live/*` routes at 404 for GET and 405 for POST;
+- a local public Playwright pass of 5/5 desktop Chromium executions against
+  the live host for Calendar, local ICS download, empty-month navigation,
+  320px Calendar use, and P0 source-locator Add / Edit / Remove.
 
 GitHub Pages controls the live HTTPS, caching and response-header policy. The
 live smoke check does not claim that Pages ran the complete browser suite or
 inherits the Node runtime's configured headers.
 
+The earlier v0.6.0 Pages record remains
+[Deploy Pages run 31881113364](https://github.com/Sion612/rubrictrail/actions/runs/31881113364)
+for SHA `67ff04a`.
+
 ## Current release browser coverage
 
-The following scenarios describe the exact-main v0.6.0 runs shown in the
-automated-gates table.
+The following scenarios describe the exact-main v0.7.0 runs shown in the
+automated-gates table, including the inherited v0.6.0 coverage.
 
-Fourteen UI scenarios run at 1440×900 and a narrow responsive 390×844 Chromium
-viewport, with targeted bilingual checks narrowed to 320×700. One request-only
-HTTP-contract scenario runs once per Chromium project without rendering a page.
-The narrow project does not emulate a mobile user agent or touch device:
+Twenty-three UI scenarios run at 1440×900 and a narrow responsive 390×844
+Chromium viewport, with targeted bilingual and Calendar checks narrowed to
+320×700. One request-only HTTP-contract scenario runs once per Chromium
+project without rendering a page. The narrow project does not emulate a
+mobile user agent or touch device:
 
 - sample evidence-to-progress flow and honest demo-signal language;
 - planning-depth task scope, accessible explanation and refresh persistence
@@ -212,9 +236,17 @@ The narrow project does not emulate a mobile user agent or touch device:
 - unsupported-file and empty-draft recovery;
 - production HTTP response headers, suppressed `X-Powered-By` and uncached
   `LIVE_DISABLED` responses from both optional Live routes;
+- local image OCR stays deferred for text-only intake and runs same-origin
+  bilingual recognition with mixed-batch recovery;
+- source locators survive parsing, reload and backup restoration;
+- a two-page PDF rejects page 3 before project creation;
+- post-creation Add / Edit / Remove of a manual source locator without
+  confirming Check;
+- sample Calendar stays transient, exports a local `.ics` snapshot, keeps
+  empty-month navigation and remains usable at 320px;
 - console/page errors and document-level horizontal overflow.
 
-The static suite repeats the 14 browser-local product scenarios above and adds
+The static suite repeats the 23 browser-local product scenarios above and adds
 one static-export boundary scenario per viewport. It verifies that the app and
 PDF worker load under `/rubrictrail`, that representative local workflows do
 not request an API route or cross-origin resource, and that the exported

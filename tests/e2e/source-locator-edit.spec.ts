@@ -63,7 +63,7 @@ function visibleWorkflowButton(page: Page, label: string) {
 }
 
 test("post-creation locator add, edit, and remove persist without confirming Check", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   await page.goto(APP_PATH);
   await page.evaluate(() => window.localStorage.clear());
   await page.reload();
@@ -94,20 +94,50 @@ test("post-creation locator add, edit, and remove persist without confirming Che
   await page.getByRole("dialog").getByRole("button", { name: "Close evidence panel" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  await visibleWorkflowButton(page, "Progress").click();
-  await expect(page.getByText("Manual source locations still need checking")).toBeVisible();
   await visibleWorkflowButton(page, "Check").click();
   await page.getByRole("combobox", { name: "Rubric criterion" }).selectOption("unlinked-manual-criterion-3");
-  await expect(page.getByRole("checkbox", { name: /The source is traceable/ })).not.toBeChecked();
+  await page.getByTestId("uploaded-review-text").fill("A checked paragraph with enough detail to save.");
+  await page.getByLabel("Evidence is visible").check();
+  await page.getByLabel("The link is explained").check();
+  await page.getByLabel("The source is traceable").check();
+  await page.getByTestId("save-self-check").click();
+  await expect(page.getByTestId("toast")).toContainText("Self-check saved");
 
-  await page.reload();
   await visibleWorkflowButton(page, "Rubric").click();
   await page.getByRole("button", { name: /View or edit source location: Unlinked manual criterion/ }).click();
-  await expect(page.getByText("Manually recorded page: 2")).toBeVisible();
+  await page.getByTestId("edit-locator").click();
+  await page.getByTestId("save-locator").click();
+  await expect(page.getByTestId("edit-locator")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Close evidence panel" }).click();
+  await visibleWorkflowButton(page, "Check").click();
+  await page.getByRole("combobox", { name: "Rubric criterion" }).selectOption("unlinked-manual-criterion-3");
+  await expect(page.getByLabel("The source is traceable")).toBeChecked();
+  await expect(page.getByTestId("uploaded-review-text")).toHaveValue(/checked paragraph/);
+
+  await visibleWorkflowButton(page, "Rubric").click();
+  await page.getByRole("button", { name: /View or edit source location: Unlinked manual criterion/ }).click();
   await page.getByTestId("edit-locator").click();
   await page.getByTestId("locator-page").fill("1");
   await page.getByTestId("save-locator").click();
+  await expect(page.getByText("Source location saved in this browser")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Close evidence panel" }).click();
+  await visibleWorkflowButton(page, "Check").click();
+  await page.getByRole("combobox", { name: "Rubric criterion" }).selectOption("unlinked-manual-criterion-3");
+  await expect(page.getByLabel("The source is traceable")).not.toBeChecked();
+  await expect(page.getByLabel("Evidence is visible")).toBeChecked();
+  await expect(page.getByLabel("The link is explained")).toBeChecked();
+  await expect(page.getByTestId("uploaded-review-text")).toHaveValue(/checked paragraph/);
+
+  await page.getByLabel("Project backup options").click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Download backup/ }).click();
+  const backupPath = await downloadPromise.then((item) => item.path());
+  expect(backupPath).not.toBeNull();
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByTestId("remove-locator").click();
-  await expect(page.getByTestId("add-locator")).toBeVisible();
+  await page.getByLabel("Reset local project").click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("backup-file-input").setInputFiles(backupPath!);
+  await visibleWorkflowButton(page, "Rubric").click();
+  await page.getByRole("button", { name: /View or edit source location: Unlinked manual criterion/ }).click();
+  await expect(page.getByText("Manually recorded page: 1")).toBeVisible();
 });

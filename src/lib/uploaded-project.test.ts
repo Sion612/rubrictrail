@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { generateActionPlan } from "@/lib/plan";
 import {
   applyManualSourceLocator,
+  manualSourceLocatorsEqual,
   buildUploadedPlanTemplates,
   createUploadedProject,
   draftFromUpload,
@@ -321,5 +322,15 @@ describe("uploaded project workflow", () => {
     expect(review?.evidenceVisible).toBe(true);
     expect(review?.linkExplained).toBe(true);
     expect(review?.draftText).toContain("traceable paragraph");
+  });
+
+  it("treats identical locators as unchanged so a no-op save can skip invalidation", () => {
+    expect(manualSourceLocatorsEqual(null, null)).toBe(true);
+    expect(manualSourceLocatorsEqual(undefined, null)).toBe(true);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: 2 }, { sourceId: "source-1", page: 2 })).toBe(true);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: null }, { sourceId: "source-1", page: null })).toBe(true);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: 2 }, { sourceId: "source-1", page: 1 })).toBe(false);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: 2 }, { sourceId: "source-2", page: 2 })).toBe(false);
+    expect(manualSourceLocatorsEqual({ sourceId: "source-1", page: 2 }, null)).toBe(false);
   });
 });

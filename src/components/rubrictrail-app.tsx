@@ -69,6 +69,7 @@ import {
   buildUploadedPlanTemplates,
   invalidateUploadedReviewAfterLocatorChange,
   isConfirmedUploadedReview,
+  manualSourceLocatorsEqual,
   todayIso,
 } from "@/lib/uploaded-project";
 import type {
@@ -1766,6 +1767,11 @@ export function RubricTrailApp() {
   ): Promise<"saved" | "tab-only" | "failed"> {
     const current = latestProject.current;
     if (!current.uploadedProject) return "failed";
+    const criterion = current.uploadedProject.criteria.find((item) => item.id === criterionId);
+    if (!criterion) return "failed";
+    if (manualSourceLocatorsEqual(criterion.manualSourceLocator, locator)) {
+      return "saved";
+    }
     try {
       const nextProject = applyManualSourceLocator(
         current.uploadedProject,
@@ -1802,12 +1808,8 @@ export function RubricTrailApp() {
       });
       return "saved";
     }
-    if (outcome === "blocked") {
-      showNotice({ tone: "warning", message: appText("notice.locatorTabOnly") });
-      return "tab-only";
-    }
-    showNotice({ tone: "warning", message: appText("notice.locatorFailed") });
-    return "failed";
+    showNotice({ tone: "warning", message: appText("notice.locatorTabOnly") });
+    return "tab-only";
   }
 
   function toggleReadiness(id: string) {

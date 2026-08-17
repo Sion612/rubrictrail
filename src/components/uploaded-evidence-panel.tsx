@@ -6,7 +6,7 @@ import { useLocalizedMessages } from "@/components/locale-provider";
 import { workspaceEn, workspaceZhCN } from "@/lib/i18n/messages/workspace";
 import { locatorEn, locatorZhCN } from "@/lib/i18n/messages/locator";
 import { parseOptionalPdfPage, sourceOptionLabel } from "@/lib/source-labels";
-import { resolveUploadedProjectSource } from "@/lib/uploaded-project";
+import { manualSourceLocatorsEqual, resolveUploadedProjectSource } from "@/lib/uploaded-project";
 import type { ManualSourceLocator, UploadedProject } from "@/lib/ui-types";
 import styles from "./uploaded-evidence-panel.module.css";
 
@@ -43,10 +43,13 @@ export function UploadedEvidencePanel({
   const editing = editorCriterionId === criterionId;
   const [sourceId, setSourceId] = useState("");
   const [pageValue, setPageValue] = useState("");
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [focusTarget, setFocusTarget] = useState<"add" | "edit" | null>(null);
   const editingRef = useRef(false);
+  const savingRef = useRef(false);
   const criterion = project.criteria.find((item) => item.id === criterionId);
   const evidence = criterion?.evidence ?? null;
   const manualLocator = criterion?.manualSourceLocator ?? null;
@@ -60,6 +63,10 @@ export function UploadedEvidencePanel({
   }, [editing]);
 
   useEffect(() => {
+    savingRef.current = saving;
+  }, [saving]);
+
+  useEffect(() => {
     if (!criterionId) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus({ preventScroll: true });
@@ -69,8 +76,11 @@ export function UploadedEvidencePanel({
         if (editingRef.current) {
           event.preventDefault();
           event.stopPropagation();
+          if (savingRef.current) return;
           setEditorCriterionId(null);
+          setSourceError(null);
           setPageError(null);
+          setSaveError(null);
           setFocusTarget(manualLocator ? "edit" : "add");
           return;
         }
@@ -147,31 +157,43 @@ export function UploadedEvidencePanel({
   function startEditing() {
     setSourceId(manualLocator?.sourceId ?? "");
     setPageValue(manualLocator?.page == null ? "" : String(manualLocator.page));
+    setSourceError(null);
     setPageError(null);
+    setSaveError(null);
     setEditorCriterionId(criterionId);
   }
 
   function cancelEditing() {
+    if (saving) return;
     setEditorCriterionId(null);
+    setSourceError(null);
     setPageError(null);
+    setSaveError(null);
     setFocusTarget(manualLocator ? "edit" : "add");
   }
 
   function changeSource(nextSourceId: string) {
     setSourceId(nextSourceId);
     setPageValue("");
+    setSourceError(null);
     setPageError(null);
+    setSaveError(null);
   }
 
   async function saveLocator() {
-    if (!onSaveManualSourceLocator || !criterionId) return;
+    if (!onSaveManualSourceLocator || !criterionId || saving) return;
+    setSourceError(null);
+    setPageError(null);
+    setSaveError(null);
     if (!sourceId) {
-      setPageError(messages.locatorSourceRequired);
+      setSourceError(messages.locatorSourceRequired);
+      selectorRef.current?.focus({ preventScroll: true });
       return;
     }
     const source = project.sources?.find((item) => item.id === sourceId);
     if (!source) {
-      setPageError(messages.locatorSourceRequired);
+      setSourceError(messages.locatorSourceRequired);
+      selectorRef.current?.focus({ preventScroll: true });
       return;
     }
     let page: number | null = null;
@@ -188,9 +210,20 @@ export function UploadedEvidencePanel({
       }
       page = parsed.page;
     }
+    const nextLocator = { sourceId, page };
+    if (manualSourceLocatorsEqual(manualLocator, nextLocator)) {
+      setEditorCriterionId(null);
+      setFocusTarget("edit");
+      return;
+    }
     setSaving(true);
     try {
-      await onSaveManualSourceLocator(criterionId, { sourceId, page });
+      const outcome = await onSaveManualSourceLocator(criterionId, nextLocator);
+      if (outcome === "failed") {
+        setSaveError(messages.locatorSaveFailed);
+        selectorRef.current?.focus({ preventScroll: true });
+        return;
+      }
       setEditorCriterionId(null);
       setFocusTarget("edit");
     } finally {
@@ -199,7 +232,7 @@ export function UploadedEvidencePanel({
   }
 
   async function removeLocator() {
-    if (!onSaveManualSourceLocator || !criterionId) return;
+    if (!onSaveManualSourceLocator || !criterionId || saving) return;
     const confirmed = window.confirm(messages.removeLocatorConfirm);
     if (!confirmed) {
       editRef.current?.focus({ preventScroll: true });
@@ -207,7 +240,11 @@ export function UploadedEvidencePanel({
     }
     setSaving(true);
     try {
-      await onSaveManualSourceLocator(criterionId, null);
+      const outcome = await onSaveManualSourceLocator(criterionId, null);
+      if (outcome === "failed") {
+        editRef.current?.focus({ preventScroll: true });
+        return;
+      }
       setEditorCriterionId(null);
       setFocusTarget("add");
     } finally {
@@ -341,6 +378,9 @@ export function UploadedEvidencePanel({
                       ref={selectorRef}
                       data-testid="locator-source"
                       value={sourceId}
+                      disabled={saving}
+                      aria-invalid={sourceError ? true : undefined}
+                      aria-describedby={sourceError ? "locator-source-error" : undefined}
                       onChange={(event) => changeSource(event.target.value)}
                     >
                       <option value="">{messages.locatorSourceNone}</option>
@@ -351,6 +391,11 @@ export function UploadedEvidencePanel({
                       ))}
                     </select>
                   </label>
+                  {sourceError ? (
+                    <p className="field-message" id="locator-source-error" data-testid="locator-source-error">
+                      {sourceError}
+                    </p>
+                  ) : null}
                   {selectedSource?.kind === "pdf" ? (
                     <label htmlFor={pageInputId}>
                       <span>{messages.locatorPdfPageLabel}</span>
@@ -362,6 +407,7 @@ export function UploadedEvidencePanel({
                         max={selectedSource.pageCount ?? undefined}
                         step={1}
                         value={pageValue}
+                        disabled={saving}
                         onChange={(event) => {
                           setPageValue(event.target.value);
                           setPageError(null);
@@ -386,6 +432,9 @@ export function UploadedEvidencePanel({
                       {pageError}
                     </p>
                   ) : null}
+                  {saveError ? (
+                    <p className="field-message" data-testid="locator-save-error">{saveError}</p>
+                  ) : null}
                   <div className={styles.actions}>
                     <button className="button button-secondary" type="button" onClick={cancelEditing} disabled={saving}>
                       {messages.locatorCancel}
@@ -404,6 +453,7 @@ export function UploadedEvidencePanel({
                         className="button button-secondary"
                         type="button"
                         onClick={startEditing}
+                        disabled={saving}
                         data-testid="edit-locator"
                       >
                         {messages.editSourceLocation}
@@ -412,6 +462,7 @@ export function UploadedEvidencePanel({
                         className="button button-secondary"
                         type="button"
                         onClick={() => void removeLocator()}
+                        disabled={saving}
                         data-testid="remove-locator"
                       >
                         {messages.removeSourceLocation}
@@ -423,6 +474,7 @@ export function UploadedEvidencePanel({
                       className="button button-primary"
                       type="button"
                       onClick={startEditing}
+                      disabled={saving}
                       data-testid="add-locator"
                     >
                       {messages.addSourceLocation}

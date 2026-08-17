@@ -73,6 +73,10 @@ export function calendarEventUid(
   return `task-${safeProject}-${String(taskId ?? "unknown").replace(/[^A-Za-z0-9._-]+/g, "-")}@rubrictrail.local`;
 }
 
+export function truncateToCodePoints(value: string, max: number): string {
+  return Array.from(value).slice(0, max).join("");
+}
+
 export function safeIcsFilename(title: string): string {
   const cleaned = title
     .normalize("NFKD")
@@ -81,18 +85,27 @@ export function safeIcsFilename(title: string): string {
     .replace(/[. ]+$/g, "")
     .replace(/^[. -]+/g, "")
     .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, MAX_FILENAME_STEM)
-    .replace(/^[-.]+|[-.]+$/g, "");
-  return `${cleaned || "rubrictrail-plan"}.ics`;
+    .replace(/-+/g, "-");
+  const trimmed = truncateToCodePoints(cleaned, MAX_FILENAME_STEM).replace(/^[-.]+|[-.]+$/g, "");
+  return `${trimmed || "rubrictrail-plan"}.ics`;
 }
 
-function minutesLabel(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+export interface IcsTextFormatters {
+  localizePriority: (priority: string) => string;
+  formatDuration: (minutes: number) => string;
+  formatDateOnly: (value: string) => string;
 }
+
+const defaultFormatters: IcsTextFormatters = {
+  localizePriority: (priority) => priority,
+  formatDuration: (minutes) => {
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+  },
+  formatDateOnly: (value) => value,
+};
 
 function vevent(lines: string[]): string[] {
   return ["BEGIN:VEVENT", ...lines, "END:VEVENT"];
@@ -104,11 +117,13 @@ export function serializeRemainingPlanIcs(
   messages: IcsExportMessages,
   now: Date,
   localizeText: (value: string) => string,
+  formatters: IcsTextFormatters = defaultFormatters,
 ): string {
   const stamp = toIcsUtcStamp(now);
+  const titles = new Map(plan.tasks.map((task) => [task.id, localizeText(task.title)]));
   const incomplete = plan.tasks.filter((task) => !task.completed);
   const events = [
-    ...incomplete.map((task) => taskEvent(assignment, task, messages, stamp, localizeText)),
+    ...incomplete.map((task) => taskEvent(assignment, task, messages, stamp, localizeText, formatters, titles)),
     deadlineEvent(assignment, messages, stamp),
   ];
   const lines = [
@@ -131,6 +146,8 @@ function taskEvent(
   messages: IcsExportMessages,
   stamp: string,
   localizeText: (value: string) => string,
+  formatters: IcsTextFormatters,
+  titles: Map<string, string>,
 ): string[] {
   const title = localizeText(task.title);
   const description = [
@@ -138,13 +155,15 @@ function taskEvent(
     `${messages.assignment}: ${assignment.title}`,
     `${messages.course}: ${assignment.course}`,
     `${messages.phase}: ${localizeText(task.phase)}`,
-    `${messages.priority}: ${task.priority}`,
-    `${messages.duration}: ${minutesLabel(task.adjustedMinutes)}`,
+    `${messages.priority}: ${formatters.localizePriority(task.priority)}`,
+    `${messages.duration}: ${formatters.formatDuration(task.adjustedMinutes)}`,
     task.scheduledStartDate !== task.dueDate
-      ? `${messages.plannedStart}: ${task.scheduledStartDate}`
+      ? `${messages.plannedStart}: ${formatters.formatDateOnly(task.scheduledStartDate)}`
       : null,
     `${messages.dependencies}: ${
-      task.dependencies.length ? task.dependencies.join(", ") : messages.none
+      task.dependencies.length
+        ? task.dependencies.map((id) => titles.get(id) ?? id).join(", ")
+        : messages.none
     }`,
     `${messages.doneWhen}: ${task.doneDefinition.map(localizeText).join("; ")}`,
   ]

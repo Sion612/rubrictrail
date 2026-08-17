@@ -285,6 +285,15 @@ export function validateUploadedProjectDraftFields(
   return validateUploadedProjectDraft(fieldOnlyDraft, []);
 }
 
+export function manualSourceLocatorsEqual(
+  left: ManualSourceLocator | null | undefined,
+  right: ManualSourceLocator | null | undefined,
+): boolean {
+  if (left == null && right == null) return true;
+  if (left == null || right == null) return false;
+  return left.sourceId === right.sourceId && left.page === right.page;
+}
+
 export function invalidateUploadedReviewAfterLocatorChange(
   review: UploadedCriterionReview | undefined,
 ): UploadedCriterionReview | undefined {
@@ -314,7 +323,7 @@ export function applyManualSourceLocator(
   if (locator !== null) {
     const source = project.sources.find((item) => item.id === locator.sourceId);
     if (!source) {
-      throw new Error("Choose an included source, or leave the source blank.");
+      throw new Error("Choose an included source.");
     }
     if (source.kind === "pdf") {
       const page = locator.page;

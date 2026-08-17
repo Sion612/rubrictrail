@@ -22,11 +22,11 @@ merge to `main`, a git tag, a GitHub Release or a public Pages deployment.
 | --- | --- |
 | `pnpm lint` | Passed with zero warnings |
 | `pnpm typecheck` | Passed |
-| `pnpm test` | 31 Vitest files / 374 tests plus 3 OCR asset-audit Node tests passed |
+| `pnpm test` | 31 Vitest files / 378 tests plus 3 OCR asset-audit Node tests passed |
 | `pnpm build` | Next.js 16.3.0 production build passed |
-| `PLAYWRIGHT_PRODUCTION=true PLAYWRIGHT_APP_PATH=/ pnpm test:e2e --workers=1` | 44/44 desktop and mobile Chromium executions passed through `next start` |
-| `pnpm audit:demo` | Passed for 62 exported files; 14 initial JS/CSS files totalled 1,261,985 raw / 354,491 gzip bytes, below the unchanged 357,000-byte gzip budget; 10 deferred OCR files totalled 16,850,033 bytes |
-| `PLAYWRIGHT_APP_PATH=/rubrictrail/ pnpm test:e2e:demo --workers=1` | 44/44 desktop and mobile Chromium executions passed against the static `/rubrictrail` artifact |
+| `PLAYWRIGHT_PRODUCTION=true PLAYWRIGHT_APP_PATH=/ pnpm test:e2e --workers=1` | 48/48 desktop and mobile Chromium executions passed through `next start` |
+| `pnpm audit:demo` | Passed for 62 exported files; 14 initial JS/CSS files totalled 1,262,230 raw / 354,557 gzip bytes, below the unchanged 357,000-byte gzip budget; 10 deferred OCR files totalled 16,850,033 bytes |
+| `PLAYWRIGHT_APP_PATH=/rubrictrail/ pnpm test:e2e:demo --workers=1` | 48/48 desktop and mobile Chromium executions passed against the static `/rubrictrail` artifact |
 
 New browser coverage in this candidate:
 
@@ -38,7 +38,14 @@ New browser coverage in this candidate:
 - browser-local `.ics` export of remaining tasks and the deadline, with no
   network `.ics` request;
 - Calendar remains usable at 320px without document-level overflow;
-- Calendar presentation is not persisted across reload.
+- Calendar presentation is not persisted across reload;
+- Playwright clock is frozen so Calendar month expectations do not depend on
+  the wall-clock date;
+- completing a Calendar task, rebalancing, and Open in task list focus;
+- uploaded-project Chinese Calendar/ICS localization;
+- an unchanged locator save does not clear a completed Check trail;
+- changing a locator unconfirms only source-traceability and survives backup
+  restore.
 
 The public GitHub Pages demo still reflects the last deployed main build
 until the separate release phase completes.

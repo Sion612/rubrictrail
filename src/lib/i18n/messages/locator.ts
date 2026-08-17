@@ -10,7 +10,8 @@ export const locatorEn = {
   locatorPdfPageHint: "This PDF contains {pages} pages. You may leave the page blank.",
   locatorCancel: "Cancel",
   locatorSave: "Save source location",
-  locatorSourceRequired: "Choose an included source, or leave the source blank.",
+  locatorSourceRequired: "Choose an included source.",
+  locatorSaveFailed: "The source location could not be saved. Your entries are still here.",
   locatorPageInvalid: "Enter a whole PDF page from 1 to {pages}, or leave it blank.",
   removeLocatorConfirm: "Remove the recorded source location for this criterion?",
   legacyRegistryGuidance:
@@ -29,7 +30,8 @@ export const locatorZhCN = {
   locatorPdfPageHint: "这份 PDF 共 {pages} 页；页码可以留空。",
   locatorCancel: "取消",
   locatorSave: "保存来源定位",
-  locatorSourceRequired: "请选择一个已包含的来源，或留空。",
+  locatorSourceRequired: "请选择一个来源。",
+  locatorSaveFailed: "来源定位未能保存。你填写的内容仍保留在此。",
   locatorPageInvalid: "请输入 1 到 {pages} 的整数 PDF 页码，或留空。",
   removeLocatorConfirm: "要移除此评分项已记录的来源定位吗？",
   legacyRegistryGuidance:

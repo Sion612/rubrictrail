@@ -113,5 +113,34 @@ describe("iCalendar export", () => {
     expect(safeIcsFilename("Strategy Report")).toBe("Strategy-Report.ics");
     expect(safeIcsFilename("../secret\\file")).toBe("secret-file.ics");
     expect(safeIcsFilename("...")).toBe("rubrictrail-plan.ics");
+    expect(safeIcsFilename(`${"📘".repeat(40)} plan`)).toMatch(/\.ics$/);
+    expect(Array.from(safeIcsFilename(`${"📘".repeat(40)} plan`).replace(/\.ics$/, "")).length).toBeLessThanOrEqual(48);
+  });
+
+  it("localizes priority, duration and dependency titles instead of internal ids", () => {
+    const plan = generateActionPlan(DEFAULT_PLAN_INPUT);
+    const ics = serializeRemainingPlanIcs(
+      assignment,
+      plan,
+      { ...messages, deadlineSummary: "Assignment deadline: Strategy Report — verify" },
+      new Date("2026-08-16T08:00:00.000Z"),
+      (value) => value,
+      {
+        localizePriority: (priority) => (priority === "high" ? "高" : priority),
+        formatDuration: (minutes) => `${minutes} 分钟`,
+        formatDateOnly: (value) => value.split("-").reverse().join("/"),
+      },
+    );
+    expect(ics).toContain("高");
+    expect(ics).toMatch(/\d+ 分钟/);
+    expect(ics).not.toContain("priority: high");
+    expect(ics).not.toContain(" p1");
+    expect(ics).not.toContain("criterion-1");
+    const blocked = plan.tasks.find((task) => task.dependencies.length > 0);
+    expect(blocked).toBeTruthy();
+    const parentTitle = plan.tasks.find((task) => task.id === blocked!.dependencies[0])?.title;
+    expect(parentTitle).toBeTruthy();
+    expect(ics).toContain(parentTitle!);
+    expect(ics).toContain("SUMMARY:Assignment deadline: Strategy Report");
   });
 });

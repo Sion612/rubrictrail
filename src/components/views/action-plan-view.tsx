@@ -102,7 +102,7 @@ export function ActionPlanView({ plan, assignment, onRebalance, onToggleTask, on
     if (!focusTaskId || presentation !== "list") return;
     const node = document.querySelector<HTMLElement>(`[data-testid="task-${focusTaskId}"]`);
     node?.scrollIntoView({ block: "center" });
-    node?.querySelector<HTMLElement>("input, button")?.focus({ preventScroll: true });
+    node?.focus({ preventScroll: true });
   }, [focusTaskId, presentation]);
 
   const taskNameById = useMemo(() => new Map(plan.tasks.map((task) => [task.id, task.title])), [plan.tasks]);
@@ -215,7 +215,7 @@ export function ActionPlanView({ plan, assignment, onRebalance, onToggleTask, on
                   );
                   const blocked = !task.completed && incompleteDependencies.length > 0;
                   return (
-                <article className={`plan-task${task.completed ? " is-complete" : ""}${task.late ? " is-late" : ""}${blocked ? " is-blocked" : ""}`} key={task.id} data-testid={`task-${task.id}`}>
+                <article className={`plan-task${task.completed ? " is-complete" : ""}${task.late ? " is-late" : ""}${blocked ? " is-blocked" : ""}`} key={task.id} data-testid={`task-${task.id}`} tabIndex={-1}>
                   <label className="task-check">
                     <input type="checkbox" checked={task.completed} disabled={blocked} onChange={() => onToggleTask(task.id)} aria-label={blocked ? interpolateViewMessage(messages.blockedAria, { title: localizeSystemText(task.title, locale) }) : interpolateViewMessage(messages.markTask, { title: localizeSystemText(task.title, locale), state: task.completed ? messages.incomplete : messages.complete })} />
                     <span aria-hidden="true"><CheckCircle2 /></span>

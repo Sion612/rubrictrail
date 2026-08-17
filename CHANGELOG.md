@@ -11,6 +11,9 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 - Added lazy, same-origin, browser-local English and Simplified Chinese OCR for
   PNG, JPEG and WebP assignment screenshots and photos, with visible progress,
   explicit OCR provenance and mixed-batch recovery.
+- Added deterministic local OCR asset preparation/integrity auditing and real
+  desktop/mobile static-demo coverage that rejects cross-origin and Live-route
+  requests while exercising the worker, core and both language models.
 - Added a compact source registry and full-flow rubric source traceability from
   intake through backup restore.
 - Added post-creation Add, Edit and Remove actions for manual source locators
@@ -28,10 +31,24 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 - Rebalancing updates both the task list and Calendar because both views read
   the same Action Plan.
 
+### Fixed
+
+- Fixed rubric confirmation so missing-evidence guidance and aggregate weight
+  errors use readable section-level layouts, and newly added criteria scroll
+  into view with focus on their name field.
+- Clarified that manually added criteria have no retained excerpt, while
+  allowing users to save an optional uploaded-source and PDF-page locator for
+  checking the original rubric without retaining or inventing source text.
+- Saving an unchanged source locator no longer clears a completed Check trail.
+- Calendar month navigation now keeps the selected week in the visible month.
+
 ### Privacy / Security
 
-- OCR remains browser-local. Original images and full OCR transcripts remain
-  transient.
+- Added image magic-byte/decode validation, 16,384-pixel side and 20,000,000
+  decoded-pixel limits, pinned runtime/language assets, worker cleanup and the
+  existing selection-wide text budgets for OCR output. Original images and full
+  OCR transcripts remain transient and are not added to project storage or
+  backups.
 - Calendar export is generated locally. Importing the `.ics` file into an
   external calendar provider may cause that provider to store assignment
   metadata. Source documents, excerpts, OCR text, source filenames and drafts

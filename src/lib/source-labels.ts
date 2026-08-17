@@ -11,13 +11,6 @@ export function sourceOptionLabel(
   return `${source.fileName} · ${source.kind.toUpperCase()} · ${sourceWord} ${sourceRegistryNumber(source.id)}`;
 }
 
-export function sourceRegisterSuffix(
-  source: UploadedProjectSource,
-  sourceWord: string,
-): string {
-  return `${sourceWord} ${sourceRegistryNumber(source.id)}`;
-}
-
 export function parseOptionalPdfPage(
   raw: string,
   pageCount: number | null,

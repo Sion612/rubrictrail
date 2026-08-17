@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { LocaleProvider } from "@/components/locale-provider";
@@ -464,5 +464,39 @@ describe("UploadedEvidencePanel", () => {
     );
     expect(screen.getByTestId("legacy-registry-guidance")).toBeInTheDocument();
     expect(screen.queryByTestId("locator-source")).not.toBeInTheDocument();
+  });
+
+  it("reports a missing source on the source field and keeps a failed save editable", async () => {
+    const onSave = vi.fn().mockResolvedValue("failed");
+    const project: UploadedProject = {
+      ...uploadedProject,
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: null,
+      }],
+    };
+    render(
+      <UploadedEvidencePanel
+        project={project}
+        criterionId="analysis-1"
+        onClose={vi.fn()}
+        onSaveManualSourceLocator={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("add-locator"));
+    fireEvent.click(screen.getByTestId("save-locator"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByTestId("locator-source-error")).toHaveTextContent("Choose an included source.");
+    expect(screen.getByTestId("locator-source")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByTestId("locator-page-error")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("locator-source"), { target: { value: "source-1" } });
+    fireEvent.change(screen.getByTestId("locator-page"), { target: { value: "2" } });
+    fireEvent.click(screen.getByTestId("save-locator"));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith("analysis-1", { sourceId: "source-1", page: 2 }));
+    expect(screen.getByTestId("locator-source")).toBeInTheDocument();
+    expect(screen.getByTestId("locator-save-error")).toHaveTextContent("could not be saved");
+    expect(screen.getByTestId("locator-page")).toHaveValue(2);
   });
 });

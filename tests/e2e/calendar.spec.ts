@@ -6,7 +6,10 @@ const APP_PATH = (() => {
   return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
 })();
 
+const FROZEN_NOW = "2026-08-17T12:00:00";
+
 async function resetProject(page: Page) {
+  await page.clock.install({ time: new Date(FROZEN_NOW) });
   await page.goto(APP_PATH);
   await page.evaluate(() => window.localStorage.clear());
   await page.reload();
@@ -19,6 +22,13 @@ function visibleWorkflowButton(page: Page, label: string) {
     .first();
 }
 
+async function openSampleCalendar(page: Page) {
+  await page.getByTestId("try-sample").click();
+  await visibleWorkflowButton(page, "Plan").click();
+  await page.getByTestId("plan-calendar").click();
+  await expect(page.getByTestId("plan-calendar-grid")).toBeVisible();
+}
+
 test.beforeEach(async ({ page }) => {
   await resetProject(page);
 });
@@ -28,18 +38,15 @@ test("sample calendar stays transient and exports a local ICS snapshot", async (
   const requests: string[] = [];
   page.on("request", (request) => requests.push(request.url()));
 
-  await page.getByTestId("try-sample").click();
-  await visibleWorkflowButton(page, "Plan").click();
-  await expect(page.getByTestId("plan-task-list")).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("plan-calendar").click();
-  await expect(page.getByTestId("plan-calendar-grid")).toBeVisible();
+  await openSampleCalendar(page);
   await expect(page.getByText(/target completion dates/)).toBeVisible();
+  await expect(page.getByTestId("calendar-legend")).toBeVisible();
   await expect(page.getByText(/The assignment deadline is outside this month/)).toBeVisible();
   await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByRole("heading", { name: "September 2026" })).toBeVisible();
   await expect(page.getByTestId("calendar-day-2026-09-07")).toBeVisible();
   await expect(page.getByRole("button", { name: /assignment deadline/i })).toBeVisible();
-  await expect(page.getByText("Assignment deadline", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /planning date/i })).toHaveCount(0);
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByTestId("export-ics").click();
@@ -51,8 +58,10 @@ test("sample calendar stays transient and exports a local ICS snapshot", async (
   expect(ics).toContain("BEGIN:VCALENDAR");
   expect(ics).toContain("DTSTART;VALUE=DATE:");
   expect(ics).toContain("Assignment deadline");
+  expect(ics).toContain("Reducing Collection Delays");
   expect(ics).not.toContain("lumalane-brief");
   expect(ics).not.toContain("SAMPLE_DRAFT");
+  expect(ics).not.toContain(" p1");
   expect(requests.some((url) => url.includes(".ics"))).toBe(false);
 
   await page.getByTestId("plan-task-list").click();
@@ -65,12 +74,67 @@ test("sample calendar stays transient and exports a local ICS snapshot", async (
   expect(stored).not.toContain("\"calendar\"");
 });
 
-test("calendar remains usable at 320px", async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 844 });
-  await page.getByTestId("try-sample").click();
+test("calendar completion, rebalance, focus, and status labels stay in one month", async ({ page }) => {
+  test.setTimeout(90_000);
+  await openSampleCalendar(page);
+  const firstTask = page.getByTestId("calendar-task-p1");
+  await expect(firstTask).toBeVisible();
+  await expect(page.getByText("Blocked", { exact: true }).first()).toBeVisible();
+  await firstTask.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Open in task list" }).first().click();
+  await expect(page.getByTestId("task-p1")).toBeFocused();
+  await expect(page.getByTestId("task-p1")).toHaveClass(/is-complete/);
+
+  await page.getByTestId("plan-calendar").click();
+  await expect(page.getByTestId("plan-calendar-grid")).toBeVisible();
+  const before = await page.getByTestId("calendar-task-p2").innerText();
+  await page.getByTestId("weekly-hours").selectOption("5");
+  await page.getByTestId("rebalance-plan").click();
+  await expect(page.getByTestId("plan-calendar-grid")).toBeVisible();
+  await expect(page.locator("#plan-calendar-title")).toBeVisible();
+  const after = await page.getByTestId("calendar-task-p2").innerText();
+  expect(after === before || after.includes("Target completion")).toBe(true);
+});
+
+test("uploaded project calendar and Chinese ICS stay localized", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.getByTestId("file-input").setInputFiles({
+    name: "strategy-brief.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from([
+      "Assignment title: Strategy Report",
+      "Deadline: 24 September 2026",
+      "Word count: 1500 words",
+      "Use APA 7 referencing.",
+      "Rubric",
+      "Strategic analysis | 100%",
+    ].join("\n")),
+  });
+  await page.getByTestId("create-project").click();
   await visibleWorkflowButton(page, "Plan").click();
   await page.getByTestId("plan-calendar").click();
   await expect(page.getByTestId("plan-calendar-grid")).toBeVisible();
+  await page.getByRole("combobox", { name: /language|语言/i }).selectOption("zh-CN");
+  await expect(page.getByTestId("calendar-legend")).toContainText("任务状态");
+  await expect(page.getByText("高优先级").first()).toBeVisible();
+  await expect(page.getByText(/分钟/).first()).toBeVisible();
+  await expect(page.getByText("high", { exact: true })).toHaveCount(0);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("export-ics").click();
+  const download = await downloadPromise;
+  const { readFile } = await import("node:fs/promises");
+  const ics = await readFile((await download.path())!, "utf8");
+  expect(ics).toContain("作业截止日期：Strategy Report");
+  expect(ics).toContain("高");
+  expect(ics).toMatch(/分钟|小时/);
+  expect(ics).toContain("确认作业说明并记录待解决问题");
+  expect(ics).not.toMatch(/依赖:[^\n]*criterion-\d+/);
+});
+
+test("calendar remains usable at 320px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await openSampleCalendar(page);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });

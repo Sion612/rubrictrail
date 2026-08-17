@@ -246,13 +246,17 @@ export const planMessagesEn = {
   blockedState: "Blocked",
   overdueState: "Overdue relative to the planning date",
   lateState: "Beyond the assignment deadline",
+  legendTitle: "Task status",
+  legendMultiple: "A task can show more than one status.",
   openInList: "Open in task list",
   exportIcs: "Export remaining plan (.ics)",
+  icsExporting: "Preparing calendar file…",
+  icsExportFailed: "RubricTrail could not create the calendar file in this browser.",
   icsPrivacy:
     "RubricTrail creates this file locally. Importing it into Google, Apple, Outlook or another provider may cause that provider to store the assignment title, course, task titles, target dates and task instructions. It does not contain uploaded documents, excerpts, OCR text, source filenames, drafts or credentials.",
   icsCalendarName: "RubricTrail remaining plan",
   icsTargetNote: "This is a target completion date, not a reserved study-time block.",
-  icsDeadlineSummary: "Assignment deadline — verify the exact submission time against the original brief",
+  icsDeadlineSummary: "Assignment deadline: {title} — verify the exact submission time against the original brief",
   icsDeadlineDescription: "Verify any exact submission time against the original brief. RubricTrail records the date only.",
   icsPhase: "Phase",
   icsPriority: "Priority",
@@ -270,8 +274,9 @@ export const planMessagesEn = {
   weekdayFri: "Fri",
   weekdaySat: "Sat",
   weekdaySun: "Sun",
-  dayCellAria: "{date}, {count} tasks{deadline}",
+  dayCellAria: "{date}, {count} tasks{deadline}{planning}",
   deadlineMarker: ", assignment deadline",
+  planningMarker: ", planning date",
 } as const;
 
 export const planMessagesZhCN = {
@@ -344,13 +349,17 @@ export const planMessagesZhCN = {
   blockedState: "被阻塞",
   overdueState: "相对规划基准日已逾期",
   lateState: "已超过作业截止日期",
+  legendTitle: "任务状态",
+  legendMultiple: "一项任务可以同时有多个状态。",
   openInList: "在任务列表中打开",
   exportIcs: "导出剩余计划（.ics）",
+  icsExporting: "正在准备日历文件…",
+  icsExportFailed: "RubricTrail 无法在此浏览器中创建日历文件。",
   icsPrivacy:
     "RubricTrail 在本地生成此文件。导入 Google、Apple、Outlook 或其他服务后，提供方可能保存作业标题、课程、任务标题、目标日期和任务说明。文件不包含上传文档、摘录、OCR 文本、来源文件名、草稿或凭证。",
   icsCalendarName: "RubricTrail 剩余计划",
   icsTargetNote: "这是目标完成日期，不是预留的学习时段。",
-  icsDeadlineSummary: "作业截止日期——请对照原始说明核对确切提交时间",
+  icsDeadlineSummary: "作业截止日期：{title}——请对照原始说明核对确切提交时间",
   icsDeadlineDescription: "请对照原始作业说明核对确切提交时间。RubricTrail 只记录日期。",
   icsPhase: "阶段",
   icsPriority: "优先级",
@@ -368,8 +377,9 @@ export const planMessagesZhCN = {
   weekdayFri: "五",
   weekdaySat: "六",
   weekdaySun: "日",
-  dayCellAria: "{date}，{count} 项任务{deadline}",
+  dayCellAria: "{date}，{count} 项任务{deadline}{planning}",
   deadlineMarker: "，作业截止日期",
+  planningMarker: "，规划基准日",
 } satisfies MessageSet<typeof planMessagesEn>;
 
 export const draftMessagesEn = {

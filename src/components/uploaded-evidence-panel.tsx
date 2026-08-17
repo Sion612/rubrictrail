@@ -36,6 +36,7 @@ export function UploadedEvidencePanel({
   const addRef = useRef<HTMLButtonElement>(null);
   const editRef = useRef<HTMLButtonElement>(null);
   const selectorRef = useRef<HTMLSelectElement>(null);
+  const pageRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   const sourceSelectId = useId();
   const pageInputId = useId();
@@ -206,6 +207,7 @@ export function UploadedEvidencePanel({
             String(source.pageCount ?? ""),
           ),
         );
+        pageRef.current?.focus({ preventScroll: true });
         return;
       }
       page = parsed.page;
@@ -238,10 +240,12 @@ export function UploadedEvidencePanel({
       editRef.current?.focus({ preventScroll: true });
       return;
     }
+    setSaveError(null);
     setSaving(true);
     try {
       const outcome = await onSaveManualSourceLocator(criterionId, null);
       if (outcome === "failed") {
+        setSaveError(messages.locatorSaveFailed);
         editRef.current?.focus({ preventScroll: true });
         return;
       }
@@ -270,7 +274,10 @@ export function UploadedEvidencePanel({
         type="button"
         className="evidence-panel-shell__backdrop"
         aria-label={messages.closeEvidencePanel}
-        onClick={onClose}
+        disabled={saving}
+        onClick={() => {
+          if (!saving) onClose();
+        }}
       />
       <aside
         ref={panelRef}
@@ -278,6 +285,7 @@ export function UploadedEvidencePanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="uploaded-evidence-title"
+        aria-busy={saving || undefined}
       >
         <header className="evidence-panel__header">
           <div className="evidence-panel__heading-group">
@@ -291,7 +299,10 @@ export function UploadedEvidencePanel({
             type="button"
             className="evidence-panel__close"
             aria-label={messages.closeEvidencePanel}
-            onClick={onClose}
+            disabled={saving}
+            onClick={() => {
+              if (!saving) onClose();
+            }}
           >
             <X aria-hidden="true" />
           </button>
@@ -366,6 +377,7 @@ export function UploadedEvidencePanel({
                 <form
                   className={styles.form}
                   noValidate
+                  aria-busy={saving || undefined}
                   onSubmit={(event) => {
                     event.preventDefault();
                     void saveLocator();
@@ -401,6 +413,7 @@ export function UploadedEvidencePanel({
                       <span>{messages.locatorPdfPageLabel}</span>
                       <input
                         id={pageInputId}
+                        ref={pageRef}
                         data-testid="locator-page"
                         type="number"
                         min={1}
@@ -433,7 +446,7 @@ export function UploadedEvidencePanel({
                     </p>
                   ) : null}
                   {saveError ? (
-                    <p className="field-message" data-testid="locator-save-error">{saveError}</p>
+                    <p className="field-message" role="alert" data-testid="locator-save-error">{saveError}</p>
                   ) : null}
                   <div className={styles.actions}>
                     <button className="button button-secondary" type="button" onClick={cancelEditing} disabled={saving}>
@@ -445,7 +458,11 @@ export function UploadedEvidencePanel({
                   </div>
                 </form>
               ) : (
-                <div className={styles.actions}>
+                <>
+                  {saveError ? (
+                    <p className="field-message" role="alert" data-testid="locator-save-error">{saveError}</p>
+                  ) : null}
+                  <div className={styles.actions}>
                   {manualLocator ? (
                     <>
                       <button
@@ -480,7 +497,8 @@ export function UploadedEvidencePanel({
                       {messages.addSourceLocation}
                     </button>
                   )}
-                </div>
+                  </div>
+                </>
               )}
             </section>
           ) : null}

@@ -4,6 +4,31 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-17
+
+### Changed
+
+- Promoted Calendar from a Plan-only presentation into a project-wide Project
+  Tracker available from Brief, Rubric, Plan, Check and Progress.
+- Simplified Plan back to its execution task list while keeping a shortcut to
+  the global Tracker.
+
+### Fixed
+
+- Stabilized the rubric-confirmation browser path after adding a criterion by
+  asserting focus and exact field values before entering weights.
+- Improved source-locator save/remove failure recovery and accessibility: the
+  panel stays open, entered values remain available, failures are announced,
+  and the page field receives focus for invalid PDF pages.
+
+### Privacy / Integrity
+
+- Tracker summaries and open state remain transient React UI state. The
+  existing Action Plan remains the only source of Calendar dates and `.ics`
+  events; no appointments or dates are invented.
+- CI and Pages builds disable framework telemetry with
+  `NEXT_TELEMETRY_DISABLED=1`.
+
 ## [0.7.0] - 2026-08-17
 
 ### Added

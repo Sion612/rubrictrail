@@ -5,6 +5,12 @@
    study-time blocks, reminders, provider sync or subscription URLs. Importing
    an `.ics` file may cause an external calendar provider to store assignment
    metadata.
+
+   The Project Tracker is an execution surface, not a sixth workflow stage. It
+   stays available across the five workflow views, but its summary, drawer
+   state, visible month, selected date and temporary task focus are not saved in
+   the project or backup. It derives dates only from the existing Action Plan
+   and assignment deadline.
 2. **Older projects cannot guess sources.** Projects saved before the compact
    source registry cannot add a locator until the original files are re-imported.
 3. **Confirmation, not semantic extraction.** Custom uploads and pasted text use

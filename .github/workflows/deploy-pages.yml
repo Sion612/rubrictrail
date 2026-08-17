@@ -11,6 +11,9 @@ concurrency:
   cancel-in-progress: false
   queue: max
 
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
 jobs:
   freshness:
     if: >-

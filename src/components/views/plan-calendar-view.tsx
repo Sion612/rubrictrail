@@ -27,6 +27,7 @@ interface PlanCalendarViewProps {
   assignment: CalendarExportAssignment;
   onToggleTask: (taskId: string) => void;
   onOpenInList: (taskId: string) => void;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 interface CalendarTaskFlags {
@@ -109,6 +110,7 @@ export function PlanCalendarView({
   assignment,
   onToggleTask,
   onOpenInList,
+  onBusyChange,
 }: PlanCalendarViewProps) {
   const messages = useLocalizedMessages(planMessagesEn, planMessagesZhCN);
   const { locale, formatDate, formatNumber } = useI18n();
@@ -118,6 +120,10 @@ export function PlanCalendarView({
   const [exportError, setExportError] = useState<string | null>(null);
   const signature = scheduleSignature(plan, assignment);
   const lastSignatureRef = useRef(signature);
+
+  useEffect(() => {
+    onBusyChange?.(exporting);
+  }, [exporting, onBusyChange]);
 
   useEffect(() => {
     if (lastSignatureRef.current === signature) return;

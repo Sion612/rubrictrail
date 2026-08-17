@@ -39,7 +39,8 @@ flowchart LR
 | Confirmation | Editable criteria, an explicit complete/not-complete choice and a 100% gate only for complete weighting | `src/components/upload-summary-view.tsx` |
 | Uploaded project | Compact persisted model and generic task templates | `src/lib/uploaded-project.ts` |
 | Planning | Deterministic dependency and capacity scheduling | `src/lib/plan.ts` |
-| Calendar presentation | Transient month/agenda view of Action Plan dates | `src/components/views/plan-calendar-view.tsx`, `src/lib/date-only.ts` |
+| Project Tracker | Transient project-level summary, Calendar drawer and task-list handoff; not a WorkspaceView or persisted state | `src/components/project-tracker.tsx`, `src/lib/project-tracker.ts` |
+| Calendar presentation | Canonical transient month/agenda view of Action Plan dates | `src/components/views/plan-calendar-view.tsx`, `src/lib/date-only.ts` |
 | ICS export | Browser-local all-day snapshot of remaining tasks | `src/lib/icalendar.ts` |
 | Manual locator editing | Post-creation Add/Edit/Remove for criteria without retained evidence | `src/components/uploaded-evidence-panel.tsx` |
 | Uploaded checks | Human evidence-trail checklist, no automatic score | `uploaded-project-views.tsx` |
@@ -55,7 +56,7 @@ flowchart LR
 `pnpm build:demo` builds the separate `demo/app` entry point with Next.js static
 export. CI sets `PAGES_BASE_PATH=/rubrictrail`, audits every exported text asset
 and serves the generated files at that subpath for the full browser-local suite.
-The 29-file artifact contained no Live API path, OpenAI endpoint or Live
+The static artifact contains no Live API path, OpenAI endpoint or Live
 credential/configuration marker. The exact-main artifact is published at
 <https://sion612.github.io/rubrictrail/> only after its complete CI run passes.
 
@@ -79,6 +80,15 @@ or a supported browser preference before hydration; the React provider then
 updates product copy, `html[lang]`, dates, numbers and client metadata without
 keying or remounting the application. User-provided project and source data is
 never passed through the translation dictionaries.
+
+The Project Tracker is deliberately outside the workflow state. WorkspaceView
+remains `overview`, `rubric`, `plan`, `draft` and `progress`; opening the
+Tracker, its visible month, selected date and temporary task-focus request are
+React UI state only. The Tracker derives its summary and Calendar events from
+the one Action Plan already used by Plan and Progress, so completing a task or
+rebalancing cannot create a second schedule. Calendar continues to use only
+real task target dates and the assignment deadline; it does not create events
+for criteria, evidence or workflow stages.
 
 ## Trust boundary for user sources
 

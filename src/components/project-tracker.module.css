@@ -1,0 +1,36 @@
+ .shell { position: fixed; z-index: 90; inset: 0; display: flex; justify-content: flex-end; }
+ .backdrop { position: absolute; inset: 0; border: 0; background: rgba(20, 35, 31, 0.28); cursor: default; }
+ .backdrop:disabled { cursor: wait; }
+ .drawer { position: relative; width: min(760px, 94vw); height: 100%; overflow: auto; padding: 24px 28px 40px; background: var(--canvas); box-shadow: var(--shadow); animation: tracker-in 180ms ease both; }
+ .drawer:focus { outline: none; }
+ .header { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; margin-bottom: 22px; }
+ .eyebrow { margin: 0 0 6px; color: var(--teal); font-size: 0.68rem; font-weight: 760; letter-spacing: 0.1em; text-transform: uppercase; }
+ .header h2 { margin: 0; font-size: clamp(1.55rem, 3vw, 2.1rem); }
+ .header p { max-width: 58ch; margin: 8px 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.55; }
+ .close { width: 44px; height: 44px; display: grid; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: white; cursor: pointer; }
+ .close:disabled { cursor: wait; opacity: 0.6; }
+ .summary { display: grid; gap: 14px; margin-bottom: 24px; padding: 17px; border: 1px solid var(--line); background: white; }
+ .summaryHeading { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+ .summaryHeading strong { display: block; font-size: 0.96rem; }
+ .summaryHeading span { display: block; margin-top: 4px; color: var(--muted); font-size: 0.75rem; }
+ .nextTask { min-width: 0; }
+ .nextTaskTitle { overflow-wrap: anywhere; font-weight: 760; }
+ .nextTaskDate { color: var(--muted); font-size: 0.73rem; }
+ .metrics { display: flex; flex-wrap: wrap; gap: 7px; }
+ .metric { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: 0.7rem; }
+ .metricAlert { border-color: #e0bd83; background: var(--amber-pale); color: var(--ink); }
+ .deadline { margin: 0; color: var(--muted); font-size: 0.75rem; }
+ .shortcut { justify-self: start; }
+ .calendar { padding-top: 20px; border-top: 1px solid var(--line); }
+ @keyframes tracker-in { from { transform: translateX(24px); opacity: 0; } }
+
+ @media (max-width: 600px) {
+   .shell { align-items: flex-end; }
+   .drawer { width: 100%; height: min(94vh, 900px); padding: 20px 16px 32px; border-radius: 15px 15px 0 0; animation-name: tracker-sheet-in; }
+   .header { margin-bottom: 18px; }
+   .header p { font-size: 0.75rem; }
+   .summary { padding: 14px; }
+   .summaryHeading { display: block; }
+   .shortcut { width: 100%; }
+   @keyframes tracker-sheet-in { from { transform: translateY(24px); opacity: 0; } }
+ }

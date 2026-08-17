@@ -4,6 +4,7 @@ import { useEffect, useRef, type ChangeEvent, type ReactNode } from "react";
 import {
   ArchiveRestore,
   BookOpenCheck,
+  CalendarDays,
   Check,
   ClipboardCheck,
   Code2,
@@ -20,6 +21,8 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
 import { BRAND } from "@/lib/brand";
 import { workspaceEn, workspaceZhCN } from "@/lib/i18n/messages/workspace";
+import { trackerEn, trackerZhCN } from "@/lib/i18n/messages/tracker";
+import type { ProjectTrackerSummary } from "@/lib/project-tracker";
 import type { WorkflowState, WorkspaceView } from "@/lib/ui-types";
 
 export interface WorkspaceProjectMeta {
@@ -41,6 +44,8 @@ interface WorkspaceShellProps {
   progress: number;
   stepStates: Record<WorkspaceView, WorkflowState>;
   project: WorkspaceProjectMeta;
+  trackerSummary?: ProjectTrackerSummary;
+  onOpenTracker?: () => void;
   children: ReactNode;
   evidencePanel: ReactNode;
 }
@@ -88,19 +93,46 @@ export function WorkspaceShell({
   progress,
   stepStates,
   project,
+  trackerSummary,
+  onOpenTracker,
   children,
   evidencePanel,
 }: WorkspaceShellProps) {
   const messages = useLocalizedMessages(workspaceEn, workspaceZhCN);
+  const trackerMessages = useLocalizedMessages(trackerEn, trackerZhCN);
   const { formatDate, formatNumber } = useI18n();
   const backupInputRef = useRef<HTMLInputElement>(null);
   const backupMenuRef = useRef<HTMLDetailsElement>(null);
   const communityMenuRef = useRef<HTMLDetailsElement>(null);
+  const activeTrackerSummary = trackerSummary ?? {
+    nextTask: null,
+    incompleteCount: 0,
+    blockedCount: 0,
+    overdueCount: 0,
+    deadline: project.dueDate,
+    allComplete: true,
+  } satisfies ProjectTrackerSummary;
   const dueDate = formatDate(new Date(`${project.dueDate}T12:00:00`), {
     day: "numeric",
     month: "short",
     year: "numeric",
   });
+  const nextTaskTitle = activeTrackerSummary.nextTask
+    ? activeTrackerSummary.nextTask.title
+    : trackerMessages.allComplete;
+  const nextTaskDate = activeTrackerSummary.nextTask
+    ? formatDate(new Date(`${activeTrackerSummary.nextTask.dueDate}T12:00:00`), {
+        day: "numeric",
+        month: "short",
+      })
+    : null;
+  const trackerDeadline = formatDate(new Date(`${activeTrackerSummary.deadline}T12:00:00`), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  const trackerMetric = (template: string, count: number) =>
+    template.replace("{count}", formatNumber(count));
 
   useEffect(() => {
     function handleDetailsMenuDismiss(event: PointerEvent | KeyboardEvent) {
@@ -240,6 +272,20 @@ export function WorkspaceShell({
           </button>
         ))}
       </nav>
+      <div className="mobile-tracker-strip">
+        <button type="button" onClick={() => onOpenTracker?.()} data-testid="mobile-open-project-tracker">
+          <CalendarDays aria-hidden="true" />
+          <span>
+            <strong>{trackerMessages.tracker}</strong>
+            <small>{nextTaskTitle}{nextTaskDate ? ` · ${nextTaskDate}` : ""}</small>
+          </span>
+          <span className="mobile-tracker-metrics">
+            {trackerMetric(trackerMessages.incomplete, activeTrackerSummary.incompleteCount)}
+            {activeTrackerSummary.blockedCount ? ` · ${trackerMetric(trackerMessages.blocked, activeTrackerSummary.blockedCount)}` : ""}
+            {activeTrackerSummary.overdueCount ? ` · ${trackerMetric(trackerMessages.overdue, activeTrackerSummary.overdueCount)}` : ""}
+          </span>
+        </button>
+      </div>
 
       <aside className="workflow-rail">
         <p className="rail-label">{messages.workflow}</p>
@@ -281,6 +327,22 @@ export function WorkspaceShell({
             <span style={{ width: `${progress}%` }} />
           </div>
           <p>{messages.progressExplanation}</p>
+        </div>
+        <div className="rail-tracker-summary">
+          <button type="button" onClick={() => onOpenTracker?.()} data-testid="rail-open-project-tracker">
+            <CalendarDays aria-hidden="true" />
+            <span>
+              <small>{trackerMessages.tracker}</small>
+              <strong>{nextTaskTitle}</strong>
+              {nextTaskDate ? <em>{nextTaskDate}</em> : null}
+              <span className="rail-tracker-metrics">
+                {trackerMetric(trackerMessages.incomplete, activeTrackerSummary.incompleteCount)}
+                {activeTrackerSummary.blockedCount ? ` · ${trackerMetric(trackerMessages.blocked, activeTrackerSummary.blockedCount)}` : ""}
+                {activeTrackerSummary.overdueCount ? ` · ${trackerMetric(trackerMessages.overdue, activeTrackerSummary.overdueCount)}` : ""}
+              </span>
+              <span className="rail-tracker-metrics">{trackerMessages.deadline.replace("{date}", trackerDeadline)}</span>
+            </span>
+          </button>
         </div>
         <div className="integrity-note rail-integrity">
           <BookOpenCheck aria-hidden="true" />

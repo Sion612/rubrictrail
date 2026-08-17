@@ -33,6 +33,23 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ## What works today
 
+### v0.7.1: Project Tracker, source editing and local ICS
+
+The v0.7.1 candidate promotes Calendar into a project-level **Project
+Tracker** that stays available across Brief, Rubric, Plan, Check and Progress.
+It shows the next target, deadline, incomplete/blocked/overdue counts, the
+existing Calendar and selected-week agenda, and the browser-local `.ics`
+export. **Open in task list** closes the Tracker, returns to Plan and focuses
+the exact task. The Tracker is transient UI state: it is derived from the
+existing Action Plan and is not added to project navigation, backups or saved
+project state.
+
+Plan remains focused on weekly hours, planning depth, rebalance, dependencies
+and task completion. Calendar dates remain target completion dates, not
+appointments, and `.ics` import may be stored by an external calendar
+provider. The public Pages demo remains the last verified release until this
+candidate completes its own main/Pages gates.
+
 ### v0.7.0: source editing, Calendar and local ICS
 
 The v0.7.0 package adds:
@@ -41,8 +58,9 @@ The v0.7.0 package adds:
 - a Plan Calendar of target completion dates;
 - a browser-local `.ics` snapshot of remaining tasks and the deadline.
 
-The public demo now serves the verified v0.7.0 build. Calendar dates are not
-appointments, and `.ics` import may be stored by an external calendar provider.
+The verified v0.7.0 release introduced the source-locator editor, Plan Calendar
+and browser-local `.ics` export. Calendar dates are not appointments, and
+`.ics` import may be stored by an external calendar provider.
 
 ### v0.6.0: English and Simplified Chinese interface
 

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActionPlanView } from "@/components/views/action-plan-view";
+import { PlanCalendarView } from "@/components/views/plan-calendar-view";
 import { DEFAULT_PLAN_INPUT, generateActionPlan } from "@/lib/plan";
 import { SAMPLE_ASSIGNMENT } from "@/lib/sample-data";
 
@@ -13,9 +14,21 @@ const assignment = {
   dueDate: SAMPLE_ASSIGNMENT.dueAt.slice(0, 10),
 };
 
-describe("plan calendar presentation", () => {
-  it("defaults to the task list and does not persist the calendar switch", async () => {
+function renderCalendar(plan = generateActionPlan(DEFAULT_PLAN_INPUT), onToggleTask = vi.fn()) {
+  return render(
+    <PlanCalendarView
+      plan={plan}
+      assignment={assignment}
+      onToggleTask={onToggleTask}
+      onOpenInList={vi.fn()}
+    />,
+  );
+}
+
+describe("project tracker calendar", () => {
+  it("keeps Plan on the task list and exposes one tracker shortcut", () => {
     const plan = generateActionPlan(DEFAULT_PLAN_INPUT);
+    const onOpenTracker = vi.fn();
     render(
       <ActionPlanView
         plan={plan}
@@ -23,28 +36,20 @@ describe("plan calendar presentation", () => {
         onRebalance={vi.fn()}
         onToggleTask={vi.fn()}
         onNavigateDraft={vi.fn()}
+        onOpenTracker={onOpenTracker}
       />,
     );
-    expect(screen.getByTestId("plan-task-list")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("open-project-tracker")).toBeInTheDocument();
     expect(screen.queryByTestId("plan-calendar-grid")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("plan-calendar"));
-    await waitFor(() => expect(screen.getByTestId("plan-calendar-grid")).toBeInTheDocument());
-    expect(screen.getByText(/target completion dates/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("open-project-tracker"));
+    expect(onOpenTracker).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId("plan-calendar")).not.toBeInTheDocument();
   });
 
   it("uses the same completion callback from the calendar agenda", async () => {
     const onToggleTask = vi.fn();
     const plan = generateActionPlan(DEFAULT_PLAN_INPUT);
-    render(
-      <ActionPlanView
-        plan={plan}
-        assignment={assignment}
-        onRebalance={vi.fn()}
-        onToggleTask={onToggleTask}
-        onNavigateDraft={vi.fn()}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("plan-calendar"));
+    renderCalendar(plan, onToggleTask);
     const firstIncomplete = plan.tasks.find((task) => !task.completed);
     expect(firstIncomplete).toBeTruthy();
     const day = await screen.findByTestId(`calendar-day-${firstIncomplete!.dueDate}`);
@@ -54,18 +59,7 @@ describe("plan calendar presentation", () => {
   });
 
   it("lets Previous and Next reach empty months and keeps the selected week in that month", async () => {
-    const plan = generateActionPlan(DEFAULT_PLAN_INPUT);
-    render(
-      <ActionPlanView
-        plan={plan}
-        assignment={assignment}
-        onRebalance={vi.fn()}
-        onToggleTask={vi.fn()}
-        onNavigateDraft={vi.fn()}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("plan-calendar"));
-    await waitFor(() => expect(screen.getByTestId("plan-calendar-grid")).toBeInTheDocument());
+    renderCalendar();
     expect(screen.getByTestId("calendar-legend")).toHaveTextContent("Task status");
     expect(screen.getByTestId("plan-calendar-grid").querySelector("button ul")).toBeNull();
 
@@ -89,16 +83,7 @@ describe("plan calendar presentation", () => {
       ...DEFAULT_PLAN_INPUT,
       completedTaskIds: seed.tasks.map((task) => task.id),
     });
-    render(
-      <ActionPlanView
-        plan={plan}
-        assignment={assignment}
-        onRebalance={vi.fn()}
-        onToggleTask={vi.fn()}
-        onNavigateDraft={vi.fn()}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("plan-calendar"));
+    renderCalendar(plan);
     await waitFor(() => expect(screen.getByRole("heading", { name: "September 2026" })).toBeInTheDocument());
     expect(screen.getByTestId("calendar-day-2026-09-07")).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Previous month" }));

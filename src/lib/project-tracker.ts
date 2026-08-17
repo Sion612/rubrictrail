@@ -23,7 +23,7 @@ export function deriveProjectTrackerSummary(
   const incomplete = plan.tasks.filter((task) => !task.completed);
   const nextTask = [...incomplete].sort((left, right) => {
     const dateOrder = compareDateOnly(left.dueDate, right.dueDate);
-    return dateOrder || left.id.localeCompare(right.id);
+    return dateOrder || plan.tasks.indexOf(left) - plan.tasks.indexOf(right);
   })[0] ?? null;
 
   return {

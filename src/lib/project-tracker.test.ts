@@ -39,4 +39,43 @@ describe("deriveProjectTrackerSummary", () => {
     expect(summary.overdueCount).toBe(0);
     expect(summary.allComplete).toBe(true);
   });
+
+  it("resolves same-dueDate ties by plan.tasks index, not alphabetical id", () => {
+    // Generate a plan with p1 completed so p2 and p3 are the first
+    // incomplete tasks, then force them to share the same dueDate.
+    const plan = generateActionPlan({
+      ...DEFAULT_PLAN_INPUT,
+      completedTaskIds: ["p1"],
+    });
+    const sharedDate = plan.profile.asOfDate;
+    const patchedPlan = {
+      ...plan,
+      tasks: plan.tasks.map((task) =>
+        task.id === "p2" || task.id === "p3"
+          ? { ...task, dueDate: sharedDate, completed: false }
+          : task,
+      ),
+    };
+    // p2 appears before p3 in plan.tasks (topological order).
+    const p2Index = patchedPlan.tasks.findIndex((task) => task.id === "p2");
+    const p3Index = patchedPlan.tasks.findIndex((task) => task.id === "p3");
+    expect(p2Index).toBeLessThan(p3Index);
+
+    const summary = deriveProjectTrackerSummary(patchedPlan, "2026-09-07");
+    expect(summary.nextTask?.id).toBe("p2");
+
+    // Swap plan.tasks order so p3 appears before p2.
+    // If the comparator used localeCompare, nextTask would still be p2.
+    // With plan.tasks index ordering, nextTask should now be p3.
+    const swappedTasks = [...patchedPlan.tasks];
+    const temp = swappedTasks[p2Index];
+    swappedTasks[p2Index] = swappedTasks[p3Index];
+    swappedTasks[p3Index] = temp;
+    const swappedSummary = deriveProjectTrackerSummary(
+      { ...patchedPlan, tasks: swappedTasks },
+      "2026-09-07",
+    );
+    // After swap, p3 is at the lower index → p3 should be nextTask.
+    expect(swappedSummary.nextTask?.id).toBe("p3");
+  });
 });

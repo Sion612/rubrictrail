@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActionPlanView } from "@/components/views/action-plan-view";
 import { PlanCalendarView } from "@/components/views/plan-calendar-view";
-import { DEFAULT_PLAN_INPUT, generateActionPlan } from "@/lib/plan";
+import { DEFAULT_PLAN_INPUT, generateActionPlan, rebalanceActionPlan } from "@/lib/plan";
 import { SAMPLE_ASSIGNMENT } from "@/lib/sample-data";
 
 afterEach(cleanup);
@@ -63,9 +63,11 @@ describe("project tracker calendar", () => {
     expect(screen.getByTestId("calendar-legend")).toHaveTextContent("Task status");
     expect(screen.getByTestId("plan-calendar-grid").querySelector("button ul")).toBeNull();
 
+    // shiftMonth now anchors on visibleMonth (always 1st), so selectedDate
+    // after navigating becomes the first of the target month.
     fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "June 2026" })).toBeInTheDocument());
-    expect(screen.getByTestId("calendar-day-2026-06-20")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("calendar-day-2026-06-01")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("No tasks have a target completion date in this week.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
@@ -73,7 +75,7 @@ describe("project tracker calendar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "October 2026" })).toBeInTheDocument());
-    expect(screen.getByTestId("calendar-day-2026-10-20")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("calendar-day-2026-10-01")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText(/The assignment deadline is outside this month/)).toBeInTheDocument();
   });
 
@@ -88,11 +90,11 @@ describe("project tracker calendar", () => {
     expect(screen.getByTestId("calendar-day-2026-09-07")).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "August 2026" })).toBeInTheDocument());
-    expect(screen.getByTestId("calendar-day-2026-08-07")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("calendar-day-2026-08-01")).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "October 2026" })).toBeInTheDocument());
-    expect(screen.getByTestId("calendar-day-2026-10-07")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("calendar-day-2026-10-01")).toHaveAttribute("aria-pressed", "true");
   });
 
   it("moves a late sample task later when weekly hours drop from 10 to 5", () => {
@@ -109,5 +111,46 @@ describe("project tracker calendar", () => {
     const lateId = "p13";
     expect(standard.tasks.find((task) => task.id === lateId)?.dueDate).toBe("2026-08-28");
     expect(reduced.tasks.find((task) => task.id === lateId)?.dueDate).toBe("2026-09-11");
+  });
+
+  it("does not snap back the visible month when a task is toggled from an empty month", async () => {
+    // Reproduce P1: navigate to a future empty month, then re-render with
+    // a rebalanced plan (simulating task completion).  The visible month
+    // must remain where the user navigated.
+    const plan = generateActionPlan(DEFAULT_PLAN_INPUT);
+    const onToggleTask = vi.fn();
+    const { rerender } = render(
+      <PlanCalendarView
+        plan={plan}
+        assignment={assignment}
+        onToggleTask={onToggleTask}
+        onOpenInList={vi.fn()}
+      />,
+    );
+
+    // Navigate forward to October — an empty month with no tasks.
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "October 2026" })).toBeInTheDocument());
+    expect(screen.getByTestId("calendar-day-2026-10-01")).toHaveAttribute("aria-pressed", "true");
+
+    // Simulate a task toggle: the parent rebalances the plan and re-renders
+    // PlanCalendarView with the updated plan.
+    const rebalancedPlan = rebalanceActionPlan(plan, { completedTaskIds: ["p1"] });
+    rerender(
+      <PlanCalendarView
+        plan={rebalancedPlan}
+        assignment={assignment}
+        onToggleTask={onToggleTask}
+        onOpenInList={vi.fn()}
+      />,
+    );
+
+    // The visible month MUST stay on October — the user's explicit navigation
+    // must not be displaced by schedule reconciliation.
+    await waitFor(() => expect(screen.getByRole("heading", { name: "October 2026" })).toBeInTheDocument());
+    expect(screen.getByTestId("calendar-day-2026-10-01")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/The assignment deadline is outside this month/)).toBeInTheDocument();
   });
 });

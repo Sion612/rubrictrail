@@ -196,3 +196,47 @@ test("project tracker is reachable from every workspace view without persistence
   const stored = await page.evaluate(() => window.localStorage.getItem("rubrictrail.project.store.v1"));
   expect(stored).not.toContain("trackerOpen");
 });
+
+test("task toggle from an empty month does not snap back the visible month", async ({ page }) => {
+  test.setTimeout(90_000);
+  await openSampleCalendar(page);
+
+  // Navigate forward to October — a month with no tasks due.
+  await page.getByRole("button", { name: "Next month" }).click();
+  await page.getByRole("button", { name: "Next month" }).click();
+  await page.getByRole("button", { name: "Next month" }).click();
+  await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
+
+  // Click a specific day cell in October to anchor the selection.
+  await page.getByTestId("calendar-day-2026-10-15").click();
+
+  // Navigate back to a month with tasks, select a task day, and toggle it.
+  await page.getByRole("button", { name: "Previous month" }).click();
+  await page.getByRole("button", { name: "Previous month" }).click();
+  await page.getByRole("button", { name: "Previous month" }).click();
+  await expect(page.getByRole("heading", { name: "July 2026" })).toBeVisible();
+
+  // Go to August where tasks actually are.
+  await page.getByRole("button", { name: "Next month" }).click();
+  await expect(page.getByRole("heading", { name: "August 2026" })).toBeVisible();
+
+  // Click a day with tasks and toggle one.
+  const firstTask = page.getByTestId("calendar-task-p1");
+  // Find p1's day and click it.
+  const p1Day = page.getByTestId("calendar-day-2026-08-03");
+  if (await p1Day.count() > 0) {
+    await p1Day.click();
+  }
+  if (await firstTask.count() > 0) {
+    await firstTask.getByRole("checkbox").check();
+  }
+
+  // Now navigate forward to October again.
+  await page.getByRole("button", { name: "Next month" }).click();
+  await page.getByRole("button", { name: "Next month" }).click();
+  await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
+
+  // The visible month must stay on October — no snapback.
+  await expect(page.getByText(/The assignment deadline is outside this month/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
+});

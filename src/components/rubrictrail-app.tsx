@@ -7,6 +7,7 @@ import { WelcomeScreen } from "@/components/welcome-screen";
 import { WorkspaceShell, type WorkspaceProjectMeta } from "@/components/workspace-shell";
 import { StorageConflictBanner } from "@/components/storage-conflict-banner";
 import { PersistenceUnavailableBanner } from "@/components/persistence-unavailable-banner";
+import type { TaskFocusRequest } from "@/components/views/action-plan-view";
 import { useI18n, useLocalizedMessages } from "@/components/locale-provider";
 import { BRAND } from "@/lib/brand";
 import type { PlanningDepth } from "@/lib/domain";
@@ -72,6 +73,7 @@ import {
   manualSourceLocatorsEqual,
   todayIso,
 } from "@/lib/uploaded-project";
+import { deriveProjectTrackerSummary } from "@/lib/project-tracker";
 import type {
   AssignmentFileIntakeError,
   AssignmentIntakeMode,
@@ -156,6 +158,10 @@ const DraftCheckView = dynamic(
 const ProgressView = dynamic(
   () => import("@/components/views/progress-view").then((module) => module.ProgressView),
   { loading: DeferredPhaseFallback, ssr: false },
+);
+const ProjectTracker = dynamic(
+  () => import("@/components/project-tracker").then((module) => module.ProjectTracker),
+  { ssr: false },
 );
 const UploadedBriefView = dynamic(
   () => import("@/components/views/uploaded-project-views").then((module) => module.UploadedBriefView),
@@ -535,6 +541,8 @@ export function RubricTrailApp() {
   const [hydrated, setHydrated] = useState(false);
   const [project, setProjectState] = useState<PersistedProjectState>(() => createDefaultProjectState());
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
+  const [trackerOpen, setTrackerOpen] = useState(false);
+  const [taskFocusRequest, setTaskFocusRequest] = useState<TaskFocusRequest | null>(null);
   const [uploadedReviewCriterionId, setUploadedReviewCriterionId] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadFlowResult | null>(null);
   const [partialUploadResult, setPartialUploadResult] =
@@ -575,6 +583,8 @@ export function RubricTrailApp() {
   const backupImportActive = useRef(false);
   const intakeRunId = useRef(0);
   const focusWelcomeIntake = useRef<AssignmentIntakeMode | null>(null);
+  const trackerOpenerRef = useRef<HTMLElement | null>(null);
+  const trackerFocusToken = useRef(0);
   const observedStorageBaseline = useRef<ProjectStorageBaseline | null>(null);
   const storageConflictActive = useRef(false);
   const replacementIntentRevision = useRef(0);
@@ -940,6 +950,23 @@ export function RubricTrailApp() {
       ),
     [dueDate, project.completedTaskIds, project.targetGrade, project.weeklyHours, today, uploadedTemplates],
   );
+  const trackerAssignment = project.uploadedProject
+    ? {
+        id: project.uploadedProject.id,
+        title: project.uploadedProject.title,
+        course: project.uploadedProject.course,
+        dueDate: project.uploadedProject.dueDate,
+      }
+    : {
+        id: SAMPLE_ASSIGNMENT.id,
+        title: SAMPLE_ASSIGNMENT.title,
+        course: SAMPLE_ASSIGNMENT.course,
+        dueDate: SAMPLE_ASSIGNMENT.dueAt.slice(0, 10),
+      };
+  const trackerSummary = useMemo(
+    () => deriveProjectTrackerSummary(plan, trackerAssignment.dueDate),
+    [plan, trackerAssignment.dueDate],
+  );
   const currentDraftResult =
     project.draftResult &&
     project.checkedDraftText === project.draftText &&
@@ -955,6 +982,20 @@ export function RubricTrailApp() {
         ? current.visitedViews
         : [...current.visitedViews, view],
     }));
+  }
+
+  function openTracker() {
+    trackerOpenerRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setTrackerOpen(true);
+  }
+
+  function openTaskFromTracker(taskId: string) {
+    trackerFocusToken.current += 1;
+    setTaskFocusRequest({ taskId, token: trackerFocusToken.current });
+    setTrackerOpen(false);
+    navigate("plan");
   }
 
   function continueUploadedProgress(
@@ -2012,15 +2053,12 @@ export function RubricTrailApp() {
       activeView = (
         <ActionPlanView
           plan={plan}
-          assignment={{
-            id: uploaded.id,
-            title: uploaded.title,
-            course: uploaded.course,
-            dueDate: uploaded.dueDate,
-          }}
+          assignment={trackerAssignment}
           onRebalance={rebalancePlan}
           onToggleTask={toggleTask}
           onNavigateDraft={() => navigate("draft")}
+          onOpenTracker={openTracker}
+          focusTaskRequest={taskFocusRequest}
         />
       );
     } else if (project.view === "draft") {
@@ -2054,15 +2092,12 @@ export function RubricTrailApp() {
     activeView = (
       <ActionPlanView
         plan={plan}
-        assignment={{
-          id: SAMPLE_ASSIGNMENT.id,
-          title: SAMPLE_ASSIGNMENT.title,
-          course: SAMPLE_ASSIGNMENT.course,
-          dueDate: SAMPLE_ASSIGNMENT.dueAt.slice(0, 10),
-        }}
+        assignment={trackerAssignment}
         onRebalance={rebalancePlan}
         onToggleTask={toggleTask}
         onNavigateDraft={() => navigate("draft")}
+        onOpenTracker={openTracker}
+        focusTaskRequest={taskFocusRequest}
       />
     );
   } else if (project.view === "draft") {
@@ -2117,12 +2152,24 @@ export function RubricTrailApp() {
         progress={plan.completionPercent}
         stepStates={stepStates}
         project={projectMeta}
+        trackerSummary={trackerSummary}
+        onOpenTracker={openTracker}
         evidencePanel={evidencePanel}
       >
         {persistenceUnavailableNotice}
         {storageConflictNotice}
         {activeView}
       </WorkspaceShell>
+      {trackerOpen ? (
+        <ProjectTracker
+          plan={plan}
+          assignment={trackerAssignment}
+          openerRef={trackerOpenerRef}
+          onClose={() => setTrackerOpen(false)}
+          onToggleTask={toggleTask}
+          onOpenTask={openTaskFromTracker}
+        />
+      ) : null}
       {toastStack}
     </>
   );

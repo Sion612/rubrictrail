@@ -27,6 +27,7 @@ interface PlanCalendarViewProps {
   assignment: CalendarExportAssignment;
   onToggleTask: (taskId: string) => void;
   onOpenInList: (taskId: string) => void;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 interface CalendarTaskFlags {
@@ -60,7 +61,13 @@ function selectionStillValid(
   assignment: CalendarExportAssignment,
 ): boolean {
   if (date === assignment.dueDate || date === plan.profile.asOfDate) return true;
-  return plan.tasks.some((task) => task.dueDate === date);
+  if (plan.tasks.some((task) => task.dueDate === date)) return true;
+  // Preserve the user's explicit navigation position even when no task is
+  // due on this exact date.  Task completion toggles and minor rebalances
+  // must not displace the user's chosen calendar view.  Full plan rebuilds
+  // (depth change, new project) remount the component, which re-initialises
+  // selectedDate via the useState initialiser.
+  return true;
 }
 
 function reconcileSelectedDate(
@@ -77,7 +84,7 @@ function scheduleSignature(plan: ActionPlan, assignment: CalendarExportAssignmen
     assignment.dueDate,
     plan.profile.asOfDate,
     plan.profile.dueDate,
-    ...plan.tasks.map((task) => `${task.id}:${task.dueDate}:${Number(task.completed)}`),
+    ...plan.tasks.map((task) => `${task.id}:${task.dueDate}`),
   ].join("|");
 }
 
@@ -109,6 +116,7 @@ export function PlanCalendarView({
   assignment,
   onToggleTask,
   onOpenInList,
+  onBusyChange,
 }: PlanCalendarViewProps) {
   const messages = useLocalizedMessages(planMessagesEn, planMessagesZhCN);
   const { locale, formatDate, formatNumber } = useI18n();
@@ -120,11 +128,17 @@ export function PlanCalendarView({
   const lastSignatureRef = useRef(signature);
 
   useEffect(() => {
+    onBusyChange?.(exporting);
+  }, [exporting, onBusyChange]);
+
+  useEffect(() => {
     if (lastSignatureRef.current === signature) return;
     lastSignatureRef.current = signature;
     setSelectedDate((current) => {
       const next = reconcileSelectedDate(current, plan, assignment);
-      setVisibleMonth(startOfMonth(next));
+      if (next !== current) {
+        setVisibleMonth(startOfMonth(next));
+      }
       return next;
     });
   }, [signature, plan, assignment]);
@@ -178,9 +192,9 @@ export function PlanCalendarView({
   }
 
   function shiftMonth(amount: number) {
-    const nextSelected = addCalendarMonths(selectedDate, amount);
-    setSelectedDate(nextSelected);
-    setVisibleMonth(startOfMonth(nextSelected));
+    const nextMonth = addCalendarMonths(visibleMonth, amount);
+    setSelectedDate(nextMonth);
+    setVisibleMonth(nextMonth);
   }
 
   function goToPlanningDate() {

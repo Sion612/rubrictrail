@@ -9,6 +9,45 @@ the generated static demo served at `/rubrictrail`. Calendar scenarios freeze
 Playwright's clock at 2026-08-17 so month expectations do not depend on the
 wall-clock date.
 
+## Current v0.7.1 candidate evidence
+
+Date: 18 August 2026
+Revision: isolated local candidate on top of the verified v0.7.0 main base.
+This section records commands executed locally; it does not claim PR CI,
+merged-main CI, or a public Pages deployment.
+
+### Automated gates
+
+| Command | Observed result |
+| --- | --- |
+| `pnpm check` | ESLint passed with zero warnings; TypeScript passed; 33 Vitest files / 389 tests plus 3 OCR asset-audit Node tests passed; the Next.js 16.3.0 production build passed |
+| `pnpm audit --prod` | No known vulnerabilities found |
+| `PAGES_BASE_PATH=/rubrictrail pnpm build:demo` | Static export completed successfully |
+| `pnpm audit:demo` | Passed for 61 exported files; 14 initial JS/CSS files totalled 1,270,399 raw / 356,942 gzip bytes, below the unchanged 357,000-byte gzip budget; 10 deferred OCR files totalled 16,850,033 bytes and were absent from initial HTML |
+| `PLAYWRIGHT_PRODUCTION=true PLAYWRIGHT_APP_PATH=/ pnpm test:e2e --workers=1` | 52/52 desktop and mobile Chromium executions passed through `next start` |
+| `PLAYWRIGHT_APP_PATH=/rubrictrail/ pnpm test:e2e:demo --workers=1` | 52/52 desktop and mobile Chromium executions passed against the static `/rubrictrail` artifact |
+| Focused mobile autofocus regression (production/static, `--repeat-each=10 --workers=1`) | 10/10 production and 10/10 static-demo executions passed |
+| `pnpm test:deployment-smoke` | 14/14 deterministic deployment/freshness/smoke tests passed |
+| `git diff --check` | Passed with no whitespace errors |
+
+The required autofocus regression was also run independently with
+`--project=mobile-chrome --repeat-each=10 --workers=1`: 10/10 passed against
+the fresh production server and 10/10 passed against the static demo. The
+repeated runs used explicit focus and value assertions; no arbitrary sleep,
+global timeout increase, or retry was added.
+
+New v0.7.1 coverage includes the global Project Tracker from all five workflow
+views, transient tracker state and focus restoration, task completion and
+Open-in-task-list focus, empty/all-complete Calendar navigation, local ICS
+export, the mobile tracker strip at 320px, and source-locator save/remove
+failure accessibility and in-flight close protection. Tracker dates remain
+derived from the existing Action Plan only; no new persistence or scheduling
+schema was introduced. Source-ID tests cover source-1/source-3/source-10,
+valid gaps, malformed/out-of-bound IDs, old projects and manual locators.
+
+The PR, remote CI, merged-main deployment, and public Pages smoke remain
+unverified at this point.
+
 This report describes the v0.7.0 release at exact main commit
 [`3ee8b76`](https://github.com/Sion612/rubrictrail/commit/3ee8b76ee1c57a45f7ae1352a8c404f65c2ebd79).
 [GitHub Actions run 31993864121](https://github.com/Sion612/rubrictrail/actions/runs/31993864121)

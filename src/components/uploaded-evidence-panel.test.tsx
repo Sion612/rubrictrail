@@ -413,6 +413,7 @@ describe("UploadedEvidencePanel", () => {
       fireEvent.click(screen.getByTestId("save-locator"));
       expect(onSave).not.toHaveBeenCalled();
       expect(screen.getByTestId("locator-page-error")).toHaveTextContent("1 to 2");
+      expect(screen.getByTestId("locator-page")).toHaveFocus();
     }
     fireEvent.change(screen.getByTestId("locator-page"), { target: { value: "" } });
     fireEvent.change(screen.getByTestId("locator-source"), { target: { value: "source-3" } });
@@ -523,6 +524,77 @@ describe("UploadedEvidencePanel", () => {
     fireEvent.click(screen.getByTestId("remove-locator"));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith("analysis-1", null));
     expect(window.confirm).toHaveBeenCalled();
+    window.confirm = confirm;
+  });
+
+  it("keeps the locator editor and dialog locked while a save is in flight", async () => {
+    let resolveSave: ((outcome: "saved" | "tab-only" | "failed") => void) | undefined;
+    const onSave = vi.fn(() => new Promise<"saved" | "tab-only" | "failed">((resolve) => {
+      resolveSave = resolve;
+    }));
+    const onClose = vi.fn();
+    const project: UploadedProject = {
+      ...uploadedProject,
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: null,
+      }],
+    };
+    render(
+      <UploadedEvidencePanel
+        project={project}
+        criterionId="analysis-1"
+        onClose={onClose}
+        onSaveManualSourceLocator={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("add-locator"));
+    fireEvent.change(screen.getByTestId("locator-source"), { target: { value: "source-1" } });
+    fireEvent.change(screen.getByTestId("locator-page"), { target: { value: "2" } });
+    fireEvent.click(screen.getByTestId("save-locator"));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByTestId("locator-source")).toBeDisabled();
+    expect(screen.getByTestId("locator-page")).toBeDisabled();
+    expect(screen.getByTestId("save-locator")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    const close = dialog.querySelector<HTMLButtonElement>(".evidence-panel__close");
+    expect(close).toBeDisabled();
+    fireEvent.click(close!);
+    expect(onClose).not.toHaveBeenCalled();
+
+    resolveSave?.("saved");
+    await waitFor(() => expect(dialog).not.toHaveAttribute("aria-busy", "true"));
+  });
+
+  it("keeps a failed locator removal visible as an alert", async () => {
+    const onSave = vi.fn().mockResolvedValue("failed");
+    const onClose = vi.fn();
+    const project: UploadedProject = {
+      ...uploadedProject,
+      criteria: [{
+        ...uploadedProject.criteria[0],
+        evidence: null,
+        manualSourceLocator: { sourceId: "source-1", page: 2 },
+      }],
+    };
+    render(
+      <UploadedEvidencePanel
+        project={project}
+        criterionId="analysis-1"
+        onClose={onClose}
+        onSaveManualSourceLocator={onSave}
+      />,
+    );
+    const confirm = window.confirm;
+    window.confirm = vi.fn(() => true);
+    fireEvent.click(screen.getByTestId("remove-locator"));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("could not be saved"));
+    expect(screen.getByTestId("edit-locator")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
     window.confirm = confirm;
   });
 });

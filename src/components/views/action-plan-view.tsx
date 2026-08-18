@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Clock3, GitBranch, SlidersHorizontal } from "lucide-react";
 import type { ActionPlan, PlanningDepth } from "@/lib/domain";
@@ -14,12 +13,10 @@ import {
   planMessagesEn,
   planMessagesZhCN,
 } from "@/lib/i18n/messages/views";
-import styles from "./action-plan-view.module.css";
-
-const PlanCalendarView = dynamic(
-  () => import("@/components/views/plan-calendar-view").then((module) => module.PlanCalendarView),
-  { ssr: false },
-);
+export interface TaskFocusRequest {
+  taskId: string;
+  token: number;
+}
 
 interface ActionPlanViewProps {
   plan: ActionPlan;
@@ -27,9 +24,18 @@ interface ActionPlanViewProps {
   onRebalance: (weeklyHours: number, planningDepth: PlanningDepth) => void;
   onToggleTask: (taskId: string) => void;
   onNavigateDraft: () => void;
+  onOpenTracker?: () => void;
+  focusTaskRequest?: TaskFocusRequest | null;
 }
 
-export function ActionPlanView({ plan, assignment, onRebalance, onToggleTask, onNavigateDraft }: ActionPlanViewProps) {
+export function ActionPlanView({
+  plan,
+  onRebalance,
+  onToggleTask,
+  onNavigateDraft,
+  onOpenTracker,
+  focusTaskRequest,
+}: ActionPlanViewProps) {
   const messages = useLocalizedMessages(planMessagesEn, planMessagesZhCN);
   const { locale, formatDate, formatNumber } = useI18n();
   const minutesLabel = (minutes: number) => {
@@ -95,15 +101,15 @@ export function ActionPlanView({ plan, assignment, onRebalance, onToggleTask, on
       (option) => option.value === controls.planningDepth,
     ) ??
     PLANNING_DEPTH_OPTIONS[1];
-  const [presentation, setPresentation] = useState<"list" | "calendar">("list");
-  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
-
   useEffect(() => {
-    if (!focusTaskId || presentation !== "list") return;
-    const node = document.querySelector<HTMLElement>(`[data-testid="task-${focusTaskId}"]`);
-    node?.scrollIntoView({ block: "center" });
-    node?.focus({ preventScroll: true });
-  }, [focusTaskId, presentation]);
+    if (!focusTaskRequest) return;
+    const frame = window.requestAnimationFrame(() => {
+      const node = document.querySelector<HTMLElement>(`[data-testid="task-${focusTaskRequest.taskId}"]`);
+      node?.scrollIntoView({ block: "center" });
+      node?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusTaskRequest]);
 
   const taskNameById = useMemo(() => new Map(plan.tasks.map((task) => [task.id, task.title])), [plan.tasks]);
   const phases = useMemo(() => {
@@ -165,46 +171,17 @@ export function ActionPlanView({ plan, assignment, onRebalance, onToggleTask, on
         </div>
       )}
 
-      <div className={styles.presentation} role="group" aria-label={messages.presentationLabel}>
-        <button
-          type="button"
-          className={presentation === "list" ? styles.isActive : undefined}
-          aria-pressed={presentation === "list"}
-          data-testid="plan-task-list"
-          onClick={() => setPresentation("list")}
-        >
-          {messages.taskList}
-        </button>
-        <button
-          type="button"
-          className={presentation === "calendar" ? styles.isActive : undefined}
-          aria-pressed={presentation === "calendar"}
-          data-testid="plan-calendar"
-          onClick={() => setPresentation("calendar")}
-        >
-          {messages.calendar}
-        </button>
-      </div>
-
       <div className="plan-summary-line">
         <span><Clock3 aria-hidden="true" />{interpolateViewMessage(messages.remaining, { time: minutesLabel(plan.remainingMinutes) })}</span>
         <span><CalendarDays aria-hidden="true" />{interpolateViewMessage(messages.projected, { date: dateLabel(plan.projectedFinishDate) })}</span>
         <span><GitBranch aria-hidden="true" />{messages.dependenciesRespected}</span>
       </div>
 
-      {presentation === "calendar" ? (
-        <PlanCalendarView
-          plan={plan}
-          assignment={assignment}
-          onToggleTask={onToggleTask}
-          onOpenInList={(taskId) => {
-            setPresentation("list");
-            setFocusTaskId(taskId);
-          }}
-        />
-      ) : null}
+      <button className="button button-secondary" type="button" onClick={() => onOpenTracker?.()} data-testid="open-project-tracker">
+        <CalendarDays aria-hidden="true" /> {messages.openTracker}
+      </button>
 
-      <div className="phase-list" hidden={presentation !== "list"}>
+      <div className="phase-list">
         {phases.map(([phase, tasks], phaseIndex) => (
           <section className="plan-phase" key={phase} aria-labelledby={`phase-${phaseIndex}`}>
             <div className="phase-heading"><span>{formatNumber(phaseIndex + 1, { minimumIntegerDigits: 2, useGrouping: false })}</span><h2 id={`phase-${phaseIndex}`}>{localizeSystemText(phase, locale)}</h2><small>{interpolateViewMessage(messages.taskCount, { count: formatNumber(tasks.length) })}</small></div>

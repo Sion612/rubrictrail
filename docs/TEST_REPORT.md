@@ -9,12 +9,13 @@ the generated static demo served at `/rubrictrail`. Calendar scenarios freeze
 Playwright's clock at 2026-08-17 so month expectations do not depend on the
 wall-clock date.
 
-## Current v0.7.1 candidate evidence
+## v0.7.1 merged-main and public Pages evidence
 
 Date: 18 August 2026
-Revision: isolated local candidate on top of the verified v0.7.0 main base.
-This section records commands executed locally; it does not claim PR CI,
-merged-main CI, or a public Pages deployment.
+Revision: [`b6a63e7`](https://github.com/Sion612/rubrictrail/commit/b6a63e79d42705d35fe9e26dabfe1d6f9a1a14ba)
+(`main`, merged from [PR #37](https://github.com/Sion612/rubrictrail/pull/37)).
+The exact-head PR checks, merged-main CI, Pages deployment and public smoke
+were verified after the squash merge.
 
 ### Automated gates
 
@@ -45,8 +46,22 @@ derived from the existing Action Plan only; no new persistence or scheduling
 schema was introduced. Source-ID tests cover source-1/source-3/source-10,
 valid gaps, malformed/out-of-bound IDs, old projects and manual locators.
 
-The PR, remote CI, merged-main deployment, and public Pages smoke remain
-unverified at this point.
+### Remote exact-main and Pages evidence
+
+| Stage | Evidence |
+| --- | --- |
+| PR #37 exact head | [CI run 32108335400](https://github.com/Sion612/rubrictrail/actions/runs/32108335400): `quality`, `browser` and `pages-static` all succeeded for head `2498ebb93540cc684a74570e7d3be4d06bff0e3c` |
+| Merged-main CI | [CI run 32108799869](https://github.com/Sion612/rubrictrail/actions/runs/32108799869): `push` on `main`, head `b6a63e79d42705d35fe9e26dabfe1d6f9a1a14ba`; `quality`, `browser` and `pages-static` all succeeded |
+| Pages deployment | [Deploy Pages run 32109161911](https://github.com/Sion612/rubrictrail/actions/runs/32109161911): freshness, build, deploy and smoke all succeeded for the same SHA |
+| Public homepage | `https://sion612.github.io/rubrictrail/` returned HTTP 200 |
+| Public marker | `deployment.txt` returned HTTP 200, exactly 40 lowercase-hex bytes equal to `b6a63e79d42705d35fe9e26dabfe1d6f9a1a14ba` |
+| Public assets | 15 HTML-linked `src`/`href`/`srcset` resources stayed on the HTTPS `/rubrictrail/` origin and returned 2xx |
+| Public Live boundary | Both Live paths returned GET 404 and POST `{}` 405; no response bodies were recorded |
+
+The Pages smoke job and the independent public check validate the deployed
+revision and static boundary. They do not claim that GitHub Pages provides the
+Node runtime's response headers, nor that production concurrency or every
+failure path was naturally exercised by this deployment.
 
 This report describes the v0.7.0 release at exact main commit
 [`3ee8b76`](https://github.com/Sion612/rubrictrail/commit/3ee8b76ee1c57a45f7ae1352a8c404f65c2ebd79).

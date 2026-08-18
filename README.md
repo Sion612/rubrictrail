@@ -35,7 +35,7 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ### v0.7.1: Project Tracker, source editing and local ICS
 
-The v0.7.1 candidate promotes Calendar into a project-level **Project
+The v0.7.1 release promotes Calendar into a project-level **Project
 Tracker** that stays available across Brief, Rubric, Plan, Check and Progress.
 It shows the next target, deadline, incomplete/blocked/overdue counts, the
 existing Calendar and selected-week agenda, and the browser-local `.ics`
@@ -47,8 +47,9 @@ project state.
 Plan remains focused on weekly hours, planning depth, rebalance, dependencies
 and task completion. Calendar dates remain target completion dates, not
 appointments, and `.ics` import may be stored by an external calendar
-provider. The public Pages demo remains the last verified release until this
-candidate completes its own main/Pages gates.
+provider. The public Pages demo now serves the merged v0.7.1 revision; exact
+main CI, Pages and public-smoke evidence is recorded in
+[the verification report](./docs/TEST_REPORT.md).
 
 ### v0.7.0: source editing, Calendar and local ICS
 

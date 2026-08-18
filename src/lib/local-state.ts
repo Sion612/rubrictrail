@@ -5,6 +5,7 @@ import { DEFAULT_PLAN_TASK_TEMPLATES } from "@/lib/plan";
 import { SAMPLE_READINESS, UPLOADED_READINESS } from "@/lib/readiness";
 import { SAMPLE_DRAFT_TEXT } from "@/lib/sample-data";
 import {
+  isCanonicalSourceId,
   isSafeSingleLineProjectMetadata,
   maximumSupportedDueDate,
   UPLOADED_REVIEW_MAX_CHARACTERS,
@@ -33,7 +34,6 @@ const MAX_TASK_IDS = 200;
 const MAX_READINESS_IDS = 32;
 const UNSAFE_PERSISTED_FILE_NAME_CHARACTER =
   /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u;
-const CANONICAL_SOURCE_ID = /^source-([1-9]\d*)$/u;
 const V2_FINGERPRINT_PATTERN = /^v1:\d+:[0-9a-f]{8}:[0-9a-f]{8}$/;
 const MAX_PROJECT_RECORD_CHARACTERS = MAX_STORED_CHARACTERS + 1_024;
 
@@ -144,9 +144,7 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
       }
 
       project.sources.forEach((source, index) => {
-        const sourceIdMatch = CANONICAL_SOURCE_ID.exec(source.id);
-        const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
-        if (!Number.isSafeInteger(sourceNumber)) {
+        if (!isCanonicalSourceId(source.id)) {
           context.addIssue({
             code: "custom",
             message: "Project source id is not canonical",
@@ -230,9 +228,7 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
           });
         }
         if (evidence.sourceId !== null) {
-          const sourceIdMatch = CANONICAL_SOURCE_ID.exec(evidence.sourceId);
-          const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
-          if (!Number.isSafeInteger(sourceNumber)) {
+          if (!isCanonicalSourceId(evidence.sourceId)) {
             context.addIssue({
               code: "custom",
               message: "Criterion evidence source id is not canonical",
@@ -332,9 +328,7 @@ const uploadedProjectSchema: z.ZodType<UploadedProject> = z
             });
           }
         }
-        const sourceIdMatch = CANONICAL_SOURCE_ID.exec(manualSourceLocator.sourceId);
-        const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
-        if (!Number.isSafeInteger(sourceNumber)) {
+        if (!isCanonicalSourceId(manualSourceLocator.sourceId)) {
           context.addIssue({
             code: "custom",
             message: "Manual source locator source id is not canonical",

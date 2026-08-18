@@ -559,14 +559,31 @@ describe("local project persistence", () => {
     expect(parsePersistedProjectStateValue(state).ok).toBe(false);
   });
 
-  it("rejects source ids outside the persisted file-count boundary", () => {
-    const state = uploadedState();
-    state.uploadedProject!.criteria[0].evidence = {
-      ...state.uploadedProject!.criteria[0].evidence!,
-      sourceId: "source-26",
+  it("accepts source-10 and rejects source ids outside the intake boundary", () => {
+    const accepted = uploadedState();
+    accepted.uploadedProject!.sources![0].id = "source-10";
+    accepted.uploadedProject!.criteria[0].evidence = {
+      ...accepted.uploadedProject!.criteria[0].evidence!,
+      sourceId: "source-10",
     };
+    expect(parsePersistedProjectStateValue(accepted).ok).toBe(true);
 
-    expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+    for (const sourceId of ["source-0", "source-11", "source-999"]) {
+      const state = uploadedState();
+      state.uploadedProject!.criteria[0].evidence = {
+        ...state.uploadedProject!.criteria[0].evidence!,
+        sourceId,
+      };
+      expect(parsePersistedProjectStateValue(state).ok).toBe(false);
+
+      const manual = uploadedState();
+      manual.uploadedProject!.criteria[0].evidence = null;
+      manual.uploadedProject!.criteria[0].manualSourceLocator = {
+        sourceId,
+        page: null,
+      };
+      expect(parsePersistedProjectStateValue(manual).ok).toBe(false);
+    }
   });
 
   it("rejects an evidence span shorter than its retained excerpt", () => {

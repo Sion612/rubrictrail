@@ -16,6 +16,15 @@ import type {
 
 export const UPLOADED_REVIEW_MAX_CHARACTERS = 40_000;
 
+/**
+ * Source IDs preserve original file indices, so gaps are valid. The upper
+ * bound is the intake limit rather than the current registry length because a
+ * partially recovered project may legitimately contain only source-10.
+ */
+export function isCanonicalSourceId(sourceId: string): boolean {
+  return /^source-([1-9]|10)$/u.test(sourceId);
+}
+
 const UNSAFE_SINGLE_LINE_PROJECT_METADATA_CHARACTER =
   /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/u;
 
@@ -410,12 +419,7 @@ function validateNewSourceRegistry(result: UploadFlowResult): void {
 
   const sourceIds = new Set<string>();
   for (const source of result.sources) {
-    const sourceIdMatch = /^source-([1-9]\d*)$/u.exec(source.id);
-    const sourceNumber = sourceIdMatch ? Number(sourceIdMatch[1]) : Number.NaN;
-    if (
-      !Number.isSafeInteger(sourceNumber) ||
-      sourceIds.has(source.id)
-    ) {
+    if (!isCanonicalSourceId(source.id) || sourceIds.has(source.id)) {
       throw new Error("Parsed sources must have unique canonical source ids.");
     }
     sourceIds.add(source.id);

@@ -163,6 +163,9 @@ before and during confirmation, but they are not copied into `UploadedProject`,
 localStorage or the backup protocol. Successful source IDs retain their original
 selection positions, so skipping a middle file cannot silently renumber later
 evidence.
+The shared canonical validator accepts only `source-1` through `source-10`;
+it does not require contiguous IDs, so partial recovery can still retain
+`source-10` when earlier files were omitted.
 
 ## Backup and restore boundary
 

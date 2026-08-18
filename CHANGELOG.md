@@ -4,7 +4,7 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
-## [0.7.1] - 2026-08-17
+## [0.7.1] - 2026-08-18
 
 ### Changed
 
@@ -17,6 +17,8 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 - Stabilized the rubric-confirmation browser path after adding a criterion by
   asserting focus and exact field values before entering weights.
+- Tracker next-target ties now follow the Action Plan task order, and Calendar
+  reconciliation preserves intentional empty-month browsing after task changes.
 - Improved source-locator save/remove failure recovery and accessibility: the
   panel stays open, entered values remain available, failures are announced,
   and the page field receives focus for invalid PDF pages.
@@ -26,6 +28,9 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 - Tracker summaries and open state remain transient React UI state. The
   existing Action Plan remains the only source of Calendar dates and `.ics`
   events; no appointments or dates are invented.
+- Source registries, retained evidence and manual locators share the canonical
+  `source-1` through `source-10` boundary while preserving valid input-index
+  gaps and legacy projects without compact sources.
 - CI and Pages builds disable framework telemetry with
   `NEXT_TELEMETRY_DISABLED=1`.
 

@@ -1,9 +1,12 @@
 # ADR-0080: Multi-assignment workspace persistence
 
-- Status: Accepted with amendments
+- Status: Accepted
 - Decision date: 2026-08-19
 - Target release: v0.8.0
 - Scope: browser-local persistence architecture only
+
+This accepted revision incorporates the final architecture-gate amendments
+approved on 2026-08-19.
 
 ## Context
 
@@ -44,8 +47,8 @@ Use:
 4. one global workspace Web Lock, retaining the current lock name;
 5. one independent best-effort last-opened preference;
 6. one sacrificial storage reserve for recovery operations; and
-7. generation-scoped tombstones removed only by a journaled workspace-generation
-   rotation.
+7. generation-scoped tombstones removed only by a journaled
+   workspace-generation rotation or explicit whole-workspace privacy deletion.
 
 The index contains membership and deletion state only. It does not duplicate
 title, course, deadline, progress, or other project metadata. Project edits are
@@ -108,10 +111,19 @@ remove values merely because they start with `rubrictrail.`.
 
 `workspaceId`, `projectId`, and `operationId` are lowercase RFC 4122 UUID text
 produced by `crypto.randomUUID()`. If secure UUID generation is unavailable,
-the operation fails closed. A generated workspace or project ID is checked
-against the index, all recognized workspace record keys in every discovered
-generation, and all valid tombstones. IDs are never reused. After eight
-collisions, creation fails rather than falling back to weaker randomness.
+the operation fails closed. Project IDs are never intentionally reused. A newly
+generated ID is collision checked against every extant authoritative,
+tombstoned, quarantined, journaled, and discoverable project record in every
+generation. After eight collisions, creation fails rather than falling back to
+weaker randomness.
+
+A verified generation rotation may remove old-generation active records and
+tombstones, so completely removed historical IDs are not retained forever in a
+permanent retired-ID ledger. Stale-tab safety relies on the exact
+`workspaceId`, `workspaceGeneration`, index and project revisions, and exact
+record baselines, not on an infinite set of historical project IDs. A future
+cryptographically generated ID that happens to equal a fully removed historical
+ID is still isolated by the current generation and exact baselines.
 
 Protocol values use strict schemas and canonical JSON: UTF-16 JavaScript
 strings serialized by `JSON.stringify` with schema-defined field order and no
@@ -151,9 +163,15 @@ Rules:
 - `workspaceGeneration` and `revision` are positive safe integers.
 - Entries are unique by `projectId` and sorted lexicographically before
   serialization.
-- An active index contains at least one active project unless the product is
-  showing a newly created empty workspace state explicitly defined by a later
-  UI decision. A cleared index contains no entries.
+- `status: "active"` may contain zero active projects. This is the valid empty
+  workspace state after initial empty-workspace creation, after deleting the
+  final active project, or after rotating an empty active workspace.
+  Current-generation tombstones may remain in an active empty workspace; after
+  verified rotation, its projects array may be empty.
+- `status: "cleared"` is reserved exclusively for an explicit whole-workspace
+  privacy deletion. A cleared index contains no entries, has all four
+  `legacyFingerprints` set to `null`, and is not the result of deleting the
+  final project.
 - Every listed entry must have a strict, matching record at the exact key for
   the index workspace and generation.
 - An unlisted record is not authoritative.
@@ -162,7 +180,9 @@ Rules:
   change for a project content edit or a project switch.
 - `legacyFingerprints` are digests of the exact four v0.7.x values observed at
   index creation or after an explicit conflict choice. Every v0.8 mutation
-  rechecks them while holding the global lock.
+  rechecks them while holding the global lock. A `legacy-cleanup` or
+  `delete-workspace` target index sets all four to `null`; until its exact
+  cleanup finishes, only the valid journal explains the pending legacy bytes.
 
 The index does not duplicate title, progress, deadline, course, or display
 summary. The dashboard reads and validates the active records and may build an
@@ -269,7 +289,9 @@ source) must write their journal while the reserve remains present. They must
 not consume the reserve to make accepted content fit; quota failure leaves
 authority unchanged. A destructive, non-growing, compaction, or recovery
 operation may remove and verify the reserve immediately before creating its
-journal. The operation must fit a bounded journal within the released space.
+journal. `legacy-cleanup` and `delete-workspace` are destructive operations
+eligible for this reserve release. The operation must fit a bounded journal
+within the released space.
 
 If the reserve is removed but journal creation throws, returns a mismatching
 readback, or the browser crashes before the journal exists:
@@ -307,6 +329,7 @@ type WorkspaceOperationKind =
   | "delete-project"
   | "restore-as-new"
   | "replace-project"
+  | "legacy-cleanup"
   | "recover-index"
   | "delete-workspace"
   | "rotate-workspace-generation";
@@ -534,12 +557,17 @@ complete`.
 3. Replace the active record with the next-revision, content-free tombstone in
    the same generation and verify it.
 4. Write and verify the next index revision changing the entry to `tombstone`.
+   If this was the final active project, keep `status: "active"`; the result is
+   a valid empty workspace whose current-generation tombstones remain listed.
 5. Best-effort clear a matching last-opened preference.
 6. Remove the journal and recreate the reserve.
 
 A crash after the tombstone but before the index is resolved from the journal;
-the project is not inferred active from index or record alone. The project ID is
-never reused.
+the project is not inferred active from index or record alone. The deleted ID
+remains collision-ineligible while its tombstone or any other extant record,
+journal, quarantine candidate, or discoverable key retains it. A later verified
+generation rotation may remove that historical ID without weakening stale-tab
+protection.
 
 ### Restore a single-project backup as new
 
@@ -564,6 +592,58 @@ The project ID and index membership remain unchanged. A post-confirmation edit
 invalidates intent before replacement. The journal provides deterministic crash
 classification even though the authoritative mutation is one project key.
 
+### Clean up legacy values
+
+States: `legacy-retained -> journaled -> null-fingerprint-index-committed ->
+legacy-cleanup-pending -> complete`.
+
+This separately confirmed operation removes all remaining values from the four
+v0.7.x project keys without deleting the workspace. Partial cleanup is not an
+accepted success state.
+
+1. Obtain explicit confirmation, acquire the global lock, and verify the exact
+   index baseline and all four current legacy digests. A missing legacy value
+   has expected digest `null`.
+2. Remove and verify the reserve, then write and verify a `legacy-cleanup`
+   journal. `legacyExpectedDigests` contains the exact digest or `null` for each
+   legacy key. Its cleanup list names every currently present legacy key and
+   exact digest.
+3. The journal's target index preserves `workspaceId`, generation, status, and
+   project membership; increments index revision; and sets `record`, `v3`,
+   `v2`, and `v1` in `legacyFingerprints` to `null`.
+4. Write and verify that exact target index before removing legacy values. The
+   still-valid journal is the only explanation for the temporary interval in
+   which the authoritative index has null fingerprints while exact legacy bytes
+   remain pending cleanup.
+5. In the fixed order record, v3, v2, v1, remove a key only if it still has the
+   journaled expected digest, and verify absence after each removal. Expected
+   `null` is already complete and is never turned into a delete of new bytes.
+6. Verify all four keys are absent, remove the exact journal, and recreate and
+   verify the reserve.
+
+If the browser stops after reserve removal but before a valid journal, no index
+or legacy value has changed and the generic reserve recovery applies. After a
+valid journal but before the target index, recovery may either cancel while all
+base bytes remain exact or commit the recorded target index. After target-index
+commit, recovery must keep the target authority and resume exact cleanup. After
+any individual removal, absent means complete, the original exact digest means
+pending, and any third value stops recovery in fail-visible quarantine. After
+all removals but before journal deletion, recovery verifies absence and
+finishes. After journal deletion but before reserve recreation, the null-
+fingerprint target index remains authoritative and the workspace enters
+degraded mode if reserve recreation fails.
+
+A v0.7.x tab may rewrite a legacy key at any time. Before target-index commit,
+that produces a third digest and prevents commit. After target-index commit but
+before journal completion, it stops cleanup and leaves the journal to explain
+the mixed state. After successful completion, the null fingerprint compared
+with the newly non-null key causes the next v0.8 authoritative mutation to
+pause and offer an explicit older-tab conflict choice. The rewrite is never
+silently deleted or adopted. To continue cleanup, the user must close the old
+tab and explicitly reconfirm removal of the newly observed exact bytes; recovery
+may replace the blocked journal only after validating its already-committed
+target index and recording the new expected digest.
+
 ### Delete entire workspace
 
 States: `active -> journaled -> cleared-generation-committed -> cleanup-pending
@@ -572,8 +652,14 @@ States: `active -> journaled -> cleared-generation-committed -> cleanup-pending
 1. Obtain explicit privacy confirmation and capture every exact owned value to
    be removed.
 2. Write and verify a `delete-workspace` journal targeting generation `N + 1`.
+   Its `legacyExpectedDigests` records all four exact legacy states and its
+   cleanup list names every present legacy value and owned project record that
+   may be removed.
 3. Write and verify a cleared, empty index at generation `N + 1` and next index
-   revision. This invalidates stale v0.8 tabs before content cleanup.
+   revision, with all four `legacyFingerprints` set to `null`. This invalidates
+   stale v0.8 tabs before content cleanup. The valid journal explicitly explains
+   the temporary interval in which this cleared target index is authoritative
+   while exact project or legacy cleanup is still pending.
 4. Remove each prior workspace project record only on its exact recorded
    digest, verifying each deletion.
 5. Remove the four legacy project values only when each still equals the exact
@@ -584,7 +670,12 @@ States: `active -> journaled -> cleared-generation-committed -> cleanup-pending
 A crash before the cleared index leaves the valid journal to finish. A crash
 after it makes the cleared index authoritative and recovery resumes cleanup.
 The cleared generation remains as a content-free stale-tab guard; deleting the
-index would permit namespace guessing or absent-value ABA.
+index would permit namespace guessing or absent-value ABA. A legacy value
+rewritten by v0.7.x during cleanup is a third digest: cleanup stops, the journal
+remains, and the value is not silently removed. If a rewrite occurs after
+successful cleanup, the cleared index's null fingerprint makes the drift
+fail-visible on the next v0.8 mutation. Continuing the privacy deletion requires
+the same close-old-tabs and explicit re-confirmation rule as legacy cleanup.
 
 ### Rotate workspace generation
 
@@ -636,6 +727,9 @@ v0.7.x tab is handled through legacy drift detection.
 | After all records, before index commit | Journal names complete targets; base index still present | Verify every target, then write exact target index. |
 | During index replacement | Index equals exact base, exact target, or third value | Commit target, continue cleanup, or quarantine respectively. |
 | After target index, before cleanup | New authority committed, old exact bytes remain | Keep new authority and resume exact-digest cleanup. |
+| Legacy cleanup after null-fingerprint index, before first legacy removal | Target index and valid journal coexist with exact legacy bytes | Keep target authority; the journal explains the temporary mismatch and recovery resumes exact cleanup. |
+| Legacy cleanup between individual removals | Each legacy key is absent, at its original expected digest, or at a third digest | Treat absent as complete, remove only the original exact value, and quarantine on a third value such as a stale-v0.7.x rewrite. |
+| Delete-workspace after cleared index, before legacy cleanup | Cleared target index has four null fingerprints; valid journal names exact remaining bytes | Keep cleared authority and resume exact cleanup; do not interpret pending legacy bytes as authority. |
 | During cleanup | Some named old keys absent, some exact, or a third value | Treat absent as done, delete exact values, stop on third value. |
 | After journal removal, before reserve recreation | Target authority complete, reserve absent | Keep target authority; recreate reserve or enter degraded mode. |
 | Preference write/cleanup at any point | Authoritative operation unaffected | Ignore invalid/stale preference and retry cleanup best effort. |
@@ -702,9 +796,11 @@ cannot reduce the logical count; the user must delete or export projects.
 Normal migration and save retain the four v0.7.x values as old-tab evidence.
 They are not automatically removed on a timer or after a successful migration.
 Only an explicit whole-workspace privacy deletion or a separately confirmed
-legacy cleanup may remove them, and then only against journaled exact values.
-A value changed by an older tab is never deleted as if it were the previously
-observed legacy value.
+`legacy-cleanup` operation may remove them, and then only against journaled
+exact values. Successful legacy cleanup increments index revision and leaves
+all four authoritative `legacyFingerprints` explicitly `null`. A value changed
+by an older tab is never deleted as if it were the previously observed legacy
+value; a valid journal remains until every expected legacy key is absent.
 
 Generation rotation may clean only records belonging to the selected
 workspace/generation and named by the valid journal. It may delete only strictly
@@ -745,8 +841,10 @@ not be shortened to a generic statement that recovery is safe.
 4. An unlisted project record is never auto-adopted.
 5. A missing project record is never interpreted as an intentional deletion.
 6. A tombstone is authoritative only in its exact authoritative generation.
-7. Project IDs are never reused, including IDs found only in tombstones or old
-   generations.
+7. Project IDs are never intentionally reused. New IDs are collision checked
+   against every extant authoritative, tombstoned, quarantined, journaled, and
+   discoverable record; completely removed historical IDs do not require a
+   permanent ledger.
 8. Generation rotation commits authority only through the target index.
 9. Every rewritten active record has exact expected source and target digests
    in a valid journal.
@@ -776,8 +874,8 @@ not be shortened to a generic statement that recovery is safe.
     is verified.
 27. Legacy changes after migration are surfaced; they are never silently
     accepted or discarded.
-28. Whole-workspace delete commits a new cleared generation before content
-    cleanup, preserving a stale-tab guard.
+28. Whole-workspace delete commits a new cleared generation with four null
+    legacy fingerprints before content cleanup, preserving a stale-tab guard.
 29. Whole-workspace cleanup stops on any legacy or owned-record mismatch.
 30. Removing the reserve is not permission to mutate before a valid journal is
     durable.
@@ -799,6 +897,21 @@ not be shortened to a generic statement that recovery is safe.
     never claimed durable without verified persistence.
 40. Explicit user intent is revalidated after lock wait and before the first
     authoritative mutation.
+41. An active workspace may contain zero active projects, with or without
+    current-generation tombstones; deleting the final project never changes its
+    status to cleared.
+42. Cleared status is produced only by explicit whole-workspace privacy
+    deletion and always has zero entries and four null legacy fingerprints.
+43. Successful legacy cleanup leaves all four index legacy fingerprints null;
+    partial deletion without a valid explanatory journal is never accepted as
+    success.
+44. A null-fingerprint target index may coexist temporarily with exact legacy
+    bytes only while its strictly valid cleanup journal remains authoritative.
+45. A stale-v0.7.x legacy rewrite is never removed under an older expected
+    digest, including after target-index commit.
+46. Stale-tab protection after historical record cleanup relies on workspace
+    generation and exact baselines rather than retention of an unbounded
+    retired-project-ID set.
 
 ## Exact test matrix
 
@@ -806,9 +919,15 @@ not be shortened to a generic statement that recovery is safe.
 
 - strict valid/invalid index, project, tombstone, preference, reserve, and
   journal fixtures;
+- active index fixtures with zero entries, only current-generation tombstones,
+  and a mix of active/tombstone entries; cleared fixtures reject any entry or
+  non-null legacy fingerprint;
 - key/envelope workspace, generation, and project ID mismatches;
 - duplicate/unsorted index entries, unsafe integers, unsupported versions, and
   100/101-entry boundaries;
+- deterministic ID generation tests check every extant authoritative,
+  tombstoned, quarantined, journaled, and discoverable record, fail after eight
+  collisions, and require no permanent retired-ID ledger;
 - canonical serialization and exact SHA-256 fixtures;
 - reserve serialization is exactly 262,144 UTF-16 code units with 262,112
   padding characters;
@@ -820,8 +939,9 @@ not be shortened to a generic statement that recovery is safe.
 - first migration from active v0.7.1 record, cleared record, valid v3/v2/v1
   fallback, invalid higher legacy plus valid lower candidate, and conflicting
   legacy values;
-- migration crash injection after reserve removal, journal write, project
-  write, index write, journal removal, and reserve recreation;
+- migration crash injection after journal write, project write, index write,
+  journal removal, and reserve verification; migration keeps the reserve
+  present;
 - missing index with zero, one, and multiple coherent groups;
 - corrupt index with one and multiple coherent groups;
 - explicit selection required even for one group;
@@ -835,8 +955,26 @@ not be shortened to a generic statement that recovery is safe.
 
 - create, restore-as-new, replace selected, edit, switch, delete, and full
   workspace delete happy paths;
+- deleting the final active project yields `status: "active"` with zero active
+  entries and its current-generation tombstone; generation rotation may yield
+  an active empty index with no entries;
+- only explicit whole-workspace privacy deletion yields `status: "cleared"`;
 - crash injection before and after every `setItem`, `removeItem`, readback,
   journal phase update, index commit, cleanup, and reserve recreation;
+- `legacy-cleanup` records four exact expected digests, preserves index
+  membership/status/generation, increments revision, commits four null target
+  fingerprints, removes record/v3/v2/v1 in fixed order, and recreates reserve;
+- deterministic legacy-cleanup crashes after reserve removal, journal write,
+  target-index commit, each of four legacy removals, journal removal, and
+  reserve recreation; each state resumes or quarantines by exact digest;
+- stale-v0.7.x rewrites before target-index commit, between each legacy removal,
+  and after successful cleanup remain fail-visible and are never deleted under
+  an earlier digest;
+- replacing a rewrite-blocked cleanup journal requires closed old tabs,
+  explicit re-confirmation, the exact already-committed target index, and a new
+  expected digest;
+- delete-workspace fixtures require an empty cleared target index with four null
+  fingerprints and a valid journal throughout pending project/legacy cleanup;
 - create/restore orphan target with valid journal completes; the same orphan
   without journal is not adopted;
 - delete crash cannot resurrect content or publish a missing record as deleted;
@@ -857,7 +995,10 @@ not be shortened to a generic statement that recovery is safe.
 - only strict indexed tombstones are removed;
 - invalid tombstone-shaped and invalid active owned records block compaction;
 - stale v0.8 tab from generation N cannot edit, create, delete, restore, replace,
-  or recreate a deleted project after N+1 commits;
+  or resurrect a generation-N deletion after N+1 commits;
+- after verified removal of an old generation, an injected future UUID equal to
+  a no-longer-extant historical project ID is still isolated from a stale tab by
+  workspace generation and exact index/project baselines;
 - stale preference from N is ignored and cleaned best effort;
 - v0.7.x write during and after migration/rotation changes a legacy digest and
   pauses v0.8 mutation;
@@ -917,9 +1058,9 @@ No PR activates an incomplete persistence protocol.
 
 ### PR 3: Destructive lifecycle and compaction, dormant
 
-- replace selected, delete project, delete workspace, explicit index recovery,
-  generation-scoped tombstones, `rotate-workspace-generation`, quota/degraded
-  UX, and stale-tab tests;
+- replace selected, delete project, `legacy-cleanup`, delete workspace, explicit
+  index recovery, generation-scoped tombstones,
+  `rotate-workspace-generation`, quota/degraded UX, and stale-tab tests;
 - remains inactive for existing users.
 
 ### PR 4: Migration, production activation, documentation, and E2E

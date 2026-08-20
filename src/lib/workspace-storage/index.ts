@@ -1,3 +1,5 @@
+export * from "@/lib/workspace-storage/coordinator";
+export * from "@/lib/workspace-storage/coordinator-pending";
 export * from "@/lib/workspace-storage/digest";
 export * from "@/lib/workspace-storage/keys";
 export * from "@/lib/workspace-storage/legacy-migration";

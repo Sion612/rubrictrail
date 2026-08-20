@@ -10,6 +10,8 @@ export default defineConfig([
     "demo/.next/**",
     "demo/out/**",
     "demo/public/ocr/**",
+    "tests/workspace-dashboard-harness/.next/**",
+    "tests/workspace-dashboard-harness/out/**",
     "public/ocr/**",
     "coverage/**",
     "playwright-report/**",

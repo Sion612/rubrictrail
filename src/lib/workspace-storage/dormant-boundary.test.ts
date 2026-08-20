@@ -4,6 +4,12 @@ import { describe, expect, it } from "vitest";
 
 const repositoryRoot = resolve(process.cwd());
 const workspaceStorageDirectory = join(repositoryRoot, "src", "lib", "workspace-storage");
+const dormantWorkspaceUiDirectory = join(
+  repositoryRoot,
+  "src",
+  "components",
+  "multi-assignment-workspace",
+);
 const sourceExtensions = new Set([
   ".cjs",
   ".cts",
@@ -42,7 +48,9 @@ describe("dormant workspace storage boundary", () => {
   it("is unreachable from every current non-test production source module", () => {
     const productionFiles = [
       ...sourceFiles(join(repositoryRoot, "src")).filter(
-        (path) => !isInside(path, workspaceStorageDirectory),
+        (path) =>
+          !isInside(path, workspaceStorageDirectory) &&
+          !isInside(path, dormantWorkspaceUiDirectory),
       ),
       ...sourceFiles(join(repositoryRoot, "demo")),
       ...sourceFiles(repositoryRoot).filter(

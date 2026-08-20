@@ -27,6 +27,7 @@
     "build": "next build",
     "prebuild:demo": "node scripts/prepare-ocr-assets.mjs demo",
     "build:demo": "next build demo",
+    "build:workspace-harness": "next build tests/workspace-dashboard-harness",
     "audit:demo": "node scripts/audit-static-demo.mjs",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
@@ -37,6 +38,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:demo": "playwright test --config=playwright.demo.config.ts",
+    "test:e2e:workspace": "playwright test --config=playwright.workspace.config.ts",
     "capture:screenshots": "node scripts/capture-screenshots.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },

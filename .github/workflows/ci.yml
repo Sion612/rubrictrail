@@ -61,6 +61,10 @@ jobs:
       - name: Build production app
         run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
+      - name: Build dormant workspace harness
+        run: pnpm build:workspace-harness
+      - name: Test dormant workspace dashboard
+        run: pnpm test:e2e:workspace --workers=1
       - name: Test production app
         run: pnpm test:e2e --workers=1
       - name: Upload browser diagnostics

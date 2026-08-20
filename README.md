@@ -33,9 +33,9 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ## What works today
 
-### v0.8.0 candidate: multi-assignment workspace
+### v0.8.0: multi-assignment workspace
 
-The v0.8.0 candidate makes **My Assignments** the product home. Assignment
+v0.8.0 makes **My Assignments** the product home. Assignment
 cards show real deadlines, progress, next targets, and blocked/overdue counts;
 **Up Next** orders actionable work derived from the assignments' existing
 Action Plans. **New assignment** starts an upload, pasted-details flow, or a
@@ -53,10 +53,12 @@ user explicitly confirms cleanup. Each assignment then uses an isolated local
 record beneath a small workspace index; Web Locks remain mandatory for
 authoritative mutation, and conflicting older-tab writes fail visibly.
 
-This is pre-release source documentation. PR-head CI, merged-main Pages, and
-public-demo verification for v0.8.0 are still pending; the public demo remains
-v0.7.1 until those release gates complete. See the
-[verification report](./docs/TEST_REPORT.md) for the evidence boundary.
+The merged v0.8.0 product revision has passed exact-head and exact-main CI,
+exact-SHA Pages deployment, and independent public-demo verification. The
+final tag and GitHub Release remain pending until the docs-only release-evidence
+change completes its own main and Pages gates. See the
+[verification report](./docs/TEST_REPORT.md) for exact revisions, runs, and
+evidence boundaries.
 
 ### v0.7.1: Project Tracker, source editing and local ICS
 

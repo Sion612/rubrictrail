@@ -114,6 +114,7 @@ test("keeps the dormant bilingual workspace usable and contained", async ({
   ).toBeVisible();
 
   await page
+    .getByRole("navigation", { name: /workspace navigation|作业空间导航/iu })
     .getByRole("combobox", { name: /language|语言/iu })
     .selectOption("zh-CN");
   await expect(page.getByRole("heading", { name: "我的作业" })).toBeVisible();

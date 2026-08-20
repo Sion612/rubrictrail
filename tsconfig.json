@@ -25,5 +25,5 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "demo"]
+  "exclude": ["node_modules", "demo", "tests/workspace-dashboard-harness"]
 }

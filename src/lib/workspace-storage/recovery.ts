@@ -37,6 +37,7 @@ import type {
   WorkspaceOperationJournalV1,
   WorkspaceOperationKind,
   WorkspaceIndexV1,
+  WorkspaceProjectRecordV1,
 } from "@/lib/workspace-storage/types";
 
 export type WorkspaceObservedValueState =
@@ -75,6 +76,23 @@ export type WorkspaceRecoveryPlan =
 interface ObservedStoredValue {
   raw: string | null;
   digest: string | null;
+}
+
+function isRecoveryPrivacyPurge(journal: WorkspaceOperationJournalV1): boolean {
+  return journal.kind === "delete-workspace" && journal.sourceGeneration === null;
+}
+
+type ActiveWorkspaceProjectRecord = WorkspaceProjectRecordV1 & {
+  value: Extract<WorkspaceProjectRecordV1["value"], { kind: "project" }>;
+};
+
+function isAuthoritativeActiveProjectRecord(
+  record: WorkspaceProjectRecordV1,
+): record is ActiveWorkspaceProjectRecord {
+  return (
+    record.value.kind === "project" &&
+    record.value.state.projectKind !== "none"
+  );
 }
 
 function storageValidationFailure(error: unknown): "storage-error" {
@@ -269,7 +287,7 @@ function workspaceMutationRecordIsValid(
   }
   return mode === "delete"
     ? parsed.value.value.kind === "tombstone"
-    : parsed.value.value.kind === "project";
+    : isAuthoritativeActiveProjectRecord(parsed.value);
 }
 
 function validateBaseIndexReferencedRecords(
@@ -305,8 +323,12 @@ function validateBaseIndexReferencedRecords(
         return "conflict";
       }
 
-      const observedKind =
-        parsedRecord.value.value.kind === "project" ? "active" : "tombstone";
+      const observedKind = parsedRecord.value.value.kind === "tombstone"
+        ? "tombstone"
+        : isAuthoritativeActiveProjectRecord(parsedRecord.value)
+          ? "active"
+          : null;
+      if (observedKind === null) return "conflict";
       if (observedKind === entry.kind) continue;
       return "conflict";
     }
@@ -361,7 +383,13 @@ function validateSelectedRecoveryGroup(
       if (!record.ok || !workspaceProjectRecordMatchesKey(key, record.value)) {
         return "conflict";
       }
-      (record.value.value.kind === "project" ? activeKeys : tombstoneKeys).add(key);
+      if (record.value.value.kind === "tombstone") {
+        tombstoneKeys.add(key);
+      } else if (isAuthoritativeActiveProjectRecord(record.value)) {
+        activeKeys.add(key);
+      } else {
+        return "conflict";
+      }
     }
 
     if (activeKeys.size + tombstoneKeys.size > WORKSPACE_PROJECT_RECORD_LIMIT) {
@@ -452,17 +480,22 @@ function validateRecoveryObservedRecordRoles(
       }
 
       if (identity.workspaceGeneration === journal.sourceGeneration) {
-        const allowed =
-          record.value.value.kind === "project"
-            ? sourceActiveKeys.has(key)
-            : sourceTombstoneKeys.has(key);
+        const allowed = record.value.value.kind === "tombstone"
+          ? sourceTombstoneKeys.has(key)
+          : isAuthoritativeActiveProjectRecord(record.value) &&
+            sourceActiveKeys.has(key);
         if (!allowed) return "conflict";
         continue;
       }
 
       if (identity.workspaceGeneration === journal.targetGeneration) {
         const expectedKind = targetKinds.get(key);
-        if (expectedKind === undefined || record.value.value.kind !== expectedKind) {
+        const validTargetKind = expectedKind === "tombstone"
+          ? record.value.value.kind === "tombstone"
+          : expectedKind === "project"
+            ? isAuthoritativeActiveProjectRecord(record.value)
+            : false;
+        if (!validTargetKind) {
           return "conflict";
         }
         continue;
@@ -603,7 +636,7 @@ async function validateRewriteJournalAuthority(
       !parsedSource.ok ||
       !workspaceProjectRecordMatchesKey(mutation.sourceRecord.key, parsedSource.value) ||
       parsedSource.value.projectId !== mutation.projectId ||
-      parsedSource.value.value.kind !== "project" ||
+      !isAuthoritativeActiveProjectRecord(parsedSource.value) ||
       parsedSource.value.revision >= Number.MAX_SAFE_INTEGER
     ) {
       return "invalid";
@@ -774,7 +807,7 @@ export async function classifyWorkspaceRecovery(
     };
   }
   if (
-    journal.kind === "recover-index" &&
+    (journal.kind === "recover-index" || isRecoveryPrivacyPurge(journal)) &&
     actualIndexValue.raw !== null &&
     actualIndexValue.raw !== journal.targetIndex.serializedValue &&
     parseWorkspaceIndex(actualIndexValue.raw).ok
@@ -815,6 +848,7 @@ export async function classifyWorkspaceRecovery(
       actualIndexValue.raw !== journal.targetIndex.serializedValue) ||
     (indexState === "expected" &&
       journal.kind !== "recover-index" &&
+      !isRecoveryPrivacyPurge(journal) &&
       actualIndexValue.raw !== null &&
       !workspaceBaseIndexMatchesJournal(actualIndexValue.raw, journal))
   ) {
@@ -835,6 +869,7 @@ export async function classifyWorkspaceRecovery(
       (indexState === "expected" &&
         journal.kind !== "recover-index" &&
         journal.kind !== "migrate-single-project" &&
+        !isRecoveryPrivacyPurge(journal) &&
         journal.kind !== "rotate-workspace-generation"));
   if (shouldValidateReferencedRecords && actualIndexValue.raw !== null) {
     const referencedRecords = validateBaseIndexReferencedRecords(
@@ -1149,7 +1184,7 @@ async function validatePlannedTargetRecords(
       parsedTarget.value.projectId !== mutation.projectId ||
       (mutation.mode === "delete"
         ? parsedTarget.value.value.kind !== "tombstone"
-        : parsedTarget.value.value.kind !== "project")
+        : !isAuthoritativeActiveProjectRecord(parsedTarget.value))
     ) {
       return "invalid";
     }
@@ -1157,7 +1192,7 @@ async function validatePlannedTargetRecords(
     if (mutation.mode === "create") {
       if (parsedTarget.value.revision !== 1) return "invalid";
       if (journal.kind === "migrate-single-project") {
-        if (parsedTarget.value.value.kind !== "project") return "invalid";
+        if (!isAuthoritativeActiveProjectRecord(parsedTarget.value)) return "invalid";
         migrationTargetState = parsedTarget.value.value.state;
       }
       continue;
@@ -1175,7 +1210,7 @@ async function validatePlannedTargetRecords(
       !parsedBefore.ok ||
       !workspaceProjectRecordMatchesKey(beforeKey, parsedBefore.value) ||
       parsedBefore.value.projectId !== mutation.projectId ||
-      parsedBefore.value.value.kind !== "project" ||
+      !isAuthoritativeActiveProjectRecord(parsedBefore.value) ||
       parsedBefore.value.revision >= Number.MAX_SAFE_INTEGER ||
       parsedTarget.value.revision !== parsedBefore.value.revision + 1
     ) {
@@ -1183,7 +1218,7 @@ async function validatePlannedTargetRecords(
     }
     if (
       mutation.mode === "rewrite-generation" &&
-      (parsedTarget.value.value.kind !== "project" ||
+      (!isAuthoritativeActiveProjectRecord(parsedTarget.value) ||
         JSON.stringify(parsedTarget.value.value.state) !==
           JSON.stringify(parsedBefore.value.value.state))
     ) {
@@ -1259,6 +1294,17 @@ async function journalPreparationBaselinesMatch(
 
   if (journal.kind === "migrate-single-project") {
     if (index.value.raw !== null) return "conflict";
+  } else if (isRecoveryPrivacyPurge(journal)) {
+    if (index.value.raw !== null && parseWorkspaceIndex(index.value.raw).ok) {
+      const existingAuthority = validateBaseIndexReferencedRecords(
+        storage,
+        index.value.raw,
+        journal,
+        "preparation",
+      );
+      if (existingAuthority === "storage-error") return "storage-error";
+      if (existingAuthority === "match") return "conflict";
+    }
   } else if (journal.kind === "recover-index") {
     if (index.value.raw !== null && parseWorkspaceIndex(index.value.raw).ok) {
       const existingAuthority = validateBaseIndexReferencedRecords(

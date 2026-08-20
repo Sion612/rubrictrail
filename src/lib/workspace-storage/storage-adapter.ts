@@ -263,10 +263,14 @@ export function workspaceProtocolCheckpoint(
 export interface WorkspaceDigestWriteGuard {
   expectedBeforeDigest: string | null;
   targetDigest: string;
+  /** Evaluated synchronously after the final awaited baseline read. */
+  commitStillAuthorized?: () => boolean;
 }
 
 export interface WorkspaceDigestRemoveGuard {
   expectedBeforeDigest: string;
+  /** Evaluated synchronously after the final awaited baseline read. */
+  commitStillAuthorized?: () => boolean;
 }
 
 export type WorkspaceDigestMutationResult =
@@ -278,6 +282,7 @@ export type WorkspaceDigestMutationResult =
         | "digest-unavailable"
         | "storage-error"
         | "baseline-mismatch"
+        | "commit-cancelled"
         | "target-digest-mismatch"
         | "readback-mismatch";
     };
@@ -285,6 +290,17 @@ export type WorkspaceDigestMutationResult =
 interface WorkspaceDigestSnapshot {
   raw: string | null;
   digest: string | null;
+}
+
+function commitIsStillAuthorized(
+  guard: WorkspaceDigestWriteGuard | WorkspaceDigestRemoveGuard,
+): boolean {
+  if (!guard.commitStillAuthorized) return true;
+  try {
+    return guard.commitStillAuthorized();
+  } catch {
+    return false;
+  }
 }
 
 async function readDigestSnapshot(
@@ -366,6 +382,9 @@ async function writeWithDigestGuard(
 
   const confirmed = await confirmDigestSnapshot(storage, key, before.snapshot);
   if (!confirmed.ok) return confirmed;
+  if (!commitIsStillAuthorized(guard)) {
+    return { ok: false, reason: "commit-cancelled" };
+  }
 
   // This is an exact compare-and-verify guard, not a multi-key transaction.
   // Callers still coordinate mutations with the workspace Web Lock.
@@ -407,6 +426,9 @@ async function removeWithDigestGuard(
 
   const confirmed = await confirmDigestSnapshot(storage, key, before.snapshot);
   if (!confirmed.ok) return confirmed;
+  if (!commitIsStillAuthorized(guard)) {
+    return { ok: false, reason: "commit-cancelled" };
+  }
   const removed = removeExact(storage, key);
   if (!removed.ok) return exactMutationFailure(removed);
   const after = await readDigestSnapshot(storage, key);

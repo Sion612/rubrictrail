@@ -6,6 +6,8 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import { LocaleProvider, useLocalizedMessages } from "@/components/locale-provider";
 import {
   MultiAssignmentWorkspaceShell,
+  WorkspaceLifecyclePanel,
+  type WorkspaceLifecycleActionRequest,
   type NewAssignmentMethod,
   type WorkspaceDashboardProject,
 } from "@/components/multi-assignment-workspace";
@@ -70,6 +72,9 @@ const harnessEn = {
   none: "None",
   method: "New assignment method: {method}",
   preference: "Last-opened preference recorded after selection",
+  showRecovery: "Show recovery-only state",
+  showWorkspace: "Show healthy workspace state",
+  lifecycleAction: "Lifecycle action: {kind}",
 } as const;
 
 const harnessZhCN = {
@@ -85,12 +90,16 @@ const harnessZhCN = {
   none: "无",
   method: "新建作业方式：{method}",
   preference: "切换后已记录上次打开的作业偏好",
+  showRecovery: "显示仅恢复状态",
+  showWorkspace: "显示健康工作区状态",
+  lifecycleAction: "生命周期操作：{kind}",
 } satisfies { [Key in keyof typeof harnessEn]: string };
 
 function HarnessContent() {
   const messages = useLocalizedMessages(harnessEn, harnessZhCN);
   const [projects, setProjects] = useState(initialProjects);
   const [pendingProjectIds, setPendingProjectIds] = useState<string[]>([]);
+  const [recoveryOnly, setRecoveryOnly] = useState(false);
   const [eventMessage, setEventMessage] = useState<string | null>(null);
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project.projectId, project])),
@@ -104,10 +113,20 @@ function HarnessContent() {
     }
   }
 
+  function handleLifecycleAction(request: WorkspaceLifecycleActionRequest) {
+    setEventMessage(
+      messages.lifecycleAction.replace("{kind}", request.kind),
+    );
+    return { ok: true as const };
+  }
+
   return (
     <>
       <div aria-label={messages.controls} style={{ padding: "0.5rem 1rem" }}>
         <LanguageSwitcher compact />
+        <button type="button" onClick={() => setRecoveryOnly((current) => !current)}>
+          {recoveryOnly ? messages.showWorkspace : messages.showRecovery}
+        </button>
       </div>
       {eventMessage ? <p role="status">{eventMessage}</p> : null}
       <MultiAssignmentWorkspaceShell
@@ -151,6 +170,85 @@ function HarnessContent() {
             </button>
           </section>
         )}
+      />
+      <WorkspaceLifecyclePanel
+        workspace={
+          recoveryOnly
+            ? null
+            : {
+                workspaceId: "11111111-1111-4111-8111-111111111111",
+                workspaceGeneration: 4,
+                indexRevision: 12,
+                activeProjectCount: projects.length,
+                tombstoneCount: 65,
+                physicalProjectRecordCount: projects.length + 65,
+                legacyValueCount: 1,
+                intentToken: "fictional-workspace-intent-12",
+              }
+        }
+        selectedProject={
+          recoveryOnly
+            ? null
+            : {
+                projectId: PROJECT_A,
+                title: "Fictional market entry analysis",
+                course: "International Strategy Lab",
+                recordRevision: 7,
+                intentToken: "fictional-project-intent-7",
+              }
+        }
+        replacementPreview={
+          recoveryOnly
+            ? null
+            : {
+                targetProjectId: PROJECT_A,
+                targetIntentToken: "fictional-project-intent-7",
+                backupToken: "fictional-backup-token",
+                backupTitle: "Fictional replacement assignment",
+                backupCourse: "International Strategy Lab",
+                backupDeadline: "2026-10-24",
+                sourceName: "fictional-project-backup.json",
+                sizeEffect: "non-growing",
+              }
+        }
+        storageProtection={{
+          mode: recoveryOnly ? "recovery-only" : "normal",
+          reserveStatus: "ready",
+          destructiveJournalAvailable: true,
+        }}
+        legacyCleanup={
+          recoveryOnly
+            ? null
+            : { available: true, intentToken: "fictional-legacy-intent" }
+        }
+        rotation={
+          recoveryOnly
+            ? null
+            : {
+                eligible: true,
+                targetGeneration: 5,
+                intentToken: "fictional-rotation-intent",
+              }
+        }
+        recovery={{
+          required: recoveryOnly,
+          available: false,
+          intentToken: recoveryOnly
+            ? "fictional-recovery-intent"
+            : "fictional-no-recovery",
+          invalidOwnedRecordCount: recoveryOnly ? 3 : 0,
+          candidates: [],
+        }}
+        onChooseReplacementBackup={() =>
+          setEventMessage("Fictional replacement backup selected")
+        }
+        onExportSelectedProject={() =>
+          setEventMessage("Fictional selected-project export")
+        }
+        onExportDiagnostics={() =>
+          setEventMessage("Fictional diagnostics export")
+        }
+        onConfirmAction={handleLifecycleAction}
       />
     </>
   );

@@ -138,6 +138,57 @@ describe("digest-guarded semantic storage mutations", () => {
     expect(writeCount).toBe(0);
   });
 
+  it("rechecks commit authorization after the final awaited baseline confirmation", async () => {
+    let writeAuthorized = true;
+    let writeReads = 0;
+    const writeBacking = new MemoryWorkspaceStorageAdapter();
+    const writeStorage: WorkspaceStorageAdapter = {
+      getItem(key) {
+        writeReads += 1;
+        const value = writeBacking.getItem(key);
+        if (writeReads === 2) writeAuthorized = false;
+        return value;
+      },
+      setItem: (key, value) => writeBacking.setItem(key, value),
+      removeItem: (key) => writeBacking.removeItem(key),
+      keys: () => writeBacking.keys(),
+    };
+    const target = "fictional-authorized-target";
+    await expect(
+      writeWorkspaceProjectTarget(writeStorage, "fixture.project", target, {
+        expectedBeforeDigest: null,
+        targetDigest: await digest(target),
+        commitStillAuthorized: () => writeAuthorized,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "commit-cancelled" });
+    expect(writeBacking.snapshot()).toEqual({});
+
+    let removeAuthorized = true;
+    let removeReads = 0;
+    const source = "fictional-authorized-source";
+    const removeBacking = new MemoryWorkspaceStorageAdapter({
+      "fixture.source": source,
+    });
+    const removeStorage: WorkspaceStorageAdapter = {
+      getItem(key) {
+        removeReads += 1;
+        const value = removeBacking.getItem(key);
+        if (removeReads === 2) removeAuthorized = false;
+        return value;
+      },
+      setItem: (key, value) => removeBacking.setItem(key, value),
+      removeItem: (key) => removeBacking.removeItem(key),
+      keys: () => removeBacking.keys(),
+    };
+    await expect(
+      removeWorkspaceCleanupSource(removeStorage, "fixture.source", {
+        expectedBeforeDigest: await digest(source),
+        commitStillAuthorized: () => removeAuthorized,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "commit-cancelled" });
+    expect(removeBacking.snapshot()).toEqual({ "fixture.source": source });
+  });
+
   it("rejects malformed or mismatching target digests before mutation", async () => {
     const storage = new MemoryWorkspaceStorageAdapter();
 

@@ -1,0 +1,721 @@
+.panel {
+  width: min(76rem, 100%);
+  min-width: 0;
+  margin: 0 auto;
+  padding: clamp(1rem, 2.4vw, 2rem);
+  color: var(--ink, #14231f);
+}
+
+.header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 27rem);
+  gap: clamp(1rem, 3vw, 2.5rem);
+  align-items: end;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  border: 1px solid var(--line, #cfd8d3);
+  border-radius: 0.875rem;
+  background:
+    linear-gradient(120deg, rgba(221, 238, 232, 0.72), rgba(255, 255, 255, 0.96) 55%),
+    var(--surface, #ffffff);
+}
+
+.header h2,
+.card h3,
+.recoveryCard h3,
+.dangerZone h3,
+.dialog h3,
+.preview h4 {
+  margin: 0;
+  font-family: var(--font-display, Georgia, serif);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.header h2 {
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  letter-spacing: -0.03em;
+}
+
+.header p,
+.card p,
+.recoveryCard p,
+.dangerZone p,
+.dialog p {
+  margin: 0;
+}
+
+.header > div > p:last-child {
+  max-width: 43rem;
+  margin-top: 0.65rem;
+  color: var(--muted, #53625d);
+}
+
+.eyebrow {
+  margin: 0 0 0.45rem !important;
+  color: var(--teal-dark, #074c42);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.105em;
+  text-transform: uppercase;
+}
+
+.localOnly {
+  padding: 0.8rem 0.9rem;
+  border-left: 3px solid var(--teal, #0b6b5b);
+  color: var(--muted, #53625d);
+  font-size: 0.82rem;
+}
+
+.persistentWarning,
+.recoveryCard,
+.card,
+.dangerZone {
+  margin-top: 1rem;
+  border: 1px solid var(--line, #cfd8d3);
+  border-radius: 0.875rem;
+  background: var(--surface, #ffffff);
+}
+
+.persistentWarning,
+.recoveryCard,
+.card,
+.dangerZone {
+  padding: clamp(1rem, 2.4vw, 1.5rem);
+}
+
+.persistentWarning {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.85rem;
+  border-color: #d4a447;
+  border-left: 5px solid var(--amber, #a85d14);
+  background: #fffaf0;
+}
+
+.persistentWarning > svg,
+.sectionHeading > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.12rem;
+  flex: 0 0 auto;
+}
+
+.persistentWarning > svg {
+  color: #7b4009;
+}
+
+.persistentWarning h3 {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+}
+
+.persistentWarning p {
+  max-width: 54rem;
+  color: #60380f;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sectionHeading {
+  display: flex;
+  min-width: 0;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.sectionHeading > svg {
+  color: var(--teal-dark, #074c42);
+}
+
+.sectionHeading h3 {
+  font-size: 1.18rem;
+}
+
+.sectionHeading p {
+  margin-top: 0.35rem;
+  color: var(--muted, #53625d);
+  font-size: 0.84rem;
+}
+
+.inlineActions,
+.stackActions,
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.inlineActions {
+  margin-top: 0.85rem;
+}
+
+.stackActions {
+  align-items: stretch;
+}
+
+.stackActions > button {
+  flex: 1 1 13rem;
+}
+
+.panel button,
+.dialog button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.68rem 0.85rem;
+  border: 1px solid var(--line, #cfd8d3);
+  border-radius: 0.5rem;
+  background: var(--surface, #ffffff);
+  color: var(--ink, #14231f);
+  font-weight: 720;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+}
+
+.panel button:not(:disabled):hover,
+.dialog button:not(:disabled):hover {
+  border-color: #9eaea7;
+  background: var(--surface-alt, #eaefe8);
+}
+
+.panel button:focus-visible,
+.dialog button:focus-visible,
+.dialog input:focus-visible,
+.dialog[tabindex]:focus-visible,
+.dialogAlert[tabindex]:focus-visible {
+  outline: 0;
+  box-shadow:
+    0 0 0 2px var(--surface, #ffffff),
+    0 0 0 4px var(--focus, #176bff);
+}
+
+.panel button:disabled,
+.dialog button:disabled,
+.dialog input:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.panel button svg,
+.dialog button svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+
+.panel .primaryButton,
+.dialog .confirmButton {
+  border-color: var(--teal, #0b6b5b);
+  background: var(--teal, #0b6b5b);
+  color: #ffffff;
+}
+
+.panel .primaryButton:not(:disabled):hover,
+.dialog .confirmButton:not(:disabled):hover {
+  border-color: var(--teal-dark, #074c42);
+  background: var(--teal-dark, #074c42);
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.metrics > div {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line-soft, #dfe5e1);
+  border-radius: 0.6rem;
+  background: #fbfcfb;
+}
+
+.metrics dt,
+.preview dt {
+  color: var(--muted, #53625d);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.metrics dd,
+.preview dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.metrics dd {
+  font-size: 1.35rem;
+  font-weight: 760;
+}
+
+.identifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.identifiers span,
+.reserveStatus,
+.statusLine {
+  display: inline-flex;
+  min-height: 1.8rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--line-soft, #dfe5e1);
+  border-radius: 999px;
+  background: var(--teal-pale, #ddeee8);
+  color: var(--teal-dark, #074c42);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.policy {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line-soft, #dfe5e1);
+  border-left: 4px solid var(--teal, #0b6b5b);
+  border-radius: 0.55rem;
+  background: #fbfcfb;
+}
+
+.policy[data-policy="compaction-recommended"],
+.policy[data-policy="warning"],
+.policy[data-policy="growth-blocked"],
+.policy[data-policy="hard-limit"],
+.policy[data-policy="recovery-only"] {
+  border-left-color: var(--amber, #a85d14);
+  background: var(--amber-pale, #fff1de);
+}
+
+.policy span {
+  font-weight: 760;
+}
+
+.policy p {
+  color: #60380f;
+  font-size: 0.8rem;
+}
+
+.selectedProject,
+.exactScope {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line-soft, #dfe5e1);
+  border-radius: 0.6rem;
+  background: #fbfcfb;
+}
+
+.selectedProject strong,
+.selectedProject span,
+.selectedProject code,
+.exactScope strong,
+.exactScope span,
+.exactScope code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.selectedProject span {
+  color: var(--muted, #53625d);
+  font-size: 0.8rem;
+}
+
+.selectedProject code,
+.exactScope code {
+  color: var(--teal-dark, #074c42);
+  font-size: 0.72rem;
+}
+
+.preview {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--teal, #0b6b5b);
+  border-radius: 0.7rem;
+  background: var(--teal-pale, #ddeee8);
+}
+
+.preview h4 {
+  font-size: 1rem;
+}
+
+.preview dl {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.preview dl > div {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.preview dd {
+  font-weight: 700;
+}
+
+.alertLine,
+.dialogAlert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  color: #812d2d;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.alertLine svg,
+.dialogAlert svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.1rem;
+  flex: 0 0 auto;
+}
+
+.smallCopy {
+  color: var(--muted, #53625d);
+  font-size: 0.78rem;
+}
+
+.recoveryCard {
+  border-left: 5px solid var(--blue, #285f86);
+  background: var(--blue-pale, #e7f0f6);
+}
+
+.recoveryCard .statusLine {
+  margin-top: 0.8rem;
+  background: var(--surface, #ffffff);
+}
+
+.dangerZone {
+  display: grid;
+  gap: 0;
+  border-color: #d7aaaa;
+  background: #fffafa;
+}
+
+.dangerItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 0;
+}
+
+.dangerItem + .dangerItem {
+  border-top: 1px solid #ead0d0;
+}
+
+.dangerItem h3 {
+  margin-bottom: 0.35rem;
+  font-size: 1.05rem;
+}
+
+.dangerItem p {
+  max-width: 52rem;
+  color: var(--muted, #53625d);
+  font-size: 0.82rem;
+}
+
+.panel .dangerButton,
+.dialogActions .confirmButton {
+  border-color: var(--red, #a23b3b);
+}
+
+.panel .dangerButton {
+  color: #812d2d;
+}
+
+.panel .dangerButton:not(:disabled):hover {
+  border-color: #812d2d;
+  background: var(--red-pale, #fce9e7);
+}
+
+.dialogShell {
+  position: fixed;
+  z-index: 300;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: rgba(20, 35, 31, 0.58) !important;
+}
+
+.dialog {
+  position: relative;
+  z-index: 1;
+  width: min(40rem, 100%);
+  max-height: min(90vh, 48rem);
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--line, #cfd8d3);
+  border-radius: 0.875rem;
+  background: var(--surface, #ffffff);
+  box-shadow: 0 1.5rem 4rem rgba(20, 35, 31, 0.26);
+  overflow-y: auto;
+}
+
+.dialogHeader {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dialog h3 {
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+}
+
+.dialog .closeButton {
+  width: 2.75rem;
+  flex: 0 0 2.75rem;
+  padding: 0;
+}
+
+.dialogDescription {
+  margin: 0.7rem 0 1rem !important;
+  color: var(--muted, #53625d);
+}
+
+.exactScope {
+  margin-bottom: 1rem;
+}
+
+.dialog form {
+  display: grid;
+  gap: 1rem;
+}
+
+.confirmationField {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.confirmationField span {
+  overflow-wrap: anywhere;
+}
+
+.confirmationField input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line, #cfd8d3);
+  border-radius: 0.45rem;
+  background: var(--surface, #ffffff);
+  color: var(--ink, #14231f);
+}
+
+.acknowledgement {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.75rem;
+  border: 1px solid var(--line-soft, #dfe5e1);
+  border-radius: 0.55rem;
+  font-size: 0.84rem;
+}
+
+.acknowledgement input,
+.candidates input {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0.12rem 0 0;
+  accent-color: var(--teal, #0b6b5b);
+}
+
+.candidates {
+  display: grid;
+  min-width: 0;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.candidates legend {
+  margin-bottom: 0.5rem;
+  font-weight: 700;
+}
+
+.candidates label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.75rem;
+  border: 1px solid var(--line-soft, #dfe5e1);
+  border-radius: 0.55rem;
+  cursor: pointer;
+}
+
+.candidates label:has(input:checked) {
+  border-color: var(--teal, #0b6b5b);
+  background: var(--teal-pale, #ddeee8);
+}
+
+.candidates label > span,
+.candidates label > span > span,
+.candidates label strong {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.candidates label > span > span {
+  margin-top: 0.15rem;
+  color: var(--muted, #53625d);
+  font-size: 0.76rem;
+}
+
+.dialogAlert {
+  padding: 0.7rem;
+  border: 1px solid #d7aaaa;
+  border-radius: 0.5rem;
+  background: var(--red-pale, #fce9e7);
+}
+
+.dialogActions {
+  justify-content: flex-end;
+  padding-top: 0.25rem;
+}
+
+.dialogActions button {
+  min-width: 8rem;
+}
+
+.dialogActions .confirmButton {
+  background: var(--red, #a23b3b);
+  color: #ffffff;
+}
+
+.dialogActions .confirmButton:not(:disabled):hover {
+  border-color: #812d2d;
+  background: #812d2d;
+}
+
+@media (max-width: 768px) {
+  .header,
+  .grid,
+  .dangerItem {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .localOnly {
+    border-top: 1px solid var(--line-soft, #dfe5e1);
+    border-left: 0;
+  }
+
+  .dangerItem {
+    align-items: stretch;
+  }
+
+  .dangerItem > button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 390px) {
+  .panel {
+    padding: 0.75rem;
+  }
+
+  .header,
+  .persistentWarning,
+  .recoveryCard,
+  .card,
+  .dangerZone {
+    padding: 0.9rem;
+  }
+
+  .persistentWarning {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metrics,
+  .preview dl > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inlineActions,
+  .stackActions,
+  .dialogActions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .inlineActions button,
+  .stackActions button,
+  .dialogActions button {
+    width: 100%;
+  }
+
+  .dialogShell {
+    align-items: end;
+    padding: 0;
+  }
+
+  .dialog {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 0.875rem 0.875rem 0 0;
+  }
+
+  .confirmationField input {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 320px) {
+  .panel {
+    padding-inline: 0.625rem;
+  }
+
+  .header,
+  .persistentWarning,
+  .recoveryCard,
+  .card,
+  .dangerZone,
+  .dialog {
+    padding-inline: 0.75rem;
+  }
+
+  .selectedProject,
+  .exactScope,
+  .preview {
+    padding-inline: 0.65rem;
+  }
+}

@@ -30,11 +30,18 @@ export const NULL_LEGACY_FINGERPRINTS: WorkspaceLegacyFingerprints = {
   v1: null,
 };
 
+function activeSampleProjectState() {
+  return {
+    ...createDefaultProjectState(),
+    projectKind: "sample" as const,
+  };
+}
+
 /** A strictly valid v0.7.1 active record, retained only as deterministic test input. */
 export const LEGACY_ACTIVE_RECORD_RAW = JSON.stringify({
   formatVersion: 1,
   revision: 1,
-  value: { kind: "project", state: createDefaultProjectState() },
+  value: { kind: "project", state: activeSampleProjectState() },
   legacyFingerprints: { v3: null, v2: null, v1: null },
 });
 
@@ -63,7 +70,7 @@ export function activeProjectRecord(
     workspaceGeneration: 1,
     projectId,
     revision: 1,
-    value: { kind: "project", state: createDefaultProjectState() },
+    value: { kind: "project", state: activeSampleProjectState() },
     ...overrides,
   };
 }
@@ -179,7 +186,7 @@ export async function journalFor(
           : 1,
       value: kind === "delete-project"
         ? { kind: "tombstone" }
-        : { kind: "project", state: createDefaultProjectState() },
+        : { kind: "project", state: activeSampleProjectState() },
     }),
   );
   const beforeProject = await canonicalProjectRecordBytes(activeProjectRecord(PROJECT_A));

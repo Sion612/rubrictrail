@@ -17,3 +17,4 @@ export {
   type MultiAssignmentWorkspaceShellProps,
 } from "./multi-assignment-workspace-shell";
 export { dashboardProjectsFromWorkspaceSnapshot } from "./workspace-read-model";
+export * from "./workspace-lifecycle-panel";

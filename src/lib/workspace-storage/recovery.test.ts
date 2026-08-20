@@ -841,6 +841,45 @@ describe("reserve, exact storage, and deterministic fault injection", () => {
         targetRecords: { [mutation.targetRecord.key]: wrongRevision.serialized },
       }),
     ).toMatchObject({ ok: false, reason: "invalid-target-record" });
+
+    const activeNone = await recoveryFixture("create-project");
+    const activeNoneMutation = activeNone.journal.projectMutations[0];
+    const activeStateRecord = activeProjectRecord();
+    if (activeStateRecord.value.kind !== "project") {
+      throw new Error("active fixture unexpectedly tombstoned");
+    }
+    const activeNoneRecord = activeProjectRecord(activeNoneMutation.projectId, {
+      workspaceGeneration: activeNone.journal.targetGeneration,
+      value: {
+        kind: "project",
+        state: {
+          ...activeStateRecord.value.state,
+          projectKind: "none",
+          uploadedProject: null,
+        },
+      },
+    });
+    const activeNoneBytes = await canonicalProjectRecordBytes(activeNoneRecord);
+    activeNoneMutation.targetRecord.targetDigest = activeNoneBytes.digest;
+    const activeNoneJournal = serializeWorkspaceJournal(activeNone.journal);
+    if (!activeNoneJournal.ok) throw new Error("active-none journal invalid");
+    const activeNonePreparation = preparationStorage(activeNone);
+    expect(
+      await prepareWorkspaceJournal(activeNonePreparation, activeNone.journal, {
+        releaseReserve: false,
+        targetRecords: {
+          [activeNoneMutation.targetRecord.key]: activeNoneBytes.serialized,
+        },
+      }),
+    ).toMatchObject({ ok: false, reason: "invalid-target-record" });
+    activeNone.storage.setItem(WORKSPACE_OPERATION_KEY, activeNoneJournal.serialized);
+    activeNone.storage.setItem(
+      activeNoneMutation.targetRecord.key,
+      activeNoneBytes.serialized,
+    );
+    expect(
+      await classifyWorkspaceRecovery(activeNone.storage, activeNoneJournal.serialized),
+    ).toMatchObject({ status: "quarantine", reason: "invalid-owned-record" });
   });
 
   it("binds first migration to the exact resolved v0.7.1 authority", async () => {
@@ -1679,7 +1718,7 @@ describe("reserve, exact storage, and deterministic fault injection", () => {
         expect(snapshot[mutation.targetRecord.key], `step ${step}`).toBeUndefined();
       }
     }
-  });
+  }, 15_000);
 
   it("recovers after a crash at each of the four exact legacy removals", async () => {
     const createFixture = async (): Promise<RecoveryFixture> => {

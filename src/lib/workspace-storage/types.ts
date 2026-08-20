@@ -39,6 +39,19 @@ export interface WorkspaceLegacyFingerprints {
   v1: WorkspaceDigest | null;
 }
 
+export type WorkspaceLegacySourceName = "record" | "v3" | "v2" | "v1";
+
+/**
+ * Marks a user-confirmed legacy-drift resolution that is represented by the
+ * ordinary workspace operation journal. Project bytes are deliberately not
+ * retained here: recovery deterministically rebuilds them from the named,
+ * exact-digest legacy source while it still exists.
+ */
+export interface WorkspaceJournalLegacyResolutionV1 {
+  confirmationToken: WorkspaceDigest;
+  candidateSource: WorkspaceLegacySourceName | null;
+}
+
 export interface WorkspaceIndexEntryV1 {
   projectId: string;
   kind: "active" | "tombstone";
@@ -113,6 +126,7 @@ export interface WorkspaceOperationJournalV1 {
     targetDigest: WorkspaceDigest;
   };
   legacyExpectedDigests: WorkspaceLegacyFingerprints;
+  legacyResolution?: WorkspaceJournalLegacyResolutionV1;
   projectMutations: WorkspaceJournalProjectMutationV1[];
   cleanup: Array<{
     key: string;

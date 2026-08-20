@@ -63,6 +63,7 @@ describe("MultiAssignmentWorkspaceShell", () => {
       }),
     );
     const assignmentHeading = await screen.findByRole("heading", {
+      level: 1,
       name: "Fictional assignment A",
     });
     await waitFor(() => expect(assignmentHeading).toHaveFocus());
@@ -128,7 +129,10 @@ describe("MultiAssignmentWorkspaceShell", () => {
       }),
     );
     expect(
-      await screen.findByRole("heading", { name: "Fictional assignment B" }),
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Fictional assignment B",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -141,12 +145,87 @@ describe("MultiAssignmentWorkspaceShell", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Fictional assignment B" }),
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Fictional assignment B",
+      }),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent(
         "last-opened preference could not be saved",
       ),
     );
+  });
+
+  it("supports a controlled assignment selection without mutating it internally", async () => {
+    const requested = vi.fn(() => true);
+    const { rerender } = render(
+      <LocaleProvider>
+        <MultiAssignmentWorkspaceShell
+          projects={[projectA, projectB]}
+          asOfDate="2026-08-20"
+          selectedProjectId={null}
+          onNewAssignment={vi.fn()}
+          onSelectionRequested={requested}
+          renderAssignment={() => <p>Controlled assignment content</p>}
+        />
+      </LocaleProvider>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Open assignment: Fictional assignment B",
+      }),
+    );
+    await waitFor(() => expect(requested).toHaveBeenCalledWith(projectB.projectId));
+    expect(
+      screen.queryByRole("heading", {
+        level: 1,
+        name: "Fictional assignment B",
+      }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <LocaleProvider>
+        <MultiAssignmentWorkspaceShell
+          projects={[projectA, projectB]}
+          asOfDate="2026-08-20"
+          selectedProjectId={projectB.projectId}
+          onNewAssignment={vi.fn()}
+          onSelectionRequested={requested}
+          renderAssignment={() => <p>Controlled assignment content</p>}
+        />
+      </LocaleProvider>,
+    );
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Fictional assignment B",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a controlled new-assignment intake beneath workspace navigation", async () => {
+    const onDashboardShown = vi.fn();
+    render(
+      <LocaleProvider>
+        <MultiAssignmentWorkspaceShell
+          projects={[projectA]}
+          asOfDate="2026-08-20"
+          selectedProjectId={null}
+          creationMethod="paste"
+          onNewAssignment={vi.fn()}
+          onDashboardShown={onDashboardShown}
+          renderAssignment={() => null}
+          renderNewAssignment={(method) => <p>Creation method: {method}</p>}
+        />
+      </LocaleProvider>,
+    );
+
+    const heading = screen.getByRole("heading", { name: "New assignment" });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(screen.getByText("Creation method: paste")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "All assignments" }));
+    expect(onDashboardShown).toHaveBeenCalledTimes(1);
   });
 });

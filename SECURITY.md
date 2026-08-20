@@ -63,23 +63,35 @@ seen and will coordinate disclosure after a fix is available.
   Full source text is not retained, so users must still re-check the original.
   New OCR-derived evidence also retains an `ocr` origin label so restored views
   cannot present probabilistic image recognition as document-extracted text.
-- The authoritative browser value is the revisioned
-  `rubrictrail.project.store.v1` record. Its envelope is separate from the state
-  and backup protocols: active project and backup payloads remain v3. During
-  normal saves, the earlier v3, v2 and v1 keys are retained and each record stores
-  non-cryptographic fingerprints of their exact bytes. A single parseable
-  legacy-key change can therefore surface as an older-tab recovery candidate.
-  An explicit reset performs a verified privacy purge: it removes those three
-  compatibility values and leaves only a content-free cleared tombstone with
-  null legacy fingerprints. Unsupported future state versions are not coerced.
-- Current-version writes, backup restores and clears request the same exclusive
-  Web Lock, compare the complete record-plus-legacy baseline while holding it,
-  and write the next revision. Two writes, or a write and clear, from the same
-  baseline cannot both report success. This is application-level coordination,
-  not a claim that `localStorage` provides a transaction or atomic
-  compare-and-swap; older code that does not take the lock can still change a
-  legacy key, which the stored fingerprints and later reads are designed to
-  surface.
+- The authoritative browser workspace is the strict
+  `rubrictrail.workspace.index.v1` value plus one namespaced, revisioned record
+  for each listed assignment. State and backup payloads remain v3. The index
+  contains identity, generation, membership and exact legacy fingerprints; it
+  does not duplicate assignment titles, progress, deadlines or task summaries.
+  Normal edits compare and replace only the affected assignment record.
+- Cross-key migration, membership, replacement, deletion, cleanup, index
+  recovery and generation rotation use the bounded
+  `rubrictrail.workspace.operation.v1` journal. It contains exact expected and
+  target digests, not project content. Recovery accepts only recorded before or
+  after values; an unexpected third value, malformed owned record or ambiguous
+  namespace scan fails closed. A Web Lock serializes participating code but does
+  not make multiple `localStorage` writes atomic.
+- The content-free `rubrictrail.workspace.reserve.v1` is a recovery mechanism,
+  not guaranteed browser capacity. The 64-tombstone recommendation, 80-record
+  warning, 96-record growth block and 100-record hard limit are product policy,
+  not quota guarantees. Quota failure never authorizes eviction, truncation or
+  cleanup of another assignment.
+- First migration retains the previous `rubrictrail.project.store.v1` record
+  and the v3, v2 and v1 compatibility keys unchanged. Their exact SHA-256
+  fingerprints are stored in the workspace index, so a write from a still-open
+  old tab pauses affected mutation and requires an explicit recovery choice.
+  Legacy cleanup and whole-workspace privacy deletion remove only exact
+  journaled bytes; they never silently delete a changed older-tab value.
+- Current-version edits and lifecycle operations request the same exclusive
+  `rubrictrail.project.store.v1` Web Lock and compare complete index, generation,
+  record, intent and legacy baselines while holding it. Same-project writers
+  cannot both report success from one baseline. Different-project writes remain
+  isolated even though they serialize through the global lock.
 - If Web Locks are missing or lock acquisition fails, mutation fails closed. The
   saved project can remain readable, but edits are tab-only and the interface
   recommends keeping one tab open and downloading a backup before closing.
@@ -105,8 +117,10 @@ seen and will coordinate disclosure after a fix is available.
   endpoints and Live credential/configuration markers. This verifies the built
   files, not the policy of GitHub Pages: the host still receives ordinary page
   and asset request metadata and controls HTTPS, caching and response headers.
-- Downloaded project backups are plain JSON. They are neither encrypted nor
-  signed; schema and version validation does not authenticate their author.
+- Downloaded project backups are one-assignment plain JSON files. They contain
+  no workspace ID, generation, journal, reserve or tombstone, and v0.8.0 defines
+  no whole-workspace backup. They are neither encrypted nor signed; schema and
+  version validation does not authenticate their author.
 - A public Live deployment also needs rate limits, per-user authorization, budget
   caps, abuse monitoring, and an explicit consent UI. Those controls are outside
   the current release, so the maintainers do not operate a public Live service.

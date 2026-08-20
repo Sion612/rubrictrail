@@ -1,3 +1,10 @@
+import {
+  parseLegacyProjectStateValue,
+  parsePersistedProjectStateValue,
+  parsePreviousProjectStateValue,
+  parseProjectStorageRecordValue,
+} from "@/lib/local-state";
+import type { PersistedProjectState } from "@/lib/ui-types";
 import { digestOptionalStoredString } from "@/lib/workspace-storage/digest";
 import {
   LEGACY_PROJECT_KEYS,
@@ -95,6 +102,148 @@ function isAuthoritativeActiveProjectRecord(
   );
 }
 
+function parseLegacyResolutionCandidate(
+  source: "record" | "v3" | "v2" | "v1",
+  raw: string,
+): PersistedProjectState | null {
+  if (source === "record") {
+    const parsed = parseProjectStorageRecordValue(raw);
+    return parsed?.status === "active" &&
+      parsed.state !== null &&
+      parsed.state.projectKind !== "none"
+      ? parsed.state
+      : null;
+  }
+  if (source === "v3") {
+    try {
+      const value = JSON.parse(raw) as unknown;
+      if (
+        typeof value !== "object" ||
+        value === null ||
+        !("version" in value) ||
+        value.version !== 3
+      ) {
+        return null;
+      }
+      const parsed = parsePersistedProjectStateValue(value);
+      return parsed.ok && parsed.state.projectKind !== "none"
+        ? parsed.state
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  if (source === "v2") {
+    const parsed = parsePreviousProjectStateValue(raw);
+    return parsed.ok && parsed.state.projectKind !== "none"
+      ? parsed.state
+      : null;
+  }
+  const parsed = parseLegacyProjectStateValue(raw);
+  return parsed?.projectKind === "none" ? null : parsed;
+}
+
+export type WorkspaceLegacyResolutionTargetResult =
+  | { ok: true; serialized: string }
+  | {
+      ok: false;
+      reason:
+        | "unsupported"
+        | "conflict"
+        | "invalid"
+        | "digest-unavailable"
+        | "storage-error";
+    };
+
+/**
+ * Rebuilds the one project target named by a confirmed legacy-resolution
+ * journal. The journal never stores project content; the still-exact named
+ * legacy source is parsed again and the resulting canonical record must match
+ * the journaled target digest byte-for-byte.
+ */
+export async function reconstructWorkspaceLegacyResolutionTargetRecord(
+  storage: WorkspaceStorageAdapter,
+  journal: WorkspaceOperationJournalV1,
+): Promise<WorkspaceLegacyResolutionTargetResult> {
+  const marker = journal.legacyResolution;
+  if (
+    marker?.candidateSource === null ||
+    marker === undefined ||
+    !["restore-as-new", "replace-project"].includes(journal.kind) ||
+    journal.projectMutations.length !== 1
+  ) {
+    return { ok: false, reason: "unsupported" };
+  }
+  const legacyKey = LEGACY_PROJECT_KEYS[marker.candidateSource];
+  const legacy = readExact(storage, legacyKey);
+  if (!legacy.ok) return { ok: false, reason: "storage-error" };
+  if (legacy.value === null) return { ok: false, reason: "conflict" };
+  const legacyDigest = await digestOptionalStoredString(legacy.value);
+  if (!legacyDigest.ok) return { ok: false, reason: "digest-unavailable" };
+  if (
+    legacyDigest.digest !==
+    journal.legacyExpectedDigests[marker.candidateSource]
+  ) {
+    return { ok: false, reason: "conflict" };
+  }
+  const state = parseLegacyResolutionCandidate(
+    marker.candidateSource,
+    legacy.value,
+  );
+  if (state === null) return { ok: false, reason: "invalid" };
+
+  const mutation = journal.projectMutations[0];
+  const identity = parseWorkspaceProjectRecordKey(mutation.targetRecord.key);
+  if (
+    identity === null ||
+    identity.workspaceId !== journal.workspaceId ||
+    identity.workspaceGeneration !== journal.targetGeneration ||
+    identity.projectId !== mutation.projectId
+  ) {
+    return { ok: false, reason: "invalid" };
+  }
+
+  let revision = 1;
+  if (journal.kind === "replace-project") {
+    const before = readExact(storage, mutation.targetRecord.key);
+    if (!before.ok) return { ok: false, reason: "storage-error" };
+    if (before.value === null) return { ok: false, reason: "conflict" };
+    const beforeDigest = await digestOptionalStoredString(before.value);
+    if (!beforeDigest.ok) return { ok: false, reason: "digest-unavailable" };
+    const parsedBefore = parseWorkspaceProjectRecord(before.value);
+    if (
+      beforeDigest.digest !== mutation.targetRecord.expectedBeforeDigest ||
+      !parsedBefore.ok ||
+      !workspaceProjectRecordMatchesKey(
+        mutation.targetRecord.key,
+        parsedBefore.value,
+      ) ||
+      !isAuthoritativeActiveProjectRecord(parsedBefore.value) ||
+      parsedBefore.value.revision >= Number.MAX_SAFE_INTEGER
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+    revision = parsedBefore.value.revision + 1;
+  } else if (mutation.targetRecord.expectedBeforeDigest !== null) {
+    return { ok: false, reason: "invalid" };
+  }
+
+  const serialized = serializeWorkspaceProjectRecord({
+    formatVersion: 1,
+    workspaceId: journal.workspaceId,
+    workspaceGeneration: journal.targetGeneration,
+    projectId: mutation.projectId,
+    revision,
+    value: { kind: "project", state },
+  });
+  if (!serialized.ok) return { ok: false, reason: "invalid" };
+  const targetDigest = await digestOptionalStoredString(serialized.serialized);
+  if (!targetDigest.ok) return { ok: false, reason: "digest-unavailable" };
+  return targetDigest.digest === mutation.targetRecord.targetDigest
+    ? { ok: true, serialized: serialized.serialized }
+    : { ok: false, reason: "conflict" };
+}
+
 function storageValidationFailure(error: unknown): "storage-error" {
   if (error instanceof WorkspaceStorageFault && error.kind === "crash") throw error;
   return "storage-error";
@@ -147,6 +296,36 @@ function sameLegacyFingerprints(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function journalLegacyTransitionMatches(
+  base: WorkspaceIndexV1,
+  target: WorkspaceIndexV1,
+  journal: WorkspaceOperationJournalV1,
+): boolean {
+  if (journal.legacyResolution === undefined) {
+    return sameLegacyFingerprints(
+      base.legacyFingerprints,
+      journal.legacyExpectedDigests,
+    );
+  }
+  if (
+    !["restore-as-new", "replace-project", "legacy-cleanup"].includes(
+      journal.kind,
+    ) ||
+    sameLegacyFingerprints(
+      base.legacyFingerprints,
+      journal.legacyExpectedDigests,
+    )
+  ) {
+    return false;
+  }
+  return journal.kind === "legacy-cleanup"
+    ? Object.values(target.legacyFingerprints).every((digest) => digest === null)
+    : sameLegacyFingerprints(
+        target.legacyFingerprints,
+        journal.legacyExpectedDigests,
+      );
+}
+
 function nextRevisionIs(base: WorkspaceIndexV1, target: WorkspaceIndexV1): boolean {
   return base.revision < Number.MAX_SAFE_INTEGER && target.revision === base.revision + 1;
 }
@@ -166,7 +345,7 @@ function workspaceBaseIndexMatchesJournal(
     !target.ok ||
     base.value.workspaceId !== journal.workspaceId ||
     base.value.workspaceGeneration !== journal.sourceGeneration ||
-    !sameLegacyFingerprints(base.value.legacyFingerprints, journal.legacyExpectedDigests)
+    !journalLegacyTransitionMatches(base.value, target.value, journal)
   ) {
     return false;
   }
@@ -179,7 +358,13 @@ function workspaceBaseIndexMatchesJournal(
     targetIndex.workspaceGeneration === baseIndex.workspaceGeneration;
 
   if (journal.kind === "replace-project") {
-    return rawBaseIndex === journal.targetIndex.serializedValue;
+    return journal.legacyResolution === undefined
+      ? rawBaseIndex === journal.targetIndex.serializedValue
+      : unchangedIdentity &&
+          nextRevisionIs(baseIndex, targetIndex) &&
+          baseIndex.status === "active" &&
+          targetIndex.status === "active" &&
+          sameIndexEntries(baseIndex.projects, targetIndex.projects);
   }
 
   if (journal.kind === "create-project" || journal.kind === "restore-as-new") {

@@ -4,6 +4,69 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-21
+
+### Added
+
+- Added a top-level **My Assignments** Dashboard with assignment cards,
+  deadlines, progress, blocked/overdue status, and a cross-assignment **Up
+  Next** list derived only from real Action Plan tasks.
+- Added a prominent **New assignment** flow for uploaded files, pasted details,
+  or restoring an existing single-project backup as a new independent
+  assignment.
+- Added safe project switching and browser-local multi-assignment persistence
+  with one validated record namespace per assignment.
+- Added a journaled first-run migration that preserves a valid v0.7.1 project
+  as one workspace assignment and retains the legacy values for older-tab
+  detection until the user explicitly cleans them up.
+- Added explicit project replacement, deletion, storage compaction, legacy
+  cleanup, whole-workspace privacy deletion, and index-recovery interfaces with
+  exact-scope confirmation and fail-closed recovery.
+
+### Changed
+
+- RubricTrail now opens at workspace scope. The existing per-assignment Brief,
+  Rubric, Plan, Check, Progress, Project Tracker, Calendar, and local `.ics`
+  workflow remains assignment-level and keeps its existing state semantics.
+- Browser persistence now uses a small authoritative workspace index,
+  namespaced project records, a bounded operation journal, a storage reserve,
+  and a best-effort last-opened preference. Authoritative mutations still
+  require the existing exclusive Web Lock.
+- Single-project backup format v1 remains unchanged. Restore can add a new
+  assignment or explicitly replace the selected assignment; v0.8.0 does not
+  introduce a whole-workspace backup format.
+
+### Privacy / Integrity
+
+- All assignment data remains browser-local by default. v0.8.0 adds no account,
+  cloud sync, analytics, remote asset, public Live AI, or provider Calendar
+  integration.
+- Assignment records are isolated by workspace namespace. Normal edits replace
+  only the selected assignment record and do not rewrite unrelated projects or
+  duplicate Dashboard summaries in the index.
+- Original files and full uploaded, pasted, or OCR transcripts are still not
+  stored. Existing compact fields, source labels, bounded excerpts, drafts,
+  progress, and manual source locators retain their current project-level
+  privacy boundary.
+- Old v0.7.x data is retained unchanged after migration until separately
+  confirmed exact legacy cleanup or whole-workspace privacy deletion. Older-tab
+  rewrites are surfaced as conflicts and are never silently adopted or erased.
+
+### Limitations
+
+- The product policy recommends compaction at 64 tombstones, warns at 80 total
+  records, blocks growth at 96, and rejects a 101st record beyond the hard
+  100-record generation limit. These thresholds are not browser quota
+  guarantees; available `localStorage` capacity varies by browser and context.
+- Authoritative mutation requires Web Locks. Without them, validated projects
+  remain readable/exportable but mutations fail closed.
+- v0.8.0 has no global Calendar, reminders, provider sync, cloud/account sync,
+  manual task creation, or whole-workspace backup. Calendar and `.ics` remain
+  per assignment.
+- Simultaneously open v0.7.x tabs can rewrite legacy keys. v0.8.0 detects this
+  drift and requires an explicit recovery choice; it cannot prevent older code
+  from attempting the write.
+
 ## [0.7.1] - 2026-08-18
 
 ### Changed

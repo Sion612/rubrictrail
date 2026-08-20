@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   friendlyFileError,
   RubricTrailApp,
+  type ExistingWorkspaceSession,
+  type NewWorkspaceSession,
 } from "@/components/rubrictrail-app";
 import { LocaleProvider } from "@/components/locale-provider";
 import { assignmentFileIssueReason } from "@/lib/file-intake-messages";
@@ -228,6 +230,372 @@ afterEach(() => {
 });
 
 describe("RubricTrailApp reliability", () => {
+  it("autosaves a controlled assignment after the 250ms debounce without touching legacy storage", async () => {
+    const nextStates: PersistedProjectState[] = [];
+    const onFlush = vi.fn().mockResolvedValue("saved");
+    const session: ExistingWorkspaceSession = {
+      mode: "existing",
+      projectId: "workspace-project-a",
+      authorityEpoch: 0,
+      project: {
+        ...createDefaultProjectState(),
+        projectKind: "sample",
+        view: "draft",
+        visitedViews: ["overview", "rubric", "plan", "draft"],
+        draftText: "A controlled assignment draft.",
+      },
+      onProjectChange: (next) => {
+        nextStates.push(next);
+        return true;
+      },
+      onFlush,
+      onReplaceProject: vi.fn().mockResolvedValue(true),
+      onRequestManagement: vi.fn(),
+    };
+    const getItem = vi.spyOn(Storage.prototype, "getItem");
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    const removeItem = vi.spyOn(Storage.prototype, "removeItem");
+
+    const rendered = render(<RubricTrailApp workspaceSession={session} />);
+    await advance(0);
+    await loadDeferredModule(() => import("@/components/views/draft-check-view"));
+
+    expect(screen.getByTestId("draft-text")).toHaveValue(
+      "A controlled assignment draft.",
+    );
+    fireEvent.change(screen.getByTestId("draft-text"), {
+      target: { value: "A controlled edit queued by the workspace." },
+    });
+    expect(nextStates.at(-1)?.draftText).toBe(
+      "A controlled edit queued by the workspace.",
+    );
+
+    rendered.rerender(
+      <RubricTrailApp
+        workspaceSession={{
+          ...session,
+          project: { ...session.project },
+        }}
+      />,
+    );
+    await advance(0);
+    expect(screen.getByTestId("draft-text")).toHaveValue(
+      "A controlled edit queued by the workspace.",
+    );
+
+    await advance(249);
+    expect(onFlush).not.toHaveBeenCalled();
+    await advance(1);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    await advance(1_000);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+
+    const legacyKeys = new Set([
+      PROJECT_RECORD_KEY,
+      STORAGE_KEY,
+      PREVIOUS_STORAGE_KEY,
+      LEGACY_STORAGE_KEY,
+    ]);
+    expect(getItem.mock.calls.some(([key]) => legacyKeys.has(key))).toBe(false);
+    expect(setItem.mock.calls.some(([key]) => legacyKeys.has(key))).toBe(false);
+    expect(removeItem.mock.calls.some(([key]) => legacyKeys.has(key))).toBe(false);
+    expect(screen.getByRole("button", { name: "Use my assignment" })).toBeInTheDocument();
+  });
+
+  it("rehydrates a same-ID controlled assignment only after an explicit authority epoch change", async () => {
+    const nextStates: PersistedProjectState[] = [];
+    const onFlush = vi.fn().mockResolvedValue("saved");
+    const initial: PersistedProjectState = {
+      ...createDefaultProjectState(),
+      projectKind: "sample",
+      view: "draft",
+      visitedViews: ["overview", "rubric", "plan", "draft"],
+      draftText: "Original authority draft.",
+    };
+    const session: ExistingWorkspaceSession = {
+      mode: "existing",
+      projectId: "workspace-project-authority",
+      authorityEpoch: 0,
+      project: initial,
+      onProjectChange: (next) => {
+        nextStates.push(next);
+        return true;
+      },
+      onFlush,
+      onReplaceProject: vi.fn().mockResolvedValue(true),
+      onRequestManagement: vi.fn(),
+    };
+    const rendered = render(<RubricTrailApp workspaceSession={session} />);
+    await advance(0);
+    await loadDeferredModule(() => import("@/components/views/draft-check-view"));
+
+    fireEvent.change(screen.getByTestId("draft-text"), {
+      target: { value: "Pending local edit." },
+    });
+    rendered.rerender(
+      <RubricTrailApp
+        workspaceSession={{
+          ...session,
+          project: { ...initial },
+        }}
+      />,
+    );
+    await advance(0);
+    expect(screen.getByTestId("draft-text")).toHaveValue("Pending local edit.");
+
+    const replacement: PersistedProjectState = {
+      ...initial,
+      view: "draft",
+      visitedViews: ["overview", "rubric", "plan", "draft"],
+      draftText: "Restored authority draft.",
+      targetGrade: 82,
+    };
+    rendered.rerender(
+      <RubricTrailApp
+        workspaceSession={{
+          ...session,
+          authorityEpoch: 1,
+          project: replacement,
+        }}
+      />,
+    );
+    await advance(0);
+    expect(screen.getByTestId("draft-text")).toHaveValue("Restored authority draft.");
+    await advance(250);
+    expect(onFlush).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId("draft-text"), {
+      target: { value: "Edit after authoritative restore." },
+    });
+    expect(nextStates.at(-1)).toEqual(expect.objectContaining({
+      projectKind: "sample",
+      draftText: "Edit after authoritative restore.",
+      targetGrade: 82,
+    }));
+    await advance(250);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+  });
+
+  it("flushes a controlled edit once on pagehide and cancels a later debounce on unmount", async () => {
+    const onFlush = vi.fn().mockResolvedValue("saved");
+    const session: ExistingWorkspaceSession = {
+      mode: "existing",
+      projectId: "workspace-project-pagehide",
+      authorityEpoch: 0,
+      project: {
+        ...createDefaultProjectState(),
+        projectKind: "sample",
+        view: "draft",
+        visitedViews: ["overview", "rubric", "plan", "draft"],
+        draftText: "A controlled assignment draft.",
+      },
+      onProjectChange: vi.fn().mockReturnValue(true),
+      onFlush,
+      onReplaceProject: vi.fn().mockResolvedValue(true),
+      onRequestManagement: vi.fn(),
+    };
+    const rendered = render(<RubricTrailApp workspaceSession={session} />);
+    await advance(0);
+    await loadDeferredModule(() => import("@/components/views/draft-check-view"));
+
+    fireEvent.change(screen.getByTestId("draft-text"), {
+      target: { value: "Flush this edit when the page is hidden." },
+    });
+    window.dispatchEvent(new Event("pagehide"));
+    await flushMicrotasks();
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    await advance(250);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByTestId("draft-text"), {
+      target: { value: "Cancel this pending debounce on unmount." },
+    });
+    rendered.unmount();
+    await advance(250);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+  });
+
+  it("deduplicates pagehide against a controlled debounce flush already in flight", async () => {
+    let resolveFlush!: (outcome: "saved") => void;
+    const flushPromise = new Promise<"saved">((resolve) => {
+      resolveFlush = resolve;
+    });
+    const onFlush = vi.fn(() => flushPromise);
+    const session: ExistingWorkspaceSession = {
+      mode: "existing",
+      projectId: "workspace-project-in-flight",
+      authorityEpoch: 0,
+      project: {
+        ...createDefaultProjectState(),
+        projectKind: "sample",
+        view: "draft",
+        visitedViews: ["overview", "rubric", "plan", "draft"],
+        draftText: "A controlled assignment draft.",
+      },
+      onProjectChange: vi.fn().mockReturnValue(true),
+      onFlush,
+      onReplaceProject: vi.fn().mockResolvedValue(true),
+      onRequestManagement: vi.fn(),
+    };
+    render(<RubricTrailApp workspaceSession={session} />);
+    await advance(0);
+    await loadDeferredModule(() => import("@/components/views/draft-check-view"));
+
+    fireEvent.change(screen.getByTestId("draft-text"), {
+      target: { value: "Keep one flush while pagehide races the coordinator." },
+    });
+    await advance(250);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event("pagehide"));
+    await flushMicrotasks();
+    expect(onFlush).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveFlush("saved");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await advance(1_000);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes controlled reset to workspace management without confirming or deleting", async () => {
+    const onRequestManagement = vi.fn();
+    const onProjectChange = vi.fn().mockReturnValue(true);
+    const onFlush = vi.fn().mockResolvedValue("saved");
+    const confirm = vi.spyOn(window, "confirm");
+    const removeItem = vi.spyOn(Storage.prototype, "removeItem");
+    const session: ExistingWorkspaceSession = {
+      mode: "existing",
+      projectId: "workspace-project-management",
+      authorityEpoch: 0,
+      project: {
+        ...createDefaultProjectState(),
+        projectKind: "sample",
+        view: "overview",
+        visitedViews: ["overview"],
+      },
+      onProjectChange,
+      onFlush,
+      onReplaceProject: vi.fn().mockResolvedValue(true),
+      onRequestManagement,
+    };
+
+    render(<RubricTrailApp workspaceSession={session} />);
+    await advance(0);
+    fireEvent.click(screen.getByRole("button", { name: "Reset local project" }));
+
+    expect(onRequestManagement).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onProjectChange).not.toHaveBeenCalled();
+    expect(onFlush).not.toHaveBeenCalled();
+    expect(removeItem).not.toHaveBeenCalled();
+  });
+
+  it("keeps standalone reset behind its existing confirmation", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<RubricTrailApp />);
+    await advance(0);
+    fireEvent.click(screen.getByTestId("try-sample"));
+    await advance(450);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset local project" }));
+
+    expect(confirm).toHaveBeenCalledWith(
+      "Reset this local project? This clears saved draft excerpts, checks, results and task progress from this browser.",
+    );
+    expect(screen.getByRole("button", { name: "Use my assignment" })).toBeInTheDocument();
+  });
+
+  it("creates a new workspace assignment from pasted intake without touching legacy storage", async () => {
+    const onCreateProject = vi.fn().mockResolvedValue(true);
+    const session: NewWorkspaceSession = {
+      mode: "new",
+      initialIntakeMode: "paste",
+      onCreateProject,
+    };
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    render(<RubricTrailApp workspaceSession={session} />);
+    await advance(0);
+
+    expect(screen.getByTestId("pasted-assignment-brief")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("pasted-assignment-brief"), {
+      target: {
+        value: [
+          "Assignment title: Workspace intake report",
+          "Deadline: 24 September 2026",
+          "Word count: 2500 words",
+          "Use APA 7 referencing.",
+        ].join("\n"),
+      },
+    });
+    fireEvent.change(screen.getByTestId("pasted-assignment-rubric"), {
+      target: { value: "Rubric\nAnalysis | 100%" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review assignment details" }));
+    await advance(0);
+    await loadDeferredModule(() => import("@/components/upload-summary-view"));
+    const createButton = screen.getByTestId("create-project");
+    expect(createButton).not.toBeDisabled();
+    fireEvent.click(createButton);
+    await flushMicrotasks();
+
+    expect(onCreateProject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectKind: "uploaded",
+        uploadedProject: expect.objectContaining({ title: "Workspace intake report" }),
+      }),
+      "intake",
+    );
+    expect(setItem.mock.calls.some(([key]) => key === PROJECT_RECORD_KEY)).toBe(false);
+  });
+
+  it("routes controlled backup restore to replace for an existing assignment and create for a new assignment", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const replacement = vi.fn().mockResolvedValue(true);
+    const existing: ExistingWorkspaceSession = {
+      mode: "existing",
+      projectId: "workspace-project-b",
+      authorityEpoch: 0,
+      project: {
+        ...createDefaultProjectState(),
+        projectKind: "sample",
+        view: "overview",
+        visitedViews: ["overview"],
+      },
+      onProjectChange: vi.fn().mockReturnValue(true),
+      onFlush: vi.fn().mockResolvedValue("saved"),
+      onReplaceProject: replacement,
+      onRequestManagement: vi.fn(),
+    };
+    const existingRender = render(<RubricTrailApp workspaceSession={existing} />);
+    await advance(0);
+    await restoreBackup(
+      screen.getByTestId("workspace-backup-file-input"),
+      uploadedBackupState(),
+    );
+    expect(replacement).toHaveBeenCalledWith(
+      expect.objectContaining({ projectKind: "uploaded" }),
+    );
+
+    existingRender.unmount();
+    const creation = vi.fn().mockResolvedValue(true);
+    const created: NewWorkspaceSession = {
+      mode: "new",
+      initialIntakeMode: "files",
+      onCreateProject: creation,
+    };
+    render(<RubricTrailApp workspaceSession={created} />);
+    await advance(0);
+    await restoreBackup(screen.getByTestId("backup-file-input"), uploadedBackupState());
+    expect(creation).toHaveBeenCalledWith(
+      expect.objectContaining({ projectKind: "uploaded" }),
+      "backup",
+    );
+  });
+
   it("keeps a deferred evidence load inside a non-interactive fixed drawer shell", async () => {
     render(
       <LocaleProvider>

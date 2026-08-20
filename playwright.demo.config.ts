@@ -13,6 +13,7 @@ export default defineConfig({
     "calendar.spec.ts",
     "source-locator-edit.spec.ts",
     "static-export.spec.ts",
+    "multi-assignment.spec.ts",
   ],
   fullyParallel: false,
   forbidOnly: isCi,

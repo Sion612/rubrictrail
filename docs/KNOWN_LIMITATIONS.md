@@ -72,30 +72,44 @@
    point. Missing percentages are never guessed or automatically completed.
 11. **Simple rubric parser.** Explicit lines such as `Analysis | 30%` work best.
    Complex tables may require manual repair in the confirmation screen.
-12. **Manual portability only.** There is no account, automatic sync,
-    collaboration or multi-project dashboard. Simultaneous tabs are detected and
-    autosave is paused, but edits are not merged; download either version before
-    choosing which one to keep. A versioned JSON backup can move one project
-    between browsers, but it is neither encrypted nor signed and must be kept
-    private. Import validation checks format and structure, not authorship. Current
-    mutations use an exclusive Web Lock and monotonic authoritative-record
-    revision, so two writes or a write and clear from one baseline cannot both
-    win. This remains an application protocol, not a `localStorage` transaction
-    or atomic compare-and-swap; older releases can still change compatibility
-    keys, which fingerprint checks surface as conflicts or recovery candidates.
-    An explicit reset removes the observed v3, v2 and v1 project values and keeps
-    only a content-free tombstone, but a still-open older tab can write its key
-    again afterward. Close older tabs before resetting sensitive work.
-    Without Web Locks, mutation fails closed and edits remain only in that tab.
-13. **Close-time saving is best effort.** Autosave waits 250 ms, while hidden-page
+12. **Multi-assignment remains manual, browser-local portability.** The My
+    Assignments Dashboard and cross-assignment Up Next list work only with this
+    browser's validated local records. There is no account, automatic sync,
+    collaboration, cross-device workspace, reminder service, provider sync, or
+    whole-workspace backup. A versioned JSON backup moves one selected assignment
+    at a time and may be restored as new or used to replace the explicitly
+    selected assignment. It is neither encrypted nor signed; validation checks
+    format and structure, not authorship.
+
+    Current-version authoritative mutations require the exclusive
+    `rubrictrail.project.store.v1` Web Lock. Same-project conflicts are surfaced,
+    not merged; different-project writes serialize through the global lock but
+    preserve separate records. This is an application protocol, not a
+    `localStorage` transaction. Without Web Locks, projects remain readable and
+    exportable but mutation fails closed and edits stay only in that tab.
+
+    Existing v0.7.x values remain after first migration until separately
+    confirmed exact cleanup. A still-open old tab can rewrite one of those keys;
+    v0.8.0 detects the changed fingerprint and requires an explicit conflict
+    choice, but cannot stop already-running old code. Close older tabs before
+    migration or privacy cleanup.
+13. **Workspace limits are policy, not quota guarantees.** v0.8.0 recommends
+    generation compaction at 64 tombstones, shows a persistent warning at 80
+    total records, blocks create/restore-as-new at 96, and rejects a 101st record
+    beyond the 100-record hard limit. `localStorage` quota, accounting, eviction,
+    partitioning and private-mode behavior vary by browser, so a project within
+    product character limits may still fail to save. A quota failure does not
+    evict or truncate another assignment. When the verified reserve cannot be
+    re-established, the workspace enters a degraded read/export mode.
+14. **Close-time saving is best effort.** Autosave waits 250 ms, while hidden-page
     and `pagehide` handlers start an asynchronous flush. A close during the
     debounce, browser shutdown or force-kill may stop that work and lose the last
     uncommitted edit. Download a backup before closing when the interface reports
     tab-only changes.
-14. **Local-first is not complete offline support.** Files and project content are
+15. **Local-first is not complete offline support.** Files and project content are
     processed in the browser after the app loads, but there is no service worker
     guarantee that the application can be loaded or reopened without its host.
-15. **Bilingual interface is not source translation.** The single application
+16. **Bilingual interface is not source translation.** The single application
     URL supports English and Simplified Chinese product controls and stores that
     preference separately from projects and backups. Uploaded or pasted source
     content, project titles, course names, criteria, excerpts and draft notes
@@ -104,16 +118,21 @@
     numeric dates blank. Chinese materials require manual confirmation. There is
     no separate `/zh-CN` route or language-specific server-rendered page, and the
     optional Live API's machine-readable errors remain English.
-16. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal
+17. **Fictional sample only.** Sample Draft Check is a deterministic surface-signal
     demo, not semantic evaluation or a predicted grade.
-17. **No public Live service.** The optional server adapter lacks the full rate,
+18. **No global Calendar or manually created tasks.** Calendar, `.ics`, Project
+    Tracker, task completion and backups remain assignment-level. Up Next derives
+    only from real Action Plan tasks and deadlines. v0.8.0 does not add arbitrary
+    manual tasks, study-time appointments, a cross-assignment month view,
+    reminders, subscription feeds, or provider integration.
+19. **No public Live service.** The optional server adapter lacks the full rate,
     budget, abuse and consent controls required for a public deployment.
-18. **The public demo is static-only.** It is deployed at
+20. **The public demo is static-only.** It is deployed at
     <https://sion612.github.io/rubrictrail/>, omits the Live API and Node
     response-header configuration, and is subject to GitHub Pages' HTTPS,
     caching and response-header policy. GitHub still receives ordinary page and
     asset request metadata.
-19. **Browser storage is origin-scoped.** `localStorage` is shared by scripts on
+21. **Browser storage is origin-scoped.** `localStorage` is shared by scripts on
     the same origin; the `/rubrictrail` path is not an isolation boundary. Do not
     colocate the demo with unrelated or untrusted scripts when project content is
     sensitive.

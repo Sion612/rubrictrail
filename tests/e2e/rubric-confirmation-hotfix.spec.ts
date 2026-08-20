@@ -1,13 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
-const APP_PATH = (() => {
-  const configured = process.env.PLAYWRIGHT_APP_PATH?.trim() || "/";
-  const withLeadingSlash = configured.startsWith("/") ? configured : `/${configured}`;
-  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
-})();
-
-const PROJECT_RECORD_KEY = "rubrictrail.project.store.v1";
+import { openRestoreAssignment, openUploadAssignment, reopenAssignment, resetWorkspace, returnToAssignments, workspaceLanguageSwitcher } from "./workspace-helpers";
 
 function pdfText(lines: string[]): string {
   return [
@@ -86,12 +80,8 @@ function twoPageRubricPdf(): Buffer {
 }
 
 async function resetApp(page: Page) {
-  await page.goto(APP_PATH);
-  await page.evaluate(() => window.localStorage.clear());
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Turn the brief into a plan you can prove." }),
-  ).toBeVisible();
+  await resetWorkspace(page);
+  await openUploadAssignment(page);
 }
 
 function visibleWorkflowButton(page: Page, label: RegExp) {
@@ -210,7 +200,7 @@ test("source traceability survives parsing, reload, and backup restoration", asy
     { width: 320, height: 844 },
   ];
   for (const locale of ["en", "zh-CN"] as const) {
-    await page.getByRole("combobox", { name: /language|语言/i }).selectOption(locale);
+    await workspaceLanguageSwitcher(page).selectOption(locale);
     for (const viewport of viewports) {
       await page.setViewportSize(viewport);
       await expectNoHorizontalOverflow(page);
@@ -233,7 +223,7 @@ test("source traceability survives parsing, reload, and backup restoration", asy
   await expect(emptyEvidence).toContainText("此字段未保留原文摘录");
   await expect(totalError).toContainText("必须合计为 100%");
 
-  await page.getByRole("combobox", { name: /language|语言/i }).selectOption("en");
+  await workspaceLanguageSwitcher(page).selectOption("en");
   await page.getByTestId("criterion-weight-0").fill("40");
   await page.getByTestId("criterion-weight-1").fill("40");
   await page.getByTestId("create-project").click();
@@ -246,12 +236,16 @@ test("source traceability survives parsing, reload, and backup restoration", asy
   await expect(sourceRegister).toContainText("fictional-follow-up.txt");
   await expect(sourceRegister).toContainText("TXT · extracted text");
 
-  await expect.poll(async () => page.evaluate((key) => {
-    const raw = window.localStorage.getItem(key);
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index))
+      .filter((key): key is string => key !== null)
+      .filter((key) => key.startsWith("rubrictrail.workspace.") && key.includes(".project."))
+      .map((key) => window.localStorage.getItem(key))
+      .find((value): value is string => value !== null) ?? null;
     if (!raw) return null;
     const record = JSON.parse(raw) as { value?: { state?: { uploadedProject?: { sources?: { id: string }[] } } } };
     return record.value?.state?.uploadedProject?.sources?.map((source) => source.id) ?? null;
-  }, PROJECT_RECORD_KEY)).toEqual(["source-2", "source-3"]);
+  })).toEqual(["source-2", "source-3"]);
 
   await visibleWorkflowButton(page, /Rubric/).click();
   const summaryBand = page.locator(".rubric-summary-band");
@@ -277,12 +271,13 @@ test("source traceability survives parsing, reload, and backup restoration", asy
   await closeEvidence(page);
 
   await page.reload();
+  await reopenAssignment(page, "Fictional Traceability Report");
   await expect(page.getByRole("heading", { name: "Confirm what earns marks." })).toBeVisible();
   dialog = await openEvidence(page, "Manual locator criterion");
   await expect(dialog).toContainText("Manually recorded page: 2");
   await closeEvidence(page);
 
-  await page.getByRole("combobox", { name: /language|语言/i }).selectOption("zh-CN");
+  await workspaceLanguageSwitcher(page).selectOption("zh-CN");
   await page.getByRole("button", { name: /查看或编辑来源定位: Manual locator criterion/ }).click();
   dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("手动关联来源：fictional-three-page-rubric.pdf");
@@ -291,7 +286,7 @@ test("source traceability survives parsing, reload, and backup restoration", asy
   await closeEvidence(page);
   await page.setViewportSize({ width: 320, height: 844 });
   await expectNoHorizontalOverflow(page);
-  await page.getByRole("combobox", { name: /language|语言/i }).selectOption("en");
+  await workspaceLanguageSwitcher(page).selectOption("en");
 
   await page.getByLabel("Project backup options").click();
   const downloadPromise = page.waitForEvent("download");
@@ -324,12 +319,12 @@ test("source traceability survives parsing, reload, and backup restoration", asy
   expect(backupText).not.toContain("Private full-page sentence that must not be stored.");
   expect(backupText).not.toContain("%PDF-1.4");
 
-  page.once("dialog", (confirmation) => confirmation.accept());
-  await page.getByLabel("Reset local project").click();
-  await expect(page.getByRole("heading", { name: "Turn the brief into a plan you can prove." })).toBeVisible();
+  await returnToAssignments(page);
+  await resetWorkspace(page);
+  await openRestoreAssignment(page);
   page.once("dialog", (confirmation) => confirmation.accept());
   await page.getByTestId("backup-file-input").setInputFiles(backupPath!);
-  await expect(page.locator("#workspace-main").getByText("Fictional Traceability Report", { exact: true }))
+  await expect(page.getByRole("heading", { name: "Fictional Traceability Report", exact: true }))
     .toBeVisible();
   await expect(page.getByRole("heading", { name: "Confirm what earns marks." })).toBeVisible();
 

@@ -12,6 +12,7 @@ export const dashboardEn = {
   uploadAssignment: "Upload assignment files",
   pasteAssignment: "Paste assignment details",
   restoreAssignment: "Restore assignment backup as new",
+  sampleAssignment: "Try the fictional sample",
   assignmentsHeading: "Assignments",
   assignmentCountOne: "1 assignment",
   assignmentCount: "{count} assignments",
@@ -33,7 +34,7 @@ export const dashboardEn = {
   overdue: "Overdue",
   emptyHeading: "No assignments yet",
   emptyDescription:
-    "Create your first assignment from files, pasted details or a RubricTrail backup.",
+    "Create your first assignment from files, pasted details, a RubricTrail backup or the fictional sample.",
   createFirst: "Create first assignment",
 } as const;
 
@@ -46,6 +47,7 @@ export const dashboardZhCN = {
   uploadAssignment: "上传作业文件",
   pasteAssignment: "粘贴作业详情",
   restoreAssignment: "把作业备份恢复为新作业",
+  sampleAssignment: "试用虚构示例",
   assignmentsHeading: "作业列表",
   assignmentCountOne: "1 份作业",
   assignmentCount: "{count} 份作业",
@@ -65,7 +67,7 @@ export const dashboardZhCN = {
   blocked: "被阻塞",
   overdue: "已逾期",
   emptyHeading: "还没有作业",
-  emptyDescription: "可通过上传文件、粘贴详情或 RubricTrail 备份创建第一份作业。",
+  emptyDescription: "可通过上传文件、粘贴详情、RubricTrail 备份或虚构示例创建第一份作业。",
   createFirst: "创建第一份作业",
 } satisfies DashboardMessageSet<typeof dashboardEn>;
 

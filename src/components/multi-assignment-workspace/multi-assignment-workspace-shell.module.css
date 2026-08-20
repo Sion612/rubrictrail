@@ -27,6 +27,14 @@
   font-weight: 760;
 }
 
+.topbarActions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
 .brand {
   padding: 0.45rem 0.25rem;
   color: var(--teal-dark, #074c42);

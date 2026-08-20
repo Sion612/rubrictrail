@@ -1,5 +1,7 @@
 import { expect, test, type Browser } from "@playwright/test";
 
+import { openUploadAssignment } from "./workspace-helpers";
+
 async function fictionalOcrScreenshot(browser: Browser): Promise<Buffer> {
   const fixturePage = await browser.newPage({ viewport: { width: 1600, height: 900 } });
   try {
@@ -31,6 +33,7 @@ test("keeps OCR runtime deferred for a text-only intake", async ({ page }) => {
   });
 
   await page.goto(appPath);
+  await openUploadAssignment(page);
   await page.getByTestId("file-input").setInputFiles({
     name: "fictional-brief.txt",
     mimeType: "text/plain",
@@ -72,6 +75,7 @@ test("recognizes a fictional image locally and recovers from a damaged image", a
 
   const screenshot = await fictionalOcrScreenshot(browser);
   await page.goto(appPath);
+  await openUploadAssignment(page);
   await page.getByTestId("file-input").setInputFiles([
     {
       name: "fictional-ocr-brief.png",

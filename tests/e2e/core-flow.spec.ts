@@ -1,21 +1,30 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 
+import { assignmentPageHeading, expectActiveWorkspaceProjectCount, openRestoreAssignment, openUploadAssignment, reopenAssignment, resetWorkspace, returnToAssignments } from "./workspace-helpers";
+
 const APP_PATH = (() => {
   const configured = process.env.PLAYWRIGHT_APP_PATH?.trim() || "/";
   const withLeadingSlash = configured.startsWith("/") ? configured : `/${configured}`;
   return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
 })();
 
-const PROJECT_RECORD_KEY = "rubrictrail.project.store.v1";
-const PROJECT_LOCK_NAME = "rubrictrail.project.store.v1";
-
 async function readProjectRecordRaw(page: Page) {
-  return page.evaluate((key) => window.localStorage.getItem(key), PROJECT_RECORD_KEY);
+  return page.evaluate(() =>
+    Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index))
+      .filter((key): key is string => key !== null)
+      .filter((key) => key.startsWith("rubrictrail.workspace.") && key.includes(".project."))
+      .map((key) => window.localStorage.getItem(key))
+      .find((value): value is string => value !== null) ?? null,
+  );
 }
 
 async function readStoredProjectState(page: Page) {
-  return page.evaluate((key) => {
-    const raw = window.localStorage.getItem(key);
+  return page.evaluate(() => {
+    const raw = Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index))
+      .filter((key): key is string => key !== null)
+      .filter((key) => key.startsWith("rubrictrail.workspace.") && key.includes(".project."))
+      .map((key) => window.localStorage.getItem(key))
+      .find((value): value is string => value !== null) ?? null;
     if (!raw) return null;
     try {
       const record = JSON.parse(raw) as {
@@ -25,16 +34,23 @@ async function readStoredProjectState(page: Page) {
     } catch {
       return null;
     }
-  }, PROJECT_RECORD_KEY);
+  });
 }
 
 async function resetProject(page: Page) {
-  await page.goto(APP_PATH);
-  await page.evaluate(() => window.localStorage.clear());
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Turn the brief into a plan you can prove." }),
-  ).toBeVisible();
+  await resetWorkspace(page);
+  await openUploadAssignment(page);
+}
+
+async function workspaceContains(page: Page, text: string) {
+  return page.evaluate(
+    (needle) => Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index))
+      .filter((key): key is string => key !== null)
+      .filter((key) => key.startsWith("rubrictrail.workspace."))
+      .map((key) => window.localStorage.getItem(key) ?? "")
+      .some((value) => value.includes(needle)),
+    text,
+  );
 }
 
 function visibleWorkflowButton(page: Page, label: string) {
@@ -108,7 +124,7 @@ test("sample assignment keeps demo signals distinct from real completion", async
   await expect(page.getByText("Local demo · no credits")).toBeVisible();
   await page.getByTestId("try-sample").click();
   await expect(
-    page.getByRole("heading", { name: "Reducing Collection Delays at LumaLane Market" }),
+    assignmentPageHeading(page, "Reducing Collection Delays at LumaLane Market"),
   ).toBeVisible();
 
   const sourceButton = page.getByRole("button", { name: /Open source 1 for/ }).first();
@@ -137,6 +153,7 @@ test("sample assignment keeps demo signals distinct from real completion", async
     .poll(async () => (await readStoredProjectState(page))?.targetGrade ?? null)
     .toBe(80);
   await page.reload();
+  await reopenAssignment(page, "Reducing Collection Delays at LumaLane Market");
   await expect(page.getByTestId("planning-depth")).toHaveValue("extended");
   await expect(page.getByTestId("task-s3")).toBeVisible();
   await page.getByTestId("task-p1").getByRole("checkbox").check();
@@ -157,198 +174,87 @@ test("sample assignment keeps demo signals distinct from real completion", async
   expect(browserErrors).toEqual([]);
 });
 
-test("a stale tab cannot overwrite a newer saved draft", async ({ page, context }) => {
-  await page.getByTestId("try-sample").click();
-  await expect(
-    page.getByRole("heading", { name: "Reducing Collection Delays at LumaLane Market" }),
-  ).toBeVisible();
-  await visibleWorkflowButton(page, "Check").click();
-  await expect(page.getByTestId("draft-text")).toBeVisible();
-  await expect
-    .poll(async () => {
-      const state = await readStoredProjectState(page);
-      return state ? `${state.projectKind}:${state.view}` : "";
-    })
-    .toBe("sample:draft");
-
-  await page.close();
-  const [pageA, pageB] = await Promise.all([context.newPage(), context.newPage()]);
-  await Promise.all([pageA.goto(APP_PATH), pageB.goto(APP_PATH)]);
-  await Promise.all([
-    expect(pageA.getByTestId("draft-text")).toBeVisible(),
-    expect(pageB.getByTestId("draft-text")).toBeVisible(),
-  ]);
-
-  const savedDraft = "TAB-A-EXACT-SAVED-DRAFT-4D91: only this version may persist.";
-  await pageA.getByTestId("draft-text").fill(savedDraft);
-  await expect
-    .poll(async () => (await readStoredProjectState(pageA))?.draftText ?? "")
-    .toBe(savedDraft);
-  const exactSavedValue = await readProjectRecordRaw(pageA);
-  expect(exactSavedValue).not.toBeNull();
-
-  const conflictHeading = pageB.getByRole("heading", {
-    name: "Autosave paused: another tab saved changes",
-  });
-  await expect(conflictHeading).toBeVisible();
-
-  const staleDraft = "TAB-B-STALE-DRAFT: this must remain confined to page B.";
-  await pageB.getByTestId("draft-text").fill(staleDraft);
-  await expect(pageB.getByTestId("draft-text")).toHaveValue(staleDraft);
-  await visibleWorkflowButton(pageB, "Plan").click();
-  await expect(pageB.getByRole("heading", { name: "A plan with a definition of done." })).toBeVisible();
-  await expect(conflictHeading).toBeVisible();
-
-  await pageB.evaluate(() => window.dispatchEvent(new Event("pagehide")));
-  await pageB.waitForTimeout(350);
-  expect(
-    await readProjectRecordRaw(pageA),
-  ).toBe(exactSavedValue);
-
-  pageB.once("dialog", (dialog) => dialog.accept());
-  await pageB.getByRole("button", { name: "Load saved version" }).click();
-  await expect(pageB.getByTestId("draft-text")).toHaveValue(savedDraft);
-  await expect(conflictHeading).toHaveCount(0);
-  expect(
-    await readProjectRecordRaw(pageB),
-  ).toBe(exactSavedValue);
-});
-
-test("the project lock admits only one writer from the same revision", async ({
-  page,
-  context,
-}) => {
+test("an external same-project write returns an inactive tab to the dashboard rather than silently showing stale data", async ({ page, context }) => {
   await page.getByTestId("try-sample").click();
   await visibleWorkflowButton(page, "Check").click();
   await expect(page.getByTestId("draft-text")).toBeVisible();
   await expect.poll(async () => (await readStoredProjectState(page))?.view ?? null)
     .toBe("draft");
+  const pageB = await context.newPage();
+  await pageB.goto(APP_PATH);
+  await reopenAssignment(pageB, "Reducing Collection Delays at LumaLane Market");
+  await expect(pageB.getByTestId("draft-text")).toBeVisible();
 
-  await page.evaluate((lockName) => {
-    const state = window as typeof window & { releaseRubricTrailTestLock?: () => void };
-    const gate = new Promise<void>((resolve) => {
-      state.releaseRubricTrailTestLock = resolve;
-    });
-    void navigator.locks.request(lockName, () => gate);
-  }, PROJECT_LOCK_NAME);
-  await expect.poll(() =>
-    page.evaluate(async (lockName) => {
-      const snapshot = await navigator.locks.query();
-      return (snapshot.held ?? []).filter((lock) => lock.name === lockName).length;
-    }, PROJECT_LOCK_NAME),
-  ).toBe(1);
-
-  const [pageA, pageB] = await Promise.all([context.newPage(), context.newPage()]);
-  await Promise.all([pageA.goto(APP_PATH), pageB.goto(APP_PATH)]);
-  await Promise.all([
-    expect(pageA.getByTestId("draft-text")).toBeVisible(),
-    expect(pageB.getByTestId("draft-text")).toBeVisible(),
-  ]);
-
-  const winningDraft = "LOCK-WINNER-A-91B2: this revision must remain canonical.";
-  const losingDraft = "LOCK-LOSER-B-77C4: this must stay in the conflicting tab.";
-  await pageA.getByTestId("draft-text").fill(winningDraft);
-  await expect.poll(() =>
-    page.evaluate(async (lockName) => {
-      const snapshot = await navigator.locks.query();
-      return (snapshot.pending ?? []).filter((lock) => lock.name === lockName).length;
-    }, PROJECT_LOCK_NAME),
-  ).toBe(1);
-
-  await pageB.getByTestId("draft-text").fill(losingDraft);
-  await expect.poll(() =>
-    page.evaluate(async (lockName) => {
-      const snapshot = await navigator.locks.query();
-      return (snapshot.pending ?? []).filter((lock) => lock.name === lockName).length;
-    }, PROJECT_LOCK_NAME),
-  ).toBe(2);
-
-  await page.evaluate(() => {
-    const state = window as typeof window & { releaseRubricTrailTestLock?: () => void };
-    state.releaseRubricTrailTestLock?.();
-  });
-
-  let canonicalDraft = "";
-  await expect.poll(async () => {
-    const storedState = await readStoredProjectState(pageA);
-    canonicalDraft = typeof storedState?.draftText === "string" ? storedState.draftText : "";
-    return [winningDraft, losingDraft].includes(canonicalDraft);
-  }).toBe(true);
-
-  const losingPage = canonicalDraft === winningDraft ? pageB : pageA;
-  await expect(
-    losingPage.getByRole("heading", {
-      name: "Autosave paused: another tab saved changes",
-    }),
-  ).toBeVisible();
-  await expect(pageA.getByTestId("draft-text")).toHaveValue(winningDraft);
-  await expect(pageB.getByTestId("draft-text")).toHaveValue(losingDraft);
+  const savedDraft = "SAME-PROJECT-EXTERNAL-WRITE-4D91";
+  await page.bringToFront();
+  await page.getByTestId("draft-text").fill(savedDraft);
+  await expect.poll(async () => (await readStoredProjectState(page))?.draftText ?? "")
+    .toBe(savedDraft);
+  await expect(pageB.getByRole("heading", { name: "My assignments" })).toBeVisible();
+  await reopenAssignment(pageB, "Reducing Collection Delays at LumaLane Market");
+  await visibleWorkflowButton(pageB, "Check").click();
+  await expect(pageB.getByTestId("draft-text")).toHaveValue(savedDraft);
 });
 
-test("an older v2 tab can be explicitly loaded without losing its draft", async ({ page, context }) => {
+test("different-project updates remain independently retained across tabs", async ({
+  page,
+  context,
+}) => {
+  await page.getByTestId("file-input").setInputFiles({
+    name: "fictional-a.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from(COMPLETE_BRIEF),
+  });
+  await page.getByTestId("create-project").click();
+  await expectActiveWorkspaceProjectCount(page, 1);
+  await returnToAssignments(page);
+  await page.getByRole("button", { name: "New assignment", exact: true }).click();
+  await page.getByRole("button", { name: "Try the fictional sample", exact: true }).click();
+  await page.getByTestId("try-sample").click();
+  await expectActiveWorkspaceProjectCount(page, 2);
+  await returnToAssignments(page);
+
+  const pageB = await context.newPage();
+  await pageB.bringToFront();
+  await pageB.goto(APP_PATH);
+  const strategyDraft = "DIFFERENT-PROJECT-STRATEGY-91B2";
+  await reopenAssignment(pageB, "Strategy Report");
+  await visibleWorkflowButton(pageB, "Check").click();
+  await pageB.getByTestId("uploaded-review-text").fill(strategyDraft);
+  await expect.poll(async () => workspaceContains(pageB, strategyDraft)).toBe(true);
+
+  await reopenAssignment(page, "Reducing Collection Delays at LumaLane Market");
+  await visibleWorkflowButton(page, "Check").click();
+  const sampleDraft = "DIFFERENT-PROJECT-SAMPLE-77C4";
+  await page.getByTestId("draft-text").fill(sampleDraft);
+  await expect.poll(async () => workspaceContains(page, sampleDraft)).toBe(true);
+
+  await page.reload();
+  await reopenAssignment(page, "Strategy Report");
+  await visibleWorkflowButton(page, "Check").click();
+  await expect(page.getByTestId("uploaded-review-text")).toHaveValue(strategyDraft);
+  await returnToAssignments(page);
+  await reopenAssignment(page, "Reducing Collection Delays at LumaLane Market");
+  await visibleWorkflowButton(page, "Check").click();
+  await expect(page.getByTestId("draft-text")).toHaveValue(sampleDraft);
+});
+
+test("switching away with a pending assignment edit flushes safely before selection changes", async ({ page }) => {
   await page.getByTestId("try-sample").click();
   await visibleWorkflowButton(page, "Check").click();
   await expect(page.getByTestId("draft-text")).toBeVisible();
-  await expect
-    .poll(async () => {
-      const state = await readStoredProjectState(page);
-      return state ? `${state.projectKind ?? ""}:${state.view ?? ""}` : "";
-    })
-    .toBe("sample:draft");
-
-  const olderDraft =
-    "V2-EXACT-DRAFT-71C4: this older-version save was explicitly selected.";
-  const legacyTab = await context.newPage();
-  await legacyTab.goto(APP_PATH);
-  const currentState = await readStoredProjectState(legacyTab);
-  if (!currentState) throw new Error("Expected a stored project before creating v2 state");
-  await legacyTab.evaluate(({ draftText, currentState }) => {
-    const previous = { ...currentState } as Record<string, unknown>;
-    delete previous.supersededV2Fingerprint;
-    previous.version = 2;
-    previous.draftText = draftText;
-    window.localStorage.setItem(
-      "rubrictrail.project.v2",
-      JSON.stringify(previous),
-    );
-  }, { draftText: olderDraft, currentState });
-  await legacyTab.close();
-
-  const conflictHeading = page.getByRole("heading", {
-    name: "Autosave paused: another tab saved changes",
-  });
-  await expect(conflictHeading).toBeVisible();
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("older RubricTrail tab");
-    await dialog.accept();
-  });
-  await page.getByRole("button", { name: "Load saved version" }).click();
-
-  await expect(page.getByTestId("draft-text")).toHaveValue(olderDraft);
-  await expect(conflictHeading).toHaveCount(0);
-  await expect
-    .poll(async () => {
-        const state = await readStoredProjectState(page) as {
-          draftText?: string;
-          supersededV2Fingerprint?: string | null;
-        } | null;
-        if (!state) return "";
-        return `${state.draftText}|${state.supersededV2Fingerprint ?? ""}`;
-      })
-    .toMatch(/^V2-EXACT-DRAFT-71C4:.*\|v1:/);
-  expect(
-    await page.evaluate(() => window.localStorage.getItem("rubrictrail.project.v2")),
-  ).not.toBeNull();
-
-  await page.reload();
-  await expect(page.getByTestId("draft-text")).toHaveValue(olderDraft);
-  await expect(conflictHeading).toHaveCount(0);
+  const pendingDraft = "PENDING-SWITCH-MUST-FLUSH-71C4";
+  await page.getByTestId("draft-text").fill(pendingDraft);
+  await returnToAssignments(page);
+  await reopenAssignment(page, "Reducing Collection Delays at LumaLane Market");
+  await visibleWorkflowButton(page, "Check").click();
+  await expect(page.getByTestId("draft-text")).toHaveValue(pendingDraft);
 });
 
 test("sample users can hand off directly to their own files", async ({ page }) => {
   await page.getByTestId("try-sample").click();
   await expect(
-    page.getByRole("heading", { name: "Reducing Collection Delays at LumaLane Market" }),
+    assignmentPageHeading(page, "Reducing Collection Delays at LumaLane Market"),
   ).toBeVisible();
 
   page.once("dialog", (dialog) => dialog.accept());
@@ -357,7 +263,8 @@ test("sample users can hand off directly to their own files", async ({ page }) =
   await expect(
     page.getByRole("heading", { name: "Turn the brief into a plan you can prove." }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Choose files" })).toBeFocused();
+  await expect(assignmentPageHeading(page, "New assignment"))
+    .toBeFocused();
 });
 
 test("real upload can create and persist a source-linked local project", async ({ page }) => {
@@ -409,6 +316,7 @@ test("real upload can create and persist a source-linked local project", async (
   expect(await readProjectRecordRaw(page)).toContain("strategic constraint");
 
   await page.reload();
+  await reopenAssignment(page, "Strategy Report");
   await expect(page.getByText("Strategy Report", { exact: true }).first()).toBeVisible();
   await expect(page.getByTestId("uploaded-review-text")).toHaveValue(/strategic constraint/);
   await expectNoHorizontalOverflow(page);
@@ -577,10 +485,11 @@ test("partial published weights remain recorded without weighting the plan", asy
           weightingStatus: state.uploadedProject?.weightingStatus,
           weights: state.uploadedProject?.criteria?.map((criterion) => criterion.weight),
         };
-      })
+  })
     .toEqual({ weightingStatus: "incomplete", weights: [null, 40] });
 
   await page.reload();
+  await reopenAssignment(page, "Partial Weight Report");
   await expect(
     page.getByRole("heading", { name: "Partial Weight Report", exact: true }),
   ).toBeVisible();
@@ -618,16 +527,14 @@ test("a versioned project backup can leave and safely restore the browser", asyn
   const backupPath = await download.path();
   expect(backupPath).not.toBeNull();
 
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByLabel("Reset local project").click();
-  await expect(
-    page.getByRole("heading", { name: "Turn the brief into a plan you can prove." }),
-  ).toBeVisible();
+  await returnToAssignments(page);
+  await resetWorkspace(page);
+  await openRestoreAssignment(page);
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByTestId("backup-file-input").setInputFiles(backupPath!);
   await expect(page.getByRole("heading", { name: "Strategy Report", exact: true })).toBeVisible();
-  await expect(page.getByTestId("toast")).toContainText("Project restored from backup");
+  await expectActiveWorkspaceProjectCount(page, 1);
   await page.setViewportSize({ width: 320, height: 700 });
   await page.getByLabel("Project backup options").click();
   await expect(page.getByText("Contains saved project details")).toBeVisible();
@@ -683,6 +590,7 @@ test("missing rubric can be repaired without fabricating weights", async ({ page
   expect(saved).not.toContain('"weight":50');
 
   await page.reload();
+  await reopenAssignment(page, "Service Report");
   await expect(page.getByRole("heading", { name: "Service Report", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Review rubric" }).click();
   await expect(page.getByText("Not recorded")).toHaveCount(2);

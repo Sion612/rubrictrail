@@ -9,14 +9,15 @@ the generated static demo served at `/rubrictrail`. Calendar scenarios freeze
 Playwright's clock at 2026-08-17 so month expectations do not depend on the
 wall-clock date.
 
-## v0.8.0 multi-assignment release candidate
+## v0.8.0 multi-assignment product and release evidence
 
 Date: 21 August 2026
 
-This section is intentionally candidate evidence. It does **not** claim that
-the v0.8.0 activation branch has passed exact-head CI, merged to `main`, reached
-GitHub Pages, or passed a public smoke check. Those fields remain pending until
-the corresponding exact revisions and completed remote runs exist.
+The product activation has passed exact-head CI, merged to `main`, deployed
+from its exact merge revision, and passed independent public verification. The
+final `v0.8.0` tag and GitHub Release are intentionally still pending while this
+docs-only evidence change passes its own exact-head, exact-main, Pages and
+public gates. This section does not describe the release as published early.
 
 ### Completed prerequisite PR evidence
 
@@ -27,14 +28,15 @@ the corresponding exact revisions and completed remote runs exist.
 | Dormant lifecycle/recovery | PR #47 head `0996641ee7bdbef974e6547bf57dc75f4d04db6c`; exact-head CI run 32391578794 succeeded; squash main `0d44e51d4675f38745628978a87bfee95bf10b52`; exact-main CI run 32392151144 and Pages run 32392645580 succeeded |
 
 The three prerequisite PRs were deliberately dormant. Their successful Pages
-deployments prove that existing public behavior remained deployable; they do
-not prove the not-yet-merged v0.8.0 activation flow.
+deployments proved that existing public behavior remained deployable, but did
+not by themselves prove the activation flow that PR #48 later enabled and
+verified.
 
-### Activation-candidate evidence slots
+### Activation and product-deployment evidence
 
 | Gate | Current status |
 | --- | --- |
-| PR 4 exact head | Pending final candidate commit |
+| PR 4 exact head | PR #48 head `59cb11b3a3032a821058b0428dde78bb59484ec6`; replacement exact-head CI run 32412301898 succeeded after the first browser run exposed and then received a test-only language-switcher locator fix |
 | Frozen install / production dependency audit | `pnpm install --frozen-lockfile` passed with pnpm 11.9.0 and no lockfile change; `pnpm audit --prod` found no known vulnerabilities |
 | ESLint / TypeScript / Vitest / Node tests | `pnpm check` passed: zero-warning ESLint, TypeScript, 58 Vitest files / 766 tests, 3 OCR Node tests and the Next.js 16.3.0 production build |
 | Production build and Playwright | Fresh `next build` passed; 60/60 desktop/mobile executions passed through `next start` with `PLAYWRIGHT_PRODUCTION=true` |
@@ -42,10 +44,10 @@ not prove the not-yet-merged v0.8.0 activation flow.
 | Focused repeated migration/concurrency/resurrection/mobile tests | Workspace storage passed 17 files / 324 tests in three consecutive runs; six production scenarios repeated three times per desktop/mobile project passed 36/36 |
 | Deployment reliability | `pnpm test:deployment-smoke` passed 14/14 |
 | Diff integrity | `git diff --check` passed with no whitespace errors |
-| PR 4 `quality`, `browser`, `pages-static` | Pending push and exact-head CI |
-| Product merged-main CI | Not yet applicable |
-| Exact-SHA Pages deployment | Not yet applicable |
-| Public deployment marker and product smoke | Not yet verified |
+| PR 4 `quality`, `browser`, `pages-static` | [CI run 32412301898](https://github.com/Sion612/rubrictrail/actions/runs/32412301898): all three jobs succeeded for exact head `59cb11b3a3032a821058b0428dde78bb59484ec6` |
+| Product merged-main CI | [CI run 32413157098](https://github.com/Sion612/rubrictrail/actions/runs/32413157098): `push` on `main`, exact head `a8f479b98589df86db4e64efd7c9238ecf81e281`; `quality`, `browser` and `pages-static` all succeeded |
+| Exact-SHA Pages deployment | [Deploy Pages run 32413751251](https://github.com/Sion612/rubrictrail/actions/runs/32413751251): freshness, build, deploy and post-deploy smoke all succeeded for `a8f479b98589df86db4e64efd7c9238ecf81e281` |
+| Public deployment marker and smoke | `deployment.txt` matched all 40 lowercase hexadecimal bytes of `a8f479b98589df86db4e64efd7c9238ecf81e281`; homepage, same-origin assets and both Live GET/POST boundaries passed on the second bounded independent smoke attempt |
 
 The exact PR 3 `main` baseline was measured before activation with
 `PAGES_BASE_PATH=/rubrictrail pnpm build:demo` and `pnpm audit:demo`: 61
@@ -55,8 +57,44 @@ initial JS/CSS assets totalling 1,207,257 raw / 340,488 gzip bytes. That is
 63,142 raw bytes (4.97%) and 16,454 gzip bytes (4.61%) below the PR 3 baseline,
 with 16,512 bytes of headroom under the unchanged 357,000-byte gzip budget.
 The 10 deferred OCR files total 16,850,033 bytes and are absent from initial
-HTML. These are local candidate measurements, not exact-head CI or public Pages
-evidence.
+HTML. The same fixed budget passed in PR exact-head and merged-main CI; the
+byte counts are measurements from the locally built final product tree rather
+than claims inferred from source alone.
+
+### Remote and public observations
+
+The first PR #48 exact-head run, 32411241681, tested head
+`c033e342a40d7d751932652186d7dfab013fe5c0`: `quality` and `pages-static`
+passed, while the browser job failed because the five-viewport dormant
+Dashboard harness used a page-global language-combobox locator after production
+activation added a second correctly labelled switcher. The test was scoped to
+the workspace navigation; no product behavior was weakened. Replacement run
+32412301898 then passed all required jobs for corrected test head
+`59cb11b3a3032a821058b0428dde78bb59484ec6`.
+
+The independent public smoke did not hide a transient observation: its first
+bounded attempt could not retrieve one same-origin hashed JavaScript asset.
+The second attempt retrieved the exact deployment marker, homepage and every
+discovered same-origin asset successfully; Live assignment and draft routes
+remained non-2xx for GET and POST `{}`. No response body or student data was
+sent or recorded. This was separate from the official Pages smoke job, whose
+log recorded success on its first attempt; no GitHub Actions workflow was
+rerun.
+
+A public Pages Playwright pass exercised 58 desktop/mobile product scenarios
+successfully. The two executions of the existing static-containment scenario
+were excluded from the final public-only invocation because that test
+intentionally hard-codes the local static server origin
+`http://127.0.0.1:3101`; when pointed at Pages it classified valid Pages assets
+as unexpected by design. Before exclusion, all 58 functional scenarios had
+already passed and only those two local-origin assertions failed. The final
+public-only command therefore passed 58/58, while the complete 60/60 suite had
+separately passed both the local production and local static-export gates.
+
+The product-deployment evidence above belongs to the product merge SHA
+`a8f479b98589df86db4e64efd7c9238ecf81e281`. The eventual release tag will
+target the later docs-only evidence merge SHA after that revision passes its
+own exact-main CI, exact-SHA Pages deployment and final public check.
 
 During development, an initial dev-server browser run passed 34/60 and exposed
 both incomplete test migration and two real controlled-state/storage-event

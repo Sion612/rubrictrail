@@ -1,6 +1,6 @@
 # Verification report
 
-Date: 17 August 2026
+Report last updated: 21 August 2026
 Runtime: bundled Node.js 24 locally; the repository remains pinned to pnpm
 11.9.0 for CI and contributor installs.
 Browser method: Playwright projects at desktop 1440×900 and narrow 390×844
@@ -8,6 +8,76 @@ Chromium sizes against a fresh production build served by `next start`, plus
 the generated static demo served at `/rubrictrail`. Calendar scenarios freeze
 Playwright's clock at 2026-08-17 so month expectations do not depend on the
 wall-clock date.
+
+## v0.8.0 multi-assignment release candidate
+
+Date: 21 August 2026
+
+This section is intentionally candidate evidence. It does **not** claim that
+the v0.8.0 activation branch has passed exact-head CI, merged to `main`, reached
+GitHub Pages, or passed a public smoke check. Those fields remain pending until
+the corresponding exact revisions and completed remote runs exist.
+
+### Completed prerequisite PR evidence
+
+| Stage | Exact evidence |
+| --- | --- |
+| Storage foundation | PR #44 head `0f844ef9db4357c7215020f60282bb07f6334abf`; exact-head CI run 32375284437 succeeded; squash main `953b405ce235205aaa70dfbd4739c3f94e10288c`; exact-main CI run 32375867442 and Pages run 32376342705 succeeded |
+| Dormant Dashboard/coordinator | PR #45 head `26b2d673dc6e430b8447fc510d64a01c770eb99b`; exact-head CI run 32382508576 succeeded; squash main `6227fe7cc6ccd709f531baaec15dc4c10b4748c2`; exact-main CI run 32383158581 and Pages run 32383679539 succeeded |
+| Dormant lifecycle/recovery | PR #47 head `0996641ee7bdbef974e6547bf57dc75f4d04db6c`; exact-head CI run 32391578794 succeeded; squash main `0d44e51d4675f38745628978a87bfee95bf10b52`; exact-main CI run 32392151144 and Pages run 32392645580 succeeded |
+
+The three prerequisite PRs were deliberately dormant. Their successful Pages
+deployments prove that existing public behavior remained deployable; they do
+not prove the not-yet-merged v0.8.0 activation flow.
+
+### Activation-candidate evidence slots
+
+| Gate | Current status |
+| --- | --- |
+| PR 4 exact head | Pending final candidate commit |
+| Frozen install / production dependency audit | `pnpm install --frozen-lockfile` passed with pnpm 11.9.0 and no lockfile change; `pnpm audit --prod` found no known vulnerabilities |
+| ESLint / TypeScript / Vitest / Node tests | `pnpm check` passed: zero-warning ESLint, TypeScript, 58 Vitest files / 766 tests, 3 OCR Node tests and the Next.js 16.3.0 production build |
+| Production build and Playwright | Fresh `next build` passed; 60/60 desktop/mobile executions passed through `next start` with `PLAYWRIGHT_PRODUCTION=true` |
+| `/rubrictrail` build, static audit and Playwright | Fresh static export and audit passed; 60/60 desktop/mobile executions passed from `/rubrictrail/` |
+| Focused repeated migration/concurrency/resurrection/mobile tests | Workspace storage passed 17 files / 324 tests in three consecutive runs; six production scenarios repeated three times per desktop/mobile project passed 36/36 |
+| Deployment reliability | `pnpm test:deployment-smoke` passed 14/14 |
+| Diff integrity | `git diff --check` passed with no whitespace errors |
+| PR 4 `quality`, `browser`, `pages-static` | Pending push and exact-head CI |
+| Product merged-main CI | Not yet applicable |
+| Exact-SHA Pages deployment | Not yet applicable |
+| Public deployment marker and product smoke | Not yet verified |
+
+The exact PR 3 `main` baseline was measured before activation with
+`PAGES_BASE_PATH=/rubrictrail pnpm build:demo` and `pnpm audit:demo`: 61
+exported files, 14 initial JS/CSS assets, 1,270,399 raw bytes and 356,942 gzip
+bytes. The final local activation candidate exports 84 files and references 15
+initial JS/CSS assets totalling 1,207,257 raw / 340,488 gzip bytes. That is
+63,142 raw bytes (4.97%) and 16,454 gzip bytes (4.61%) below the PR 3 baseline,
+with 16,512 bytes of headroom under the unchanged 357,000-byte gzip budget.
+The 10 deferred OCR files total 16,850,033 bytes and are absent from initial
+HTML. These are local candidate measurements, not exact-head CI or public Pages
+evidence.
+
+During development, an initial dev-server browser run passed 34/60 and exposed
+both incomplete test migration and two real controlled-state/storage-event
+integration defects. The implementation and deterministic setup were fixed;
+the unchanged final production candidate then passed 60/60 through `next
+start`, and the fresh static artifact passed 60/60. A separate deliberately
+parallel local diagnostic run also made one activation test exceed its
+one-second initial-render wait while four other gates competed for resources;
+the same file subsequently passed 9/9 in three consecutive isolated runs, and
+the required sequential `pnpm test` and `pnpm check` each passed all 766 Vitest
+tests. No retry setting, arbitrary sleep or global timeout increase was added.
+
+The v0.8.0 test scope must distinguish project-level state from workspace
+authority. Required evidence includes v0.7.1/v3/v2/v1 migration, invalid and
+divergent legacy states, quota/reserve/Web-Locks failures, crash recovery,
+same-project conflict, different-project preservation, pending-save switching,
+restore-as-new, replace, deletion, legacy cleanup, rotation, explicit index
+recovery, English/Simplified Chinese, 320px layout, existing five-stage flows,
+Tracker/Calendar/ICS, and absence of project-content network requests. Passing
+regression fixtures will not be described as a naturally exercised production
+race.
 
 ## v0.7.1 merged-main and public Pages evidence
 

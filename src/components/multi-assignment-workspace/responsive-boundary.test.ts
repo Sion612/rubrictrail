@@ -33,7 +33,7 @@ function isInside(path: string, directory: string): boolean {
   );
 }
 
-describe("dormant responsive dashboard boundary", () => {
+describe("production responsive dashboard boundary", () => {
   it("defines bounded layouts for the required widths without hiding document overflow", () => {
     const css = readFileSync(
       join(dashboardDirectory, "multi-assignment-dashboard.module.css"),
@@ -48,7 +48,7 @@ describe("dormant responsive dashboard boundary", () => {
     expect(css).not.toMatch(/overflow-x\s*:\s*hidden/iu);
   });
 
-  it("is unreachable from every current production source module outside its dormant boundary", () => {
+  it("is reached only through the production workspace activation root", () => {
     const productionFiles = [
       ...sourceFiles(join(repositoryRoot, "src")),
       ...sourceFiles(join(repositoryRoot, "demo")),
@@ -57,8 +57,11 @@ describe("dormant responsive dashboard boundary", () => {
       /\b(?:from\s*|import\s*(?:\(\s*)?|require\s*\(\s*)["'][^"']*multi-assignment-workspace(?:\/[^"']*)?["']/u;
     const importingFiles = productionFiles
       .filter((path) => dashboardImportPattern.test(readFileSync(path, "utf8")))
-      .map((path) => relative(repositoryRoot, path));
+      .map((path) => relative(repositoryRoot, path).split(sep).join("/"));
 
-    expect(importingFiles).toEqual([]);
+    expect(importingFiles).toEqual(["src/app/page.tsx"]);
+    expect(
+      readFileSync(join(repositoryRoot, "src", "app", "page.tsx"), "utf8"),
+    ).toContain("WorkspaceActivationRoot");
   });
 });

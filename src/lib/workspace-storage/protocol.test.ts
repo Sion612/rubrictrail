@@ -256,6 +256,118 @@ describe("workspace preferences, reserve, digest, and journal", () => {
     }
   });
 
+  it("strictly limits data-free legacy-resolution markers to matching operations", async () => {
+    const marker = {
+      confirmationToken: DIGEST_B,
+      candidateSource: "record" as const,
+    };
+    const restore = await journalFor("restore-as-new");
+    const markedTarget = await canonicalIndexBytes(
+      activeIndex({
+        revision: 2,
+        projects: [
+          { projectId: PROJECT_A, kind: "active" },
+          { projectId: PROJECT_B, kind: "active" },
+        ],
+        legacyFingerprints: {
+          ...NULL_LEGACY_FINGERPRINTS,
+          record: DIGEST_A,
+        },
+      }),
+    );
+    const marked = serializeWorkspaceJournal({
+      ...restore,
+      targetIndex: {
+        key: WORKSPACE_INDEX_KEY,
+        serializedValue: markedTarget.serialized,
+        targetDigest: markedTarget.digest,
+      },
+      legacyExpectedDigests: {
+        ...NULL_LEGACY_FINGERPRINTS,
+        record: DIGEST_A,
+      },
+      legacyResolution: marker,
+    });
+    expect(marked.ok).toBe(true);
+    if (marked.ok) {
+      expect(marked.serialized).toContain('"candidateSource":"record"');
+      expect(marked.serialized).not.toMatch(/draftText|projectState|student/u);
+    }
+    const create = await journalFor("create-project");
+    expect(serializeWorkspaceJournal({ ...create, legacyResolution: marker }).ok).toBe(
+      false,
+    );
+    expect(
+      serializeWorkspaceJournal({
+        ...restore,
+        targetIndex: {
+          key: WORKSPACE_INDEX_KEY,
+          serializedValue: markedTarget.serialized,
+          targetDigest: markedTarget.digest,
+        },
+        legacyExpectedDigests: {
+          ...NULL_LEGACY_FINGERPRINTS,
+          record: DIGEST_A,
+        },
+        legacyResolution: { ...marker, candidateSource: null },
+      }).ok,
+    ).toBe(false);
+    expect(
+      serializeWorkspaceJournal({
+        ...restore,
+        targetIndex: {
+          key: WORKSPACE_INDEX_KEY,
+          serializedValue: markedTarget.serialized,
+          targetDigest: markedTarget.digest,
+        },
+        legacyExpectedDigests: {
+          ...NULL_LEGACY_FINGERPRINTS,
+          record: DIGEST_A,
+        },
+        legacyResolution: { ...marker, candidateSource: "v1" },
+      }).ok,
+    ).toBe(false);
+    const cleanup = await journalFor("legacy-cleanup");
+    expect(serializeWorkspaceJournal({ ...cleanup, legacyResolution: marker }).ok).toBe(
+      false,
+    );
+    expect(
+      serializeWorkspaceJournal({
+        ...cleanup,
+        legacyResolution: { ...marker, candidateSource: null },
+      }).ok,
+    ).toBe(true);
+    const deletion = await journalFor("delete-workspace");
+    const repurgeTarget = await canonicalIndexBytes(
+      activeIndex({
+        workspaceGeneration: 1,
+        revision: 1,
+        status: "cleared",
+        projects: [],
+        legacyFingerprints: NULL_LEGACY_FINGERPRINTS,
+      }),
+    );
+    expect(
+      serializeWorkspaceJournal({
+        ...deletion,
+        sourceGeneration: null,
+        targetGeneration: 1,
+        targetIndex: {
+          key: WORKSPACE_INDEX_KEY,
+          serializedValue: repurgeTarget.serialized,
+          targetDigest: repurgeTarget.digest,
+        },
+        legacyResolution: { ...marker, candidateSource: null },
+      }).ok,
+    ).toBe(true);
+    expect(
+      serializeWorkspaceJournal({
+        ...deletion,
+        legacyResolution: { ...marker, candidateSource: null },
+      }).ok,
+    ).toBe(false);
+  });
+
   it("rejects mutation membership that contradicts the target index", async () => {
     const journal = await journalFor("delete-project");
     const target = serializeWorkspaceIndex(activeIndex({ revision: 2 }));

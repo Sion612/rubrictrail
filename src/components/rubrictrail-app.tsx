@@ -465,6 +465,61 @@ interface PersistenceWarningState {
 
 type PersistenceFlushOutcome = "saved" | "blocked" | "failed";
 
+export type WorkspaceControlledOperationResult =
+  | boolean
+  | void
+  | Promise<boolean | void>;
+
+export interface ExistingWorkspaceSession {
+  mode: "existing";
+  projectId: string;
+  /**
+   * Changes only when the workspace has committed a new authoritative state
+   * for this same project ID. Ordinary parent renders must preserve this value
+   * so queued local edits are not rehydrated away.
+   */
+  authorityEpoch: number;
+  project: PersistedProjectState;
+  /**
+   * Queues a synchronous project-state change. Returning false means that a
+   * lifecycle operation has frozen this assignment and the UI must not mutate
+   * its local copy.
+   */
+  onProjectChange: (next: PersistedProjectState) => boolean | void;
+  /** Flushes the pending project record through the workspace coordinator. */
+  onFlush: () => Promise<PersistenceFlushOutcome>;
+  /** Replaces this assignment only after the workspace lifecycle layer commits it. */
+  onReplaceProject: (next: PersistedProjectState) => WorkspaceControlledOperationResult;
+  /** Opens the workspace lifecycle UI; this assignment surface never deletes directly. */
+  onRequestManagement: () => void;
+  /** Returns to the assignment chooser without mutating the selected project. */
+  onStartOwnProject?: () => void;
+}
+
+export interface NewWorkspaceSession {
+  mode: "new";
+  initialIntakeMode: AssignmentIntakeMode;
+  /** Opens the backup picker as the initial creation action when requested. */
+  initialRestoreMode?: boolean;
+  /** Creates a new assignment after the workspace lifecycle layer commits it. */
+  onCreateProject: (
+    next: PersistedProjectState,
+    source: "intake" | "backup" | "sample",
+  ) => WorkspaceControlledOperationResult;
+}
+
+export type RubricTrailWorkspaceSession =
+  | ExistingWorkspaceSession
+  | NewWorkspaceSession;
+
+export interface RubricTrailAppProps {
+  /**
+   * Production workspace mode. Its persistence is deliberately supplied by
+   * the workspace root so this component never reads or writes v0.7 keys.
+   */
+  workspaceSession?: RubricTrailWorkspaceSession;
+}
+
 function sampleStepStates(
   project: PersistedProjectState,
   completion: number,
@@ -529,7 +584,20 @@ function uploadedStepStates(project: PersistedProjectState, completion: number) 
   } satisfies Record<WorkspaceView, WorkflowState>;
 }
 
-export function RubricTrailApp() {
+export function RubricTrailApp({ workspaceSession }: RubricTrailAppProps) {
+  const isWorkspaceControlled = workspaceSession !== undefined;
+  const controlledExisting = workspaceSession?.mode === "existing"
+    ? workspaceSession
+    : null;
+  const controlledNew = workspaceSession?.mode === "new"
+    ? workspaceSession
+    : null;
+  const controlledExistingProjectRef = useRef<PersistedProjectState | null>(
+    controlledExisting?.project ?? null,
+  );
+  useEffect(() => {
+    controlledExistingProjectRef.current = controlledExisting?.project ?? null;
+  }, [controlledExisting?.project]);
   const { locale } = useI18n();
   const appCopy = useLocalizedMessages(appEn, appZhCN);
   const appText = useCallback(
@@ -539,7 +607,9 @@ export function RubricTrailApp() {
   );
   const appTextRef = useRef(appText);
   const [hydrated, setHydrated] = useState(false);
-  const [project, setProjectState] = useState<PersistedProjectState>(() => createDefaultProjectState());
+  const [project, setProjectState] = useState<PersistedProjectState>(
+    () => controlledExisting?.project ?? createDefaultProjectState(),
+  );
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const [taskFocusRequest, setTaskFocusRequest] = useState<TaskFocusRequest | null>(null);
@@ -577,6 +647,8 @@ export function RubricTrailApp() {
   const skipNextPersistenceWrite = useRef(false);
   const persistenceDisabled = useRef(false);
   const persistenceInFlight = useRef<Promise<PersistenceFlushOutcome> | null>(null);
+  const controlledPersistenceInFlight =
+    useRef<Promise<PersistenceFlushOutcome> | null>(null);
   const flushPendingProjectRef = useRef<
     (() => Promise<PersistenceFlushOutcome>) | null
   >(null);
@@ -636,12 +708,48 @@ export function RubricTrailApp() {
     }
     cancelPersistenceTimer();
     persistenceTimer.current = window.setTimeout(() => {
+      persistenceTimer.current = null;
       void flushPendingProjectRef.current?.();
     }, delay);
   }, [cancelPersistenceTimer]);
 
   const flushPendingProject = useCallback(async (): Promise<PersistenceFlushOutcome> => {
     if (!hasPendingProjectChange.current) return "saved";
+    if (controlledExisting) {
+      if (controlledPersistenceInFlight.current) {
+        const inFlightOutcome = await controlledPersistenceInFlight.current;
+        if (inFlightOutcome !== "saved" || !hasPendingProjectChange.current) {
+          return inFlightOutcome;
+        }
+        return (await flushPendingProjectRef.current?.()) ?? "failed";
+      }
+      const projectToFlush = latestProject.current;
+      const operation = Promise.resolve()
+        .then(() => controlledExisting.onFlush())
+        .then((outcome) => {
+          if (outcome === "saved" && latestProject.current === projectToFlush) {
+            hasPendingProjectChange.current = false;
+          }
+          return outcome;
+        })
+        .catch((): PersistenceFlushOutcome => "failed")
+        .finally(() => {
+          if (controlledPersistenceInFlight.current === operation) {
+            controlledPersistenceInFlight.current = null;
+          }
+        });
+      controlledPersistenceInFlight.current = operation;
+      const outcome = await operation;
+      if (
+        outcome === "saved" &&
+        hasPendingProjectChange.current &&
+        latestProject.current !== projectToFlush
+      ) {
+        return (await flushPendingProjectRef.current?.()) ?? "failed";
+      }
+      return outcome;
+    }
+    if (controlledNew) return "blocked";
     if (persistenceDisabled.current || storageConflictActive.current) return "blocked";
     if (persistenceInFlight.current) {
       const inFlightOutcome = await persistenceInFlight.current;
@@ -728,6 +836,8 @@ export function RubricTrailApp() {
     markStorageConflict,
     appText,
     schedulePendingPersistence,
+    controlledExisting,
+    controlledNew,
   ]);
 
   useEffect(() => {
@@ -747,14 +857,36 @@ export function RubricTrailApp() {
     ) => {
       const current = latestProject.current;
       const next = typeof action === "function" ? action(current) : action;
+      if (controlledExisting && controlledExisting.onProjectChange(next) === false) {
+        return;
+      }
       latestProject.current = next;
       hasPendingProjectChange.current = true;
       setProjectState(next);
     },
-    [],
+    [controlledExisting],
   );
 
   useEffect(() => {
+    if (isWorkspaceControlled) {
+      cancelPersistenceTimer();
+      const hydrationTimer = window.setTimeout(() => {
+        const initial = controlledExistingProjectRef.current ?? createDefaultProjectState();
+        latestProject.current = initial;
+        hasPendingProjectChange.current = false;
+        persistenceDisabled.current = false;
+        storageConflictActive.current = false;
+        setDurableSavingUnavailable(false);
+        setStorageConflict(false);
+        setProjectState(initial);
+        setIntakeMode(controlledNew?.initialIntakeMode ?? "files");
+        if (controlledNew?.initialRestoreMode) {
+          focusWelcomeIntake.current = "files";
+        }
+        setHydrated(true);
+      }, 0);
+      return () => window.clearTimeout(hydrationTimer);
+    }
     const hydrationTimer = window.setTimeout(() => {
       const result = readProjectStateWithStatus();
       latestProject.current = result.state;
@@ -788,10 +920,19 @@ export function RubricTrailApp() {
       setHydrated(true);
     }, 0);
     return () => window.clearTimeout(hydrationTimer);
-  }, [markDurableSavingAvailable, markDurableSavingUnavailable]);
+  }, [
+    cancelPersistenceTimer,
+    controlledExisting?.authorityEpoch,
+    controlledExisting?.projectId,
+    controlledNew?.initialIntakeMode,
+    controlledNew?.initialRestoreMode,
+    isWorkspaceControlled,
+    markDurableSavingAvailable,
+    markDurableSavingUnavailable,
+  ]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || controlledNew) return;
     if (!persistenceReady.current) {
       persistenceReady.current = true;
       if (!persistHydratedState.current) return;
@@ -814,12 +955,13 @@ export function RubricTrailApp() {
     return () => {
       cancelPersistenceTimer();
     };
-  }, [cancelPersistenceTimer, hydrated, project, schedulePendingPersistence]);
+  }, [cancelPersistenceTimer, controlledNew, hydrated, project, schedulePendingPersistence]);
 
   useEffect(() => {
     if (!hydrated) return;
     const flushLatestProject = () => {
       if (!hasPendingProjectChange.current || storageConflictActive.current) return;
+      cancelPersistenceTimer();
       void flushPendingProjectRef.current?.();
     };
     const flushWhenHidden = () => {
@@ -831,10 +973,10 @@ export function RubricTrailApp() {
       document.removeEventListener("visibilitychange", flushWhenHidden);
       window.removeEventListener("pagehide", flushLatestProject);
     };
-  }, [hydrated]);
+  }, [cancelPersistenceTimer, hydrated]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || isWorkspaceControlled) return;
     const detectExternalProjectChange = (event: StorageEvent) => {
       if (event.storageArea && event.storageArea !== window.localStorage) return;
       if (
@@ -861,7 +1003,7 @@ export function RubricTrailApp() {
     };
     window.addEventListener("storage", detectExternalProjectChange);
     return () => window.removeEventListener("storage", detectExternalProjectChange);
-  }, [hydrated, markStorageConflict]);
+  }, [hydrated, isWorkspaceControlled, markStorageConflict]);
 
   useEffect(() => {
     if (!hydrated || project.projectKind === "none" || uploadResult) return;
@@ -896,6 +1038,21 @@ export function RubricTrailApp() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [hydrated, project.projectKind, uploadResult]);
+
+  useEffect(() => {
+    if (
+      !hydrated ||
+      !controlledNew?.initialRestoreMode ||
+      project.projectKind !== "none" ||
+      uploadResult
+    ) return;
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLInputElement>('[data-testid="backup-file-input"]')
+        ?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [controlledNew?.initialRestoreMode, hydrated, project.projectKind, uploadResult]);
 
   const showNotice = useCallback((nextNotice: AppNoticeState) => {
     setNotice(nextNotice);
@@ -1024,13 +1181,21 @@ export function RubricTrailApp() {
     setIsLoadingSample(true);
     await wait(450);
     if (operationId !== intakeRunId.current) return;
-    updateProject({
+    const nextProject: PersistedProjectState = {
       ...createDefaultProjectState(),
       projectKind: "sample",
       view: "overview",
       visitedViews: ["overview"],
       draftText: SAMPLE_DRAFT_TEXT,
-    });
+    };
+    if (controlledNew) {
+      const created = await controlledNew.onCreateProject(nextProject, "sample");
+      if (created === false) {
+        setIsLoadingSample(false);
+        return;
+      }
+    }
+    updateProject(nextProject);
     setIsLoadingSample(false);
     showNotice({ tone: "success", message: appText("notice.sampleLoaded") });
   }
@@ -1109,14 +1274,25 @@ export function RubricTrailApp() {
   }
 
   function createLocalProject(uploadedProject: UploadedProject) {
-    updateProject({
+    const nextProject: PersistedProjectState = {
       ...createDefaultProjectState(),
       projectKind: "uploaded",
       uploadedProject,
       view: "overview",
       visitedViews: ["overview"],
       draftText: "",
-    });
+    };
+    if (controlledNew) {
+      void Promise.resolve(controlledNew.onCreateProject(nextProject, "intake"))
+        .then((created) => {
+          if (created !== false) updateProject(nextProject);
+        })
+        .catch(() => {
+          setBackupError(appTextRef.current("backup.storage"));
+        });
+      return;
+    }
+    updateProject(nextProject);
     setUploadResult(null);
     setPartialUploadResult(null);
     setUploadStatus("idle");
@@ -1179,6 +1355,10 @@ export function RubricTrailApp() {
   }
 
   async function resetProject() {
+    if (controlledExisting) {
+      controlledExisting.onRequestManagement();
+      return;
+    }
     const confirmedProject = latestProject.current;
     if (!window.confirm(appText("confirm.reset"))) return;
     const intentRevision = ++replacementIntentRevision.current;
@@ -1212,6 +1392,11 @@ export function RubricTrailApp() {
   }
 
   async function startOwnProject() {
+    if (controlledExisting) {
+      if (!window.confirm(appText("confirm.leaveSample"))) return;
+      controlledExisting.onStartOwnProject?.();
+      return;
+    }
     const confirmedProject = latestProject.current;
     if (!window.confirm(appText("confirm.leaveSample"))) return;
     const intentRevision = ++replacementIntentRevision.current;
@@ -1546,6 +1731,40 @@ export function RubricTrailApp() {
         }),
       );
       if (!confirmed) return;
+
+      if (isWorkspaceControlled) {
+        const committed = controlledExisting
+          ? await controlledExisting.onReplaceProject(backup.state)
+          : controlledNew
+            ? await controlledNew.onCreateProject(backup.state, "backup")
+            : false;
+        if (committed === false) {
+          setBackupError(appText("backup.storage"));
+          return;
+        }
+        draftCheckRunId.current += 1;
+        draftCheckActive.current = false;
+        setIsChecking(false);
+        latestProject.current = backup.state;
+        hasPendingProjectChange.current = false;
+        setProjectState(backup.state);
+        setSelectedEvidenceId(null);
+        setUploadResult(null);
+        setPartialUploadResult(null);
+        setUploadStatus("idle");
+        setUploadError(null);
+        setPastedTextError(null);
+        setPastedBrief("");
+        setPastedRubric("");
+        setPersistenceWarning(null);
+        showNotice({
+          tone: backup.recovered ? "info" : "success",
+          message: backup.recovered
+            ? appText("notice.restoredRecovered")
+            : appText("notice.restored"),
+        });
+        return;
+      }
       const intentRevision = ++replacementIntentRevision.current;
 
       cancelPersistenceTimer();

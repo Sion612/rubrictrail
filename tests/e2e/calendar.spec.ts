@@ -1,18 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const APP_PATH = (() => {
-  const configured = process.env.PLAYWRIGHT_APP_PATH?.trim() || "/";
-  const withLeadingSlash = configured.startsWith("/") ? configured : `/${configured}`;
-  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
-})();
+import { createSampleAssignment, openUploadAssignment, reopenAssignment, resetWorkspace, workspaceLanguageSwitcher } from "./workspace-helpers";
 
 const FROZEN_NOW = "2026-08-17T12:00:00";
 
 async function resetProject(page: Page) {
   await page.clock.install({ time: new Date(FROZEN_NOW) });
-  await page.goto(APP_PATH);
-  await page.evaluate(() => window.localStorage.clear());
-  await page.reload();
+  await resetWorkspace(page);
 }
 
 function visibleWorkflowButton(page: Page, label: string) {
@@ -36,7 +30,7 @@ async function closeTracker(page: Page) {
 }
 
 async function openSampleCalendar(page: Page) {
-  await page.getByTestId("try-sample").click();
+  await createSampleAssignment(page);
   await visibleWorkflowButton(page, "Plan").click();
   await visibleTrackerButton(page).click();
   await expect(page.getByRole("dialog", { name: /project execution summary/i })).toBeVisible();
@@ -81,10 +75,15 @@ test("sample calendar stays transient and exports a local ICS snapshot", async (
   await closeTracker(page);
   await expect(page.getByTestId("task-p1")).toBeVisible();
   await page.reload();
+  await reopenAssignment(page, "Reducing Collection Delays at LumaLane Market");
   await visibleWorkflowButton(page, "Plan").click();
   await expect(page.getByTestId("open-project-tracker")).toBeVisible();
   await expect(page.getByTestId("plan-calendar-grid")).toHaveCount(0);
-  const stored = await page.evaluate(() => window.localStorage.getItem("rubrictrail.project.store.v1"));
+  const stored = await page.evaluate(() =>
+    Array.from({ length: window.localStorage.length }, (_, index) =>
+      window.localStorage.getItem(window.localStorage.key(index) ?? "") ?? "",
+    ).join("\n"),
+  );
   expect(stored).not.toContain("\"calendar\"");
 });
 
@@ -133,6 +132,7 @@ test("calendar completion, rebalance, focus, and empty-month navigation stay con
 
 test("uploaded project calendar and Chinese ICS stay localized", async ({ page }) => {
   test.setTimeout(90_000);
+  await openUploadAssignment(page);
   await page.getByTestId("file-input").setInputFiles({
     name: "strategy-brief.txt",
     mimeType: "text/plain",
@@ -149,7 +149,7 @@ test("uploaded project calendar and Chinese ICS stay localized", async ({ page }
   await visibleWorkflowButton(page, "Plan").click();
   await visibleTrackerButton(page).click();
   await expect(page.getByTestId("plan-calendar-grid")).toBeVisible();
-  await page.getByRole("combobox", { name: /language|语言/i }).selectOption("zh-CN");
+  await workspaceLanguageSwitcher(page).selectOption("zh-CN");
   await expect(page.getByTestId("calendar-legend")).toContainText("任务状态");
   await expect(page.getByText("高优先级").first()).toBeVisible();
   await expect(page.getByText(/分钟/).first()).toBeVisible();
@@ -176,7 +176,7 @@ test("calendar remains usable at 320px", async ({ page }) => {
 
 test("project tracker is reachable from every workspace view without persistence", async ({ page }) => {
   test.setTimeout(90_000);
-  await page.getByTestId("try-sample").click();
+  await createSampleAssignment(page);
   for (const view of ["Brief", "Rubric", "Plan", "Check", "Progress"]) {
     const workflow = visibleWorkflowButton(page, view);
     await workflow.click();
@@ -192,8 +192,13 @@ test("project tracker is reachable from every workspace view without persistence
   await visibleTrackerButton(page).click();
   await expect(page.getByRole("dialog", { name: /project execution summary/i })).toBeVisible();
   await page.reload();
+  await reopenAssignment(page, "Reducing Collection Delays at LumaLane Market");
   await expect(page.getByRole("dialog", { name: /project execution summary/i })).toHaveCount(0);
-  const stored = await page.evaluate(() => window.localStorage.getItem("rubrictrail.project.store.v1"));
+  const stored = await page.evaluate(() =>
+    Array.from({ length: window.localStorage.length }, (_, index) =>
+      window.localStorage.getItem(window.localStorage.key(index) ?? "") ?? "",
+    ).join("\n"),
+  );
   expect(stored).not.toContain("trackerOpen");
 });
 

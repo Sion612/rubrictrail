@@ -44,8 +44,8 @@ function isInside(path: string, directory: string): boolean {
   );
 }
 
-describe("dormant workspace storage boundary", () => {
-  it("is unreachable from every current non-test production source module", () => {
+describe("activated workspace storage boundary", () => {
+  it("keeps canonical storage access behind the production activation component", () => {
     const productionFiles = [
       ...sourceFiles(join(repositoryRoot, "src")).filter(
         (path) =>
@@ -63,16 +63,22 @@ describe("dormant workspace storage boundary", () => {
       workspaceImportPattern.test(readFileSync(path, "utf8")),
     );
     expect(importingFiles).toEqual([]);
+    const activationSource = readFileSync(
+      join(dormantWorkspaceUiDirectory, "workspace-activation-root.tsx"),
+      "utf8",
+    );
+    expect(activationSource).toContain('import("@/lib/workspace-storage/runtime-controller")');
+    expect(activationSource).toContain('import("@/lib/workspace-storage/storage-adapter")');
   });
 
-  it("does not activate or version the v0.8 workspace", () => {
+  it("activates only the v0.8 workspace root and package version", () => {
     const packageJson = JSON.parse(
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),
     ) as { version?: unknown };
-    expect(packageJson.version).toBe("0.7.1");
-    expect(readFileSync(join(repositoryRoot, "src", "app", "page.tsx"), "utf8")).not.toContain(
-      "workspace-storage",
-    );
+    expect(packageJson.version).toBe("0.8.0");
+    const rootPage = readFileSync(join(repositoryRoot, "src", "app", "page.tsx"), "utf8");
+    expect(rootPage).toContain("WorkspaceActivationRoot");
+    expect(rootPage).not.toContain("workspace-storage");
   });
 
   it("keeps each workspace runtime module free of direct Node, network, log, and localStorage usage", () => {

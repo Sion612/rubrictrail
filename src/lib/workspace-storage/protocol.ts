@@ -166,6 +166,13 @@ const workspaceJournalShapeSchema = z
       })
       .strict(),
     legacyExpectedDigests: legacyFingerprintsSchema,
+    legacyResolution: z
+      .object({
+        confirmationToken: digestSchema,
+        candidateSource: z.enum(["record", "v3", "v2", "v1"]).nullable(),
+      })
+      .strict()
+      .optional(),
     projectMutations: z.array(journalProjectMutationSchema).max(WORKSPACE_PROJECT_RECORD_LIMIT),
     // A recovery-only privacy purge can encounter more than the normal
     // 200-record coherent-namespace ceiling.  The canonical journal byte
@@ -175,11 +182,40 @@ const workspaceJournalShapeSchema = z
   })
   .strict();
 
+function legacyResolutionMarkerMatchesOperation(
+  journal: z.infer<typeof workspaceJournalShapeSchema>,
+): boolean {
+  const marker = journal.legacyResolution;
+  if (marker === undefined) return true;
+  if (marker.candidateSource === null) {
+    return (
+      journal.kind === "legacy-cleanup" ||
+      (journal.kind === "delete-workspace" &&
+        journal.sourceGeneration === null &&
+        Object.values(journal.legacyExpectedDigests).some(
+          (digest) => digest !== null,
+        ))
+    );
+  }
+  return (
+    ["restore-as-new", "replace-project"].includes(journal.kind) &&
+    journal.legacyExpectedDigests[marker.candidateSource] !== null
+  );
+}
+
 function validateJournalSemantics(
   journal: z.infer<typeof workspaceJournalShapeSchema>,
   context: z.RefinementCtx,
   requireCanonicalOrder: boolean,
 ): void {
+  if (!legacyResolutionMarkerMatchesOperation(journal)) {
+    context.addIssue({
+      code: "custom",
+      message: "Legacy resolution marker does not match the journal operation",
+      path: ["legacyResolution"],
+    });
+  }
+
   if (requireCanonicalOrder) {
     const mutations = journal.projectMutations;
     if (
@@ -501,6 +537,14 @@ function orderedJournal(input: WorkspaceOperationJournalV1): WorkspaceOperationJ
       targetDigest: input.targetIndex.targetDigest,
     },
     legacyExpectedDigests: orderedLegacyFingerprints(input.legacyExpectedDigests),
+    ...(input.legacyResolution
+      ? {
+          legacyResolution: {
+            confirmationToken: input.legacyResolution.confirmationToken,
+            candidateSource: input.legacyResolution.candidateSource,
+          },
+        }
+      : {}),
     projectMutations: input.projectMutations
       .map((mutation) => ({
         mode: mutation.mode,
@@ -567,6 +611,9 @@ function journalSemanticsAreValid(journal: WorkspaceOperationJournalV1): boolean
   const legacyCleanupKeys = journal.cleanup
     .filter((entry) => legacyKeys.has(entry.key))
     .map((entry) => entry.key);
+  if (!legacyResolutionMarkerMatchesOperation(journal)) {
+    return false;
+  }
   if (
     !targetIndex.ok ||
     targetIndex.value.workspaceId !== journal.workspaceId ||

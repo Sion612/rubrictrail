@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { openUploadAssignment } from "./workspace-helpers";
+
 const APP_PATH = "/rubrictrail/";
 
 function minimalAssignmentPdf(): Buffer {
@@ -81,9 +83,7 @@ test("the static export stays inside its subpath and parses PDF locally", async 
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
   await page.goto(APP_PATH);
-  await expect(
-    page.getByRole("heading", { name: "Turn the brief into a plan you can prove." }),
-  ).toBeVisible();
+  await openUploadAssignment(page);
   await page.getByTestId("file-input").setInputFiles({
     name: "static-assignment.pdf",
     mimeType: "application/pdf",

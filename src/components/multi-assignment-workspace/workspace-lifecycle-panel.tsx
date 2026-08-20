@@ -16,6 +16,7 @@ import {
   type FormEvent,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -405,11 +406,10 @@ export function WorkspaceLifecyclePanel({
   const replacementAllowed =
     previewCurrent &&
     !recoveryOnly &&
-    storageProtection.destructiveJournalAvailable &&
-    !(
-      storageProtection.mode === "degraded" &&
-      replacementPreview?.sizeEffect !== "non-growing"
-    );
+    (storageProtection.destructiveJournalAvailable ||
+      (storageProtection.mode === "degraded" &&
+        storageProtection.reserveStatus === "missing" &&
+        replacementPreview?.sizeEffect === "non-growing"));
 
   useEffect(() => {
     return () => {
@@ -421,6 +421,10 @@ export function WorkspaceLifecyclePanel({
     if (!dialog) return;
     const opener = openerRef.current;
     const frame = window.requestAnimationFrame(() => {
+      if (failureRef.current) {
+        failureRef.current.focus({ preventScroll: true });
+        return;
+      }
       const initial = dialogRef.current?.querySelector<HTMLElement>(
         "[data-dialog-initial-focus]",
       );
@@ -463,7 +467,7 @@ export function WorkspaceLifecyclePanel({
     };
   }, [dialog]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (failure) failureRef.current?.focus({ preventScroll: true });
   }, [failure]);
 

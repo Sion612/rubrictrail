@@ -10,6 +10,7 @@ import {
   FileText,
   ListChecks,
   Plus,
+  Sparkles,
   Upload,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -28,7 +29,7 @@ import { localizeSystemText } from "@/lib/i18n/messages/views";
 
 import styles from "./multi-assignment-dashboard.module.css";
 
-export type NewAssignmentMethod = "upload" | "paste" | "restore";
+export type NewAssignmentMethod = "upload" | "paste" | "restore" | "sample";
 
 export interface MultiAssignmentDashboardProps {
   projects: readonly WorkspaceDashboardProject[];
@@ -165,6 +166,13 @@ export function MultiAssignmentDashboard({
               >
                 <FilePlus2 aria-hidden="true" />
                 <span>{messages.restoreAssignment}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => chooseCreationMethod("sample")}
+              >
+                <Sparkles aria-hidden="true" />
+                <span>{messages.sampleAssignment}</span>
               </button>
             </div>
           ) : null}

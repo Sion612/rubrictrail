@@ -40,6 +40,7 @@ import {
 import {
   classifyWorkspaceRecovery,
   prepareWorkspaceJournal,
+  reconstructWorkspaceLegacyResolutionTargetRecord,
 } from "@/lib/workspace-storage/recovery";
 import {
   CANONICAL_WORKSPACE_RESERVE,
@@ -1802,7 +1803,8 @@ async function resumeProjectLifecycle(
 
   if (
     cursor.value.kind === "replace-project" &&
-    observed.digest === mutation.targetRecord.expectedBeforeDigest
+    observed.digest === mutation.targetRecord.expectedBeforeDigest &&
+    cursor.value.legacyResolution === undefined
   ) {
     const cancelled = await cancelPreparedJournal(
       storage,
@@ -1833,6 +1835,20 @@ async function resumeProjectLifecycle(
       return { ok: false, reason: "recovery-required" };
     }
     serializedTarget = observed.raw;
+  } else if (
+    cursor.value.kind === "replace-project" &&
+    cursor.value.legacyResolution !== undefined &&
+    observed.digest === mutation.targetRecord.expectedBeforeDigest
+  ) {
+    const reconstructed =
+      await reconstructWorkspaceLegacyResolutionTargetRecord(
+        storage,
+        cursor.value,
+      );
+    if (!reconstructed.ok) {
+      return { ok: false, reason: "recovery-required" };
+    }
+    serializedTarget = reconstructed.serialized;
   } else if (
     cursor.value.kind === "delete-project" &&
     observed.digest === mutation.targetRecord.expectedBeforeDigest &&
@@ -1873,7 +1889,10 @@ async function resumeProjectLifecycle(
   if (!recordsWritten) return { ok: false, reason: "commit-incomplete" };
   current = recordsWritten;
 
-  if (cursor.value.kind === "delete-project") {
+  if (
+    cursor.value.kind === "delete-project" ||
+    cursor.value.legacyResolution !== undefined
+  ) {
     const index = await digestAtKey(storage, WORKSPACE_INDEX_KEY);
     if (!index.ok) return index;
     if (index.digest === current.value.baseIndex.expectedDigest) {

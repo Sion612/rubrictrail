@@ -1,10 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const APP_PATH = (() => {
-  const configured = process.env.PLAYWRIGHT_APP_PATH?.trim() || "/";
-  const withLeadingSlash = configured.startsWith("/") ? configured : `/${configured}`;
-  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
-})();
+import { openRestoreAssignment, openUploadAssignment, reopenAssignment, resetWorkspace, returnToAssignments } from "./workspace-helpers";
 
 function pdfText(lines: string[]): string {
   return [
@@ -64,9 +60,8 @@ function visibleWorkflowButton(page: Page, label: string) {
 
 test("post-creation locator add, edit, and remove persist without confirming Check", async ({ page }) => {
   test.setTimeout(120_000);
-  await page.goto(APP_PATH);
-  await page.evaluate(() => window.localStorage.clear());
-  await page.reload();
+  await resetWorkspace(page);
+  await openUploadAssignment(page);
   await page.getByTestId("file-input").setInputFiles({
     name: "locator-edit.pdf",
     mimeType: "application/pdf",
@@ -133,8 +128,9 @@ test("post-creation locator add, edit, and remove persist without confirming Che
   await page.getByRole("button", { name: /Download backup/ }).click();
   const backupPath = await downloadPromise.then((item) => item.path());
   expect(backupPath).not.toBeNull();
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByLabel("Reset local project").click();
+  await returnToAssignments(page);
+  await resetWorkspace(page);
+  await openRestoreAssignment(page);
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByTestId("backup-file-input").setInputFiles(backupPath!);
   await visibleWorkflowButton(page, "Rubric").click();
@@ -146,6 +142,7 @@ test("post-creation locator add, edit, and remove persist without confirming Che
   await expect(page.getByTestId("add-locator")).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "Close evidence panel" }).click();
   await page.reload();
+  await reopenAssignment(page, "Locator Edit Report");
   await visibleWorkflowButton(page, "Rubric").click();
   await expect(page.getByRole("button", { name: /Add source location: Unlinked manual criterion/ })).toBeVisible();
   await page.getByRole("button", { name: /Add source location: Unlinked manual criterion/ }).click();

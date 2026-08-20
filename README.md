@@ -33,6 +33,31 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ## What works today
 
+### v0.8.0 candidate: multi-assignment workspace
+
+The v0.8.0 candidate makes **My Assignments** the product home. Assignment
+cards show real deadlines, progress, next targets, and blocked/overdue counts;
+**Up Next** orders actionable work derived from the assignments' existing
+Action Plans. **New assignment** starts an upload, pasted-details flow, or a
+single-project backup restore as a new independent assignment.
+
+Opening a card enters that assignment's unchanged five-stage workflow. Brief,
+Rubric, Plan, Check, Progress, Project Tracker, Calendar, `.ics`, drafts,
+sources, manual locators, and backup remain assignment-level. The Dashboard is
+not a sixth workflow stage, and this release adds neither manual tasks nor a
+global Calendar.
+
+Existing valid v0.7.1 browser data is migrated into one assignment through a
+journaled, verified operation. The legacy values remain untouched until the
+user explicitly confirms cleanup. Each assignment then uses an isolated local
+record beneath a small workspace index; Web Locks remain mandatory for
+authoritative mutation, and conflicting older-tab writes fail visibly.
+
+This is pre-release source documentation. PR-head CI, merged-main Pages, and
+public-demo verification for v0.8.0 are still pending; the public demo remains
+v0.7.1 until those release gates complete. See the
+[verification report](./docs/TEST_REPORT.md) for the evidence boundary.
+
 ### v0.7.1: Project Tracker, source editing and local ICS
 
 The v0.7.1 release promotes Calendar into a project-level **Project
@@ -103,8 +128,10 @@ language-specific page.
    unknown values blank. RubricTrail stores those criteria as `number | null`
    and uses the same neutral planning baseline for every criterion; this is not
    a claim that they earn equal marks.
-6. Create a compact project saved only in the current browser.
-7. Work through **Brief → Rubric → Plan → Check → Progress**.
+6. Create a compact assignment saved only in the current browser. Use **New
+   assignment** from the Dashboard to add another independent assignment.
+7. Open an assignment and work through **Brief → Rubric → Plan → Check →
+   Progress**.
 
 The custom workflow includes:
 
@@ -131,8 +158,9 @@ The custom workflow includes:
 - criterion-by-criterion self-checks for visible, explained and traceable
   evidence;
 - a final human submission checklist;
-- a revisioned authoritative browser record containing the v3 state payload,
-  with validated migration from v2 and the earlier sample-state format;
+- a revisioned, namespaced browser record per assignment containing the v3
+  state payload, with journaled migration from the v0.7.1 single-project record
+  and validated legacy migration from v2 and the earlier sample-state format;
 - deep local-state validation, recovery messaging and visible storage failures;
 - exclusive Web Locks coordination so concurrent current-version writes from the
   same observed revision cannot both win;
@@ -159,11 +187,13 @@ verified proof—compare the original before relying on it.
 
 ### Back up or restore a project
 
-Use **Project backup → Download backup** in the workspace to save a
-`*.rubrictrail.json` file. The welcome screen can restore that file on the same
-or another device. RubricTrail previews the project name, export time and
-replacement scope before restoring it, validates both file and project versions,
-and writes the imported state before changing the open workspace.
+Use **Project backup → Download backup** inside an assignment to save one
+`*.rubrictrail.json` file. The Dashboard can restore that file as a new
+assignment, while assignment storage management can explicitly replace only
+the selected assignment. RubricTrail previews the project name, export time and
+exact scope before restoring it, validates both file and project versions, and
+writes the imported state before changing authority. There is no
+whole-workspace backup in v0.8.0.
 State-v3 backups remain separate from the outer backup-format version. Valid v2
 uploaded custom projects and backups migrate to v3 with their complete numeric
 weights preserved; sample and empty state migrate without an uploaded rubric.
@@ -174,26 +204,26 @@ mark. The four values previously exposed by the interface keep the same task
 gates and time multipliers, so this wording correction does not silently
 reschedule an existing supported profile.
 Newer unsupported versions still fail with an upgrade message rather than being
-guessed at. Browser persistence now uses the authoritative
-`rubrictrail.project.store.v1` record, whose format is separate from the state-v3
-and backup protocols. Each successful mutation takes the exclusive
-`rubrictrail.project.store.v1` Web Lock, compares the complete observed baseline,
-then writes the next monotonic revision as either an active project or a cleared
-tombstone. Two writes, or a write and clear, starting from the same revision
-therefore serialize and only the first can succeed; the other reports a conflict.
+guessed at. Browser persistence now uses `rubrictrail.workspace.index.v1` plus
+one strict record per assignment under the authoritative workspace ID and
+generation. Cross-key membership and destructive changes use a bounded digest
+journal; content edits replace only the affected assignment record. A
+content-free storage reserve is maintained for recovery operations, and the
+last-opened preference is best effort rather than authority. All authoritative
+mutations take the exclusive `rubrictrail.project.store.v1` Web Lock and recheck
+exact index, project, and legacy baselines after acquisition.
 
-The older `rubrictrail.project.v3`, `rubrictrail.project.v2` and
-`proofline.project.v1` values are retained during normal saves and migration.
-The authoritative record fingerprints their exact bytes. If one parseable
-legacy value later changes, RubricTrail can present it as an older-tab recovery
-candidate without making that value authoritative automatically. An explicit
-project reset instead writes a content-free guard, removes all three compatibility
-values, verifies the deletion and keeps only a content-free cleared tombstone.
-This coordination is an application protocol over Web Storage, not a claim that
-`localStorage` itself provides transactions or atomic compare-and-swap.
+The previous authoritative record plus `rubrictrail.project.v3`,
+`rubrictrail.project.v2`, and `proofline.project.v1` values are retained during
+first migration. The workspace index fingerprints their exact bytes. If an
+older tab later changes one, RubricTrail pauses affected mutations and offers
+explicit import-as-new, replace-selected, baseline acceptance, or privacy
+cleanup choices as appropriate; it never silently selects a winner. This is an
+application recovery protocol over Web Storage, not a claim that a Web Lock or
+`localStorage` makes multiple keys transactional.
 
 If Web Locks are unavailable or lock acquisition fails, RubricTrail fails closed:
-it can still read the saved project, but it does not write or reset browser state.
+it can still read validated assignments, but it does not mutate workspace state.
 New edits remain only in that tab, and the interface asks the user to keep one tab
 open and download a backup before closing. Autosave waits 250 ms; hidden-page and
 `pagehide` handlers make an additional best-effort flush attempt, but an immediate
@@ -282,7 +312,7 @@ browser job creates a separate production build and sets
 `PLAYWRIGHT_PRODUCTION=true`, causing Playwright to exercise that artifact
 through `next start`.
 
-Current v0.6.0 runtime, static-export and test-code verification on 15 August
+Historical v0.6.0 runtime, static-export and test-code verification on 15 August
 2026 ([exact main commit `67ff04a`, GitHub Actions run
 31880978874](https://github.com/Sion612/rubrictrail/actions/runs/31880978874)):
 
@@ -326,8 +356,9 @@ flowchart LR
   P["Pasted brief + optional rubric"] --> T["Strict bounded TXT parser"]
   R --> C["User confirmation"]
   T --> C
-  C --> D["Compact local project"]
-  D --> E["Brief + rubric trail"]
+  C --> D["Compact local assignment"]
+  D --> W["Workspace index + isolated project record"]
+  W --> E["Brief + rubric trail"]
   D --> F["Deterministic plan engine"]
   E --> G["Manual evidence self-check"]
   F --> H["Progress + final gates"]
@@ -342,7 +373,8 @@ Core modules:
 
 | Area | Main files |
 | --- | --- |
-| App orchestration | `src/components/rubrictrail-app.tsx` |
+| App orchestration | `src/components/multi-assignment-workspace/workspace-activation-root.tsx`, `src/components/rubrictrail-app.tsx` |
+| Workspace persistence and recovery | `src/lib/workspace-storage/` |
 | Local file parsing | `src/lib/files/parse-assignment-files.ts` |
 | Uploaded project model and plan templates | `src/lib/uploaded-project.ts` |
 | Dependency-aware scheduling | `src/lib/plan.ts` |
@@ -406,11 +438,19 @@ Read [SECURITY.md](./SECURITY.md) before deployment.
   meaning of the rubric or the likelihood of a grade.
 - The self-check records the user's judgment; it does not validate argument
   quality or source correctness.
-- There is no account, automatic sync, collaboration or multi-project dashboard;
-  moving data requires an explicit local backup and restore. Detected external
-  changes pause autosave, but simultaneous edits are not automatically merged
-  even though current-version mutations are serialized with an exclusive Web
-  Lock. Without Web Locks, changes remain tab-only and require a manual backup.
+- There is no account, automatic sync, collaboration, whole-workspace backup,
+  reminder service, provider sync, or global Calendar. Backups remain
+  single-assignment files. Detected external changes pause affected mutation,
+  but simultaneous edits are not automatically merged even though
+  current-version mutations serialize through one exclusive Web Lock. Without
+  Web Locks, changes remain tab-only and require a manual backup.
+- Workspace record thresholds are product policy rather than a browser quota
+  guarantee: compaction is recommended at 64 tombstones, storage management is
+  warned at 80 total records, growth blocks at 96, and one generation cannot
+  exceed 100 records. Browser `localStorage` capacity and eviction vary.
+- A still-open v0.7.x tab can rewrite a retained compatibility key. v0.8.0
+  detects that drift and requires an explicit recovery choice, but cannot stop
+  old code that is already running.
 - Close-time saving is best effort: the final debounced edit may be lost if the
   page or browser is terminated before its asynchronous save completes.
 - Local-first describes where assignment content is processed and persisted; it

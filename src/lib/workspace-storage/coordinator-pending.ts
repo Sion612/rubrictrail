@@ -25,26 +25,51 @@ export type WorkspacePendingSaveQueueResult =
   | { ok: true; token: number }
   | {
       ok: false;
-      reason: "project-not-active" | "invalid-state" | "token-exhausted";
+      reason:
+        | "project-not-active"
+        | "invalid-state"
+        | "token-exhausted"
+        | "membership-change-frozen";
     };
 
 export type WorkspacePendingSaveFlushResult =
   | WorkspaceProjectSaveResult
   | { ok: false; reason: "no-pending-save" | "save-in-flight" };
 
+export interface WorkspaceMembershipChangeLease {
+  token: number;
+}
+
+export type WorkspaceMembershipChangeFreezeResult =
+  | { ok: true; lease: WorkspaceMembershipChangeLease }
+  | {
+      ok: false;
+      reason:
+        | "pending-save"
+        | "save-in-flight"
+        | "already-frozen"
+        | "token-exhausted";
+    };
+
+export type WorkspaceMembershipChangeRebuildResult =
+  | { ok: true }
+  | { ok: false; reason: "invalid-lease" | "pending-save" | "save-in-flight" };
+
 /**
  * Current-tab-only autosave bookkeeping. Entries and baselines are keyed by
  * project ID, so completing A can neither clear B nor reuse B's baseline. A
  * successful revision that is superseded while awaiting storage advances that
  * project's baseline but deliberately leaves the newer pending state queued.
- * Membership-changing create/restore operations must first require
- * `membershipChangeReady()`, then reconstruct this manager from the returned
- * authoritative snapshot. That reconstruction is safe only because no pending
- * or in-flight entry can be dropped at that boundary.
+ * Membership-changing operations must acquire a freeze lease while drained,
+ * which blocks new queues until the exact returned authority snapshot rebuilds
+ * every project baseline (or the failed operation explicitly cancels the
+ * lease). This closes the check-then-queue gap around membership changes.
  */
 export class WorkspacePendingSaveManager {
   private readonly entries = new Map<string, WorkspacePendingSaveEntry>();
   private nextToken = 1;
+  private nextMembershipChangeToken = 1;
+  private membershipChangeToken: number | null = null;
 
   constructor(snapshot: WorkspaceAuthoritySnapshot) {
     for (const project of snapshot.projects) {
@@ -66,6 +91,9 @@ export class WorkspacePendingSaveManager {
     projectId: string,
     state: PersistedProjectState,
   ): WorkspacePendingSaveQueueResult {
+    if (this.membershipChangeToken !== null) {
+      return { ok: false, reason: "membership-change-frozen" };
+    }
     const entry = this.entries.get(projectId);
     if (!entry) return { ok: false, reason: "project-not-active" };
     if (state.projectKind === "none") {
@@ -96,9 +124,75 @@ export class WorkspacePendingSaveManager {
   }
 
   membershipChangeReady(): boolean {
-    return [...this.entries.values()].every(
+    return this.membershipChangeToken === null && [...this.entries.values()].every(
       (entry) => entry.pending === null && entry.inFlight === null,
     );
+  }
+
+  freezeForMembershipChange(): WorkspaceMembershipChangeFreezeResult {
+    if (this.membershipChangeToken !== null) {
+      return { ok: false, reason: "already-frozen" };
+    }
+    if ([...this.entries.values()].some((entry) => entry.inFlight !== null)) {
+      return { ok: false, reason: "save-in-flight" };
+    }
+    if ([...this.entries.values()].some((entry) => entry.pending !== null)) {
+      return { ok: false, reason: "pending-save" };
+    }
+    if (this.nextMembershipChangeToken >= Number.MAX_SAFE_INTEGER) {
+      return { ok: false, reason: "token-exhausted" };
+    }
+    const token = this.nextMembershipChangeToken;
+    this.nextMembershipChangeToken += 1;
+    this.membershipChangeToken = token;
+    return { ok: true, lease: { token } };
+  }
+
+  membershipChangeLeaseIsActive(
+    lease: WorkspaceMembershipChangeLease,
+  ): boolean {
+    return this.membershipChangeToken === lease.token;
+  }
+
+  cancelMembershipChange(lease: WorkspaceMembershipChangeLease): boolean {
+    if (!this.membershipChangeLeaseIsActive(lease)) return false;
+    this.membershipChangeToken = null;
+    return true;
+  }
+
+  rebuildAfterMembershipChange(
+    lease: WorkspaceMembershipChangeLease,
+    snapshot: WorkspaceAuthoritySnapshot,
+  ): WorkspaceMembershipChangeRebuildResult {
+    if (!this.membershipChangeLeaseIsActive(lease)) {
+      return { ok: false, reason: "invalid-lease" };
+    }
+    if ([...this.entries.values()].some((entry) => entry.inFlight !== null)) {
+      return { ok: false, reason: "save-in-flight" };
+    }
+    if ([...this.entries.values()].some((entry) => entry.pending !== null)) {
+      return { ok: false, reason: "pending-save" };
+    }
+    const rebuilt = new Map<string, WorkspacePendingSaveEntry>();
+    for (const project of snapshot.projects) {
+      const baseline = workspaceProjectBaseline(
+        snapshot,
+        project.record.projectId,
+      );
+      if (baseline) {
+        rebuilt.set(project.record.projectId, {
+          baseline,
+          pending: null,
+          inFlight: null,
+        });
+      }
+    }
+    this.entries.clear();
+    for (const [projectId, entry] of rebuilt) {
+      this.entries.set(projectId, entry);
+    }
+    this.membershipChangeToken = null;
+    return { ok: true };
   }
 
   baselineFor(projectId: string): WorkspaceProjectBaseline | null {

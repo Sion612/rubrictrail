@@ -1,0 +1,63 @@
+.panel {
+  margin-bottom: 20px;
+  border: 1px solid var(--line, #cfd8d3);
+  border-radius: 18px;
+  padding: clamp(16px, 3vw, 24px);
+  background: var(--surface, #ffffff);
+}
+
+.panel h2 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.panel p {
+  max-width: 72ch;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.list {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line, #cfd8d3);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.list span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.list small {
+  color: var(--muted);
+}
+
+.list strong {
+  overflow-wrap: anywhere;
+}
+
+.list button {
+  min-height: 44px;
+  border: 1px solid var(--teal-dark, #074c42);
+  border-radius: 10px;
+  padding: 8px 14px;
+  background: var(--teal-dark, #074c42);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}

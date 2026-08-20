@@ -13,9 +13,11 @@ flowchart LR
   SP --> C["Editable confirmation"]
   DR --> C
   C --> LP["Compact UploadedProject"]
-  LP --> LS["Validated local state"]
-  LS --> BF["Versioned backup file"]
-  BF --> LS
+  LP --> WR["Isolated workspace project record"]
+  WR --> WI["Authoritative workspace index"]
+  WR --> BF["Single-project backup file"]
+  BF --> WR
+  WI --> DB["My Assignments + derived Up Next"]
   LP --> RT["Rubric trail"]
   LP --> TP["Generic task templates"]
   TP --> PE["Plan engine"]
@@ -34,7 +36,8 @@ flowchart LR
 
 | Layer | Responsibility | Main files |
 | --- | --- | --- |
-| Product shell | Project type, navigation, real step states, notices | `src/components/rubrictrail-app.tsx`, `workspace-shell.tsx` |
+| Workspace activation | First migration, Dashboard, assignment selection, lifecycle/recovery surfaces | `src/components/multi-assignment-workspace/workspace-activation-root.tsx`, `src/components/multi-assignment-workspace/` |
+| Assignment shell | Project type, five-stage navigation, real step states, notices | `src/components/rubrictrail-app.tsx`, `workspace-shell.tsx` |
 | Source intake | Browser-local TXT, DOCX and text-PDF parsing, lazy local image OCR, plus bounded pasted plain text | `src/lib/files/parse-assignment-files.ts`, `src/lib/files/local-image-ocr.ts`, `src/lib/pasted-text-intake.ts` |
 | Confirmation | Editable criteria, an explicit complete/not-complete choice and a 100% gate only for complete weighting | `src/components/upload-summary-view.tsx` |
 | Uploaded project | Compact persisted model and generic task templates | `src/lib/uploaded-project.ts` |
@@ -45,8 +48,9 @@ flowchart LR
 | Manual locator editing | Post-creation Add/Edit/Remove for criteria without retained evidence | `src/components/uploaded-evidence-panel.tsx` |
 | Uploaded checks | Human evidence-trail checklist, no automatic score | `uploaded-project-views.tsx` |
 | Sample contract | Strict source, evidence, rubric and feedback schemas | `src/lib/domain.ts`, `src/lib/sample-data.ts` |
-| Persistence | Revisioned authoritative Web Storage record, exclusive Web Locks mutation, state-v3 validation, tombstones, compatibility-lineage checks and explicit privacy purge | `src/lib/local-state.ts` |
-| Data portability | Versioned UTF-8 JSON export/import with conflict-aware restore | `src/lib/project-backup.ts` |
+| Workspace persistence | Authoritative index, isolated project records, journal/reserve recovery, generation tombstones, migration, coordinator and lifecycle operations | `src/lib/workspace-storage/` |
+| Legacy persistence boundary | v0.7.x record/state validation retained for migration and older-tab drift evidence | `src/lib/local-state.ts` |
+| Data portability | Unchanged single-project UTF-8 JSON export/import; restore as new or replace selected | `src/lib/project-backup.ts` |
 | Optional Live boundary | Authenticated, bounded, disabled-by-default routes | `src/lib/ai/*`, `src/app/api/live/*` |
 | Static demo boundary | Separate browser-only export that reuses the product UI without compiling Node-only routes | `demo/`, `scripts/audit-static-demo.mjs` |
 | Interface locale | Client-side English/Simplified Chinese dictionaries with an independent versioned preference | `src/lib/i18n/`, `src/components/locale-provider.tsx` |
@@ -67,10 +71,11 @@ response headers and receives ordinary requests for HTML, JavaScript, CSS and
 other assets. Deployment success and a live HTTP smoke check are recorded
 separately from the browser suite that runs against the generated artifact in CI.
 
-Project persistence remains browser `localStorage`. Storage isolation follows
+Workspace persistence remains browser `localStorage`. Storage isolation follows
 the page origin, not the `/rubrictrail` path, so unrelated scripts hosted on the
-same origin would share that boundary. Project backups are validated portable
-JSON, not encrypted or signed archives.
+same origin would share that boundary. Project backups remain validated,
+single-project portable JSON, not encrypted or signed archives; v0.8.0 does not
+define a whole-workspace backup format.
 
 The interface locale is deliberately outside the project protocol. The
 `rubrictrail.preferences.v1` value stores only `en` or `zh-CN`, is not included
@@ -80,6 +85,13 @@ or a supported browser preference before hydration; the React provider then
 updates product copy, `html[lang]`, dates, numbers and client metadata without
 keying or remounting the application. User-provided project and source data is
 never passed through the translation dictionaries.
+
+The My Assignments Dashboard is workspace navigation, not another assignment
+workflow stage. Its cards and Up Next list derive title, deadline, progress and
+Action Plan targets from validated project records in memory; those summaries
+are not duplicated in the authoritative index. The selected assignment is
+current-tab UI state plus a best-effort preference, so switching does not revise
+the index or a project.
 
 The Project Tracker is deliberately outside the workflow state. WorkspaceView
 remains `overview`, `rubric`, `plan`, `draft` and `progress`; opening the
@@ -187,12 +199,15 @@ the state-v3 operational contract remains stable while the UI label is fixed.
 The original `proofline.project.v1` sample-state migration is also retained.
 Unsupported newer state versions are rejected explicitly rather than coerced.
 
-Restore validates and previews the backup, obtains replacement confirmation,
-then conditionally writes it against the complete baseline observed by this tab
-before changing React state. The mutation uses the same exclusive project lock
-and revision rules as autosave and reset. Detected read, validation, lock, write
-or other-tab failures do not switch the open project. Backups are portable local
-files, not encrypted archives or automatic synchronization.
+Restore validates and previews the backup, then requires either **restore as
+new** or **replace selected**. Restore-as-new assigns a collision-checked project
+ID and journals project creation before publishing index membership.
+Replace-selected captures the exact project ID, index/record baseline, and
+post-confirmation intent before replacing only that record at its next
+revision. Neither path lets a backup choose workspace identity, generation,
+record revision, or project ID. Detected read, validation, lock, quota,
+write/readback, or other-tab failures preserve current authority. Backups are
+portable local files, not encrypted archives or automatic synchronization.
 
 Deterministic sample Draft Check output is derived rather than authoritative, so
 it is omitted on export and stripped from imported files. The user's draft text
@@ -201,50 +216,66 @@ self-check text is user-authored state and remains portable.
 
 ## Multi-tab data integrity
 
-The authoritative value is the `rubrictrail.project.store.v1` record in Web
-Storage. Its envelope has an independent format version, a monotonic revision,
-an active-project or cleared-tombstone value, and fingerprints of the exact
-legacy v3, v2 and v1 bytes observed when it was written. The enclosed project
-remains a state-v3 payload, and project backups keep their existing outer format
-and inner state-v3 contract.
+The accepted protocol is specified in
+[ADR-0080](./adr/0080-multi-assignment-workspace.md). The authoritative
+`rubrictrail.workspace.index.v1` stores workspace identity, generation,
+revision, active/tombstone membership, and exact legacy fingerprints. It does
+not duplicate title, progress, deadline, course, next target, or other mutable
+Dashboard data. Every listed assignment has one strict envelope at:
 
-Every current-version write, backup restore, clear and privacy purge requests the exclusive
-`rubrictrail.project.store.v1` Web Lock. While holding it, the operation reads the
-record and retained legacy keys, compares all exact values and the revision with
-the caller's observed baseline, then writes and verifies the next revision. Two
-writes from one baseline serialize: the first wins and the second sees a changed
-revision. A write and clear behave the same way. Clear writes a tombstone instead
-of deleting current or legacy bytes, preventing an absent-value ABA cycle from
-making a stale baseline appear current again.
+```text
+rubrictrail.workspace.<workspaceId>.generation.<generation>.project.<projectId>.v1
+```
 
-The user-facing reset uses the separate privacy-purge mutation. It first publishes
-a content-free guard tombstone, removes the v1, v2 and v3 compatibility values
-with a full-snapshot check after each deletion, then writes and verifies a final
-content-free tombstone whose legacy fingerprints are all null. This keeps a
-revisioned guard against stale current-version writes while removing project
-content from all RubricTrail compatibility keys observed by the operation.
+A normal content edit rechecks the exact index and affected record after taking
+the exclusive `rubrictrail.project.store.v1` Web Lock, then writes and verifies
+only that project's next revision. Two same-project edits from one baseline
+therefore produce one success and one explicit conflict. Different-project
+writes still serialize through the conservative global lock but do not conflict
+merely because the other project changed. Switching assignments changes only
+current-tab state and the non-authoritative
+`rubrictrail.workspace.preferences.v1` value.
 
-Outside an explicit reset, the legacy `rubrictrail.project.v3`,
-`rubrictrail.project.v2` and `proofline.project.v1` keys remain as migration and
-older-tab evidence. A record's
-fingerprints mark the exact legacy values it incorporated. If one parseable key
-later diverges, it can be exposed as an explicit recovery candidate; multiple or
-invalid divergences remain a conflict rather than being guessed into one project.
-Storage events also pause pending work promptly.
+Membership and destructive operations span keys, so
+`rubrictrail.workspace.operation.v1` records canonical target index bytes and
+exact expected/target SHA-256 digests before the first domain mutation. Recovery
+classifies real stored bytes rather than trusting the journal phase. A third
+value, malformed owned record, or ambiguous namespace scan blocks authority;
+even one coherent scan group requires explicit user selection. Web Locks
+serialize participating code but do **not** make these `localStorage` writes a
+transaction.
 
-This is application-level serialization, not a `localStorage` transaction or
-atomic compare-and-swap. An older release does not take the new lock and can
-still write a legacy key, which is why the fingerprints and full-baseline checks
-remain required. If Web Locks are missing or acquisition rejects, mutations fail
-closed: saved state stays readable, new edits remain only in the current tab, and
-the product recommends one open tab plus a downloaded backup.
+The content-free `rubrictrail.workspace.reserve.v1` is exactly 262,144 UTF-16
+code units and is maintained to improve the chance that bounded recovery
+metadata can be written. It is not guaranteed quota. Product policy recommends
+rotation at 64 tombstones, warns at 80 total records, blocks growth at 96, and
+rejects a 101st record beyond the 100-record per-generation hard limit. A quota
+or reserve failure does not authorize eviction, truncation, or deletion of
+another assignment.
 
-Autosave uses a 250 ms debounce. `visibilitychange` when hidden and `pagehide`
-start another asynchronous flush attempt, but browsers do not guarantee that the
-promise finishes during shutdown. A close inside the debounce window, abrupt
-termination or force-kill can therefore lose the last uncommitted edit. The
-persistent conflict banner offers explicit download-this-tab, load-saved-version
-and replace-saved-version actions; RubricTrail does not automatically merge edits.
+First migration reads the exact v0.7.x authoritative and compatibility values,
+writes/verifies the journal and new project, then commits the one-assignment
+index. Legacy values remain unchanged afterward and their exact fingerprints
+are checked on every mutation. A still-open v0.7.x tab can write those keys;
+v0.8.0 cannot prevent that old code, so drift pauses mutation and offers an
+explicit import-as-new, replace-selected, baseline acceptance, or privacy
+cleanup path rather than silently adopting or deleting it.
+
+Delete-project verifies a content-free current-generation tombstone before
+publishing tombstone membership; deleting the final assignment leaves a valid
+empty active workspace. Explicit whole-workspace privacy deletion alone commits
+a new cleared generation, then removes only journaled exact project and legacy
+bytes. Generation rotation rewrites and verifies active records into a new
+generation before the target index changes authority, preventing a stale
+generation from resurrecting deleted content. Unrelated origin storage and the
+independent interface-locale preference are never cleanup targets.
+
+If Web Locks are missing or acquisition rejects, authoritative mutation fails
+closed: validated assignments remain readable/exportable, new edits remain
+only in the current tab, and the product recommends a downloaded backup. The
+250 ms autosave debounce plus `visibilitychange` and `pagehide` flush attempts
+remain best effort; abrupt shutdown can still lose the last uncommitted edit.
+RubricTrail does not automatically merge tab conflicts.
 
 ## Plan generation
 

@@ -997,11 +997,29 @@ function migrateLegacy(raw: string): PersistedProjectState | null {
   }
 }
 
-interface ParsedProjectStorageRecord {
+export interface ParsedProjectStorageRecord {
   record: ProjectStorageRecordV1;
   status: "active" | "cleared";
   state: PersistedProjectState | null;
   recovered: boolean;
+}
+
+/**
+ * Pure parser used by the dormant v0.8 migration protocol. Exporting this
+ * existing parser does not change v0.7.1 storage authority or runtime reads.
+ */
+export function parseProjectStorageRecordValue(
+  raw: string,
+): ParsedProjectStorageRecord | null {
+  return parseProjectStorageRecord(raw);
+}
+
+/**
+ * Pure legacy-v1 parser used to prove a dormant migration target. It delegates
+ * to the same migration logic as the current v0.7.1 reader.
+ */
+export function parseLegacyProjectStateValue(raw: string): PersistedProjectState | null {
+  return migrateLegacy(raw);
 }
 
 interface LocalProjectStorageSnapshot {

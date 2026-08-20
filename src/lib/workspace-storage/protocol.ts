@@ -167,7 +167,11 @@ const workspaceJournalShapeSchema = z
       .strict(),
     legacyExpectedDigests: legacyFingerprintsSchema,
     projectMutations: z.array(journalProjectMutationSchema).max(WORKSPACE_PROJECT_RECORD_LIMIT),
-    cleanup: z.array(journalCleanupSchema).max(WORKSPACE_PHYSICAL_RECORD_LIMIT + 4),
+    // A recovery-only privacy purge can encounter more than the normal
+    // 200-record coherent-namespace ceiling.  The canonical journal byte
+    // limit below remains the hard bound; a fixed entry-count ceiling would
+    // otherwise make those workspaces permanently impossible to clear.
+    cleanup: z.array(journalCleanupSchema),
   })
   .strict();
 
@@ -545,6 +549,8 @@ function journalReferencesAllowedCleanupKey(key: string): boolean {
 
 function journalSemanticsAreValid(journal: WorkspaceOperationJournalV1): boolean {
   const targetIndex = parseWorkspaceIndex(journal.targetIndex.serializedValue);
+  const recoveryPrivacyPurge =
+    journal.kind === "delete-workspace" && journal.sourceGeneration === null;
   const legacyKeys = new Set<string>(Object.values(LEGACY_PROJECT_KEYS));
   const targetRecordKeys = new Set(
     journal.projectMutations.map((mutation) => mutation.targetRecord.key),
@@ -589,18 +595,25 @@ function journalSemanticsAreValid(journal: WorkspaceOperationJournalV1): boolean
         journal.targetGeneration !== 1 ||
         journal.baseIndex.expectedDigest !== null ||
         targetIndex.value.revision !== 1
-      : journal.sourceGeneration === null
+      : recoveryPrivacyPurge
+        ? journal.targetGeneration !== 1 || targetIndex.value.revision !== 1
+        : journal.sourceGeneration === null
   ) {
     return false;
   }
   if (
     journal.kind !== "migrate-single-project" &&
     journal.kind !== "recover-index" &&
+    !recoveryPrivacyPurge &&
     journal.baseIndex.expectedDigest === null
   ) {
     return false;
   }
   if (
+    recoveryPrivacyPurge
+  ) {
+    if (journal.targetGeneration !== 1) return false;
+  } else if (
     journal.kind !== "migrate-single-project" &&
     ["recover-index", "delete-workspace", "rotate-workspace-generation"].includes(
       journal.kind,

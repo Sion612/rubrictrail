@@ -81,10 +81,43 @@ test("keeps the dormant bilingual workspace usable and contained", async ({
   await expect(page.getByText("Fictional draft B remains independent.")).toBeVisible();
   await page.getByRole("button", { name: "RubricTrail" }).press("Enter");
 
+  await expect(page.getByRole("heading", { name: "Storage & recovery" })).toBeVisible();
+  const reviewProjectDeletion = page.getByRole("button", {
+    name: "Review project deletion",
+  });
+  await reviewProjectDeletion.click();
+  await expect(page.getByRole("dialog")).toContainText("Delete this project?");
+  await page.keyboard.press("Escape");
+  await expect(reviewProjectDeletion).toBeFocused();
+
+  await page.getByRole("button", { name: "Show recovery-only state" }).click();
+  const recoveryPrivacy = page.getByRole("button", {
+    name: "Review recovery-only privacy deletion",
+  });
+  await recoveryPrivacy.click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Delete all discovered workspace data?",
+  );
+  await page
+    .getByLabel(/Type DELETE RECOVERY DATA to confirm/iu)
+    .fill("DELETE RECOVERY DATA");
+  await page
+    .getByLabel(/I understand every exact discovered workspace candidate/iu)
+    .check();
+  await page.getByRole("button", { name: "Delete discovered workspace data" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(recoveryPrivacy).toBeFocused();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "Lifecycle action: delete-workspace-recovery",
+    }),
+  ).toBeVisible();
+
   await page
     .getByRole("combobox", { name: /language|语言/iu })
     .selectOption("zh-CN");
   await expect(page.getByRole("heading", { name: "我的作业" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "存储与恢复" })).toBeVisible();
   await expect(page.getByText("Fictional market entry analysis").first()).toBeVisible();
   await page.getByRole("button", { name: "新建作业" }).click();
   await page.getByRole("button", { name: "把作业备份恢复为新作业" }).click();

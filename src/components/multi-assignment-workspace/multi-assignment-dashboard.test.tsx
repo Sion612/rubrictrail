@@ -53,7 +53,7 @@ function renderDashboard(
       </button>
       <MultiAssignmentDashboard
         projects={projects}
-        asOfDate="2026-08-20"
+        currentDate="2026-08-20"
         upNextLimit={12}
         onOpenAssignment={onOpenAssignment}
         onNewAssignment={onNewAssignment}
@@ -86,7 +86,7 @@ describe("MultiAssignmentDashboard", () => {
       within(firstCard!).getByText("Confirm the brief and log open questions"),
     ).toBeInTheDocument();
     expect(within(firstCard!).getByText("5 blocked")).toBeInTheDocument();
-    expect(within(firstCard!).getByText("0 overdue")).toBeInTheDocument();
+    expect(within(firstCard!).getByText("1 overdue")).toBeInTheDocument();
 
     fireEvent.click(
       within(firstCard!).getByRole("button", {
@@ -105,7 +105,7 @@ describe("MultiAssignmentDashboard", () => {
     expect(items.some((item) => item.textContent?.includes("Complete final submission QA") && item.textContent?.includes("Fictional presentation"))).toBe(true);
     expect(items.some((item) => item.textContent?.includes("Fictional market entry analysis"))).toBe(true);
     expect(items.some((item) => item.textContent?.includes("Blocked"))).toBe(true);
-    expect(items.some((item) => item.textContent?.includes("Ready"))).toBe(true);
+    expect(items.some((item) => item.textContent?.includes("Overdue"))).toBe(true);
   });
 
   it("keeps creation keyboard-accessible, focuses the first method and restores focus on Escape", async () => {
@@ -187,6 +187,6 @@ describe("MultiAssignmentDashboard", () => {
     expect(screen.getByText("International Strategy Lab")).toBeInTheDocument();
     expect(screen.getAllByText("确认作业说明并记录待解决问题").length).toBeGreaterThan(0);
     expect(screen.getByText("5 项被阻塞")).toBeInTheDocument();
-    expect(screen.getAllByText("0 项逾期").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("1 项逾期").length).toBeGreaterThan(0);
   });
 });

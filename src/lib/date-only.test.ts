@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addCalendarDays,
   addCalendarMonths,
+  browserLocalDate,
   compareDateOnly,
   exclusiveIcsEndDate,
   isDateOnly,
@@ -37,5 +38,18 @@ describe("date-only utilities", () => {
     expect(toIcsDate("2026-08-16")).toBe("20260816");
     expect(exclusiveIcsEndDate("2026-08-16")).toBe("20260817");
     expect(startOfMonth("2026-08-16")).toBe("2026-08-01");
+  });
+
+  it("uses local calendar fields instead of a UTC ISO date", () => {
+    const localBoundary = {
+      getFullYear: () => 2026,
+      getMonth: () => 7,
+      getDate: () => 21,
+      toISOString: () => {
+        throw new Error("browserLocalDate must not read UTC ISO fields");
+      },
+    };
+
+    expect(browserLocalDate(localBoundary)).toBe("2026-08-21");
   });
 });

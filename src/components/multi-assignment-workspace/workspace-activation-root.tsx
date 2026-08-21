@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { useBrowserLocalDate } from "@/components/use-browser-local-date";
 import { useLocalizedMessages } from "@/components/locale-provider";
 import { type NewAssignmentMethod } from "@/components/multi-assignment-workspace/multi-assignment-dashboard";
 import { MultiAssignmentWorkspaceShell } from "@/components/multi-assignment-workspace/multi-assignment-workspace-shell";
@@ -74,14 +75,6 @@ function DeferredLoading() {
   return <p className={styles.managementLoading} role="status">{messages.managementLoading}</p>;
 }
 
-function todayDateOnly(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function projectState(
   snapshot: WorkspaceAuthoritySnapshot,
   projectId: string,
@@ -123,6 +116,7 @@ function browserStorage(): Storage | null {
 }
 
 export function WorkspaceActivationRoot() {
+  const currentDate = useBrowserLocalDate();
   const messages = useLocalizedMessages(workspaceActivationEn, workspaceActivationZhCN);
   const [ready, setReady] = useState<ReadyWorkspace | null>(null);
   const [failure, setFailure] = useState<WorkspaceOpenFailure | null>(null);
@@ -542,7 +536,7 @@ export function WorkspaceActivationRoot() {
       ) : null}
       <MultiAssignmentWorkspaceShell
         projects={dashboardProjects}
-        asOfDate={todayDateOnly()}
+        currentDate={currentDate}
         selectedProjectId={selectedProjectId}
         creationMethod={creationMethod}
         pendingProjectIds={pendingProjectIds}

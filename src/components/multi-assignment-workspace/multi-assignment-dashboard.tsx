@@ -33,7 +33,7 @@ export type NewAssignmentMethod = "upload" | "paste" | "restore" | "sample";
 
 export interface MultiAssignmentDashboardProps {
   projects: readonly WorkspaceDashboardProject[];
-  asOfDate: string;
+  currentDate: string;
   onOpenAssignment: (projectId: string) => void;
   onNewAssignment: (method: NewAssignmentMethod) => void;
   upNextLimit?: number;
@@ -45,7 +45,7 @@ export interface MultiAssignmentDashboardProps {
  */
 export function MultiAssignmentDashboard({
   projects,
-  asOfDate,
+  currentDate,
   onOpenAssignment,
   onNewAssignment,
   upNextLimit = 5,
@@ -64,10 +64,10 @@ export function MultiAssignmentDashboard({
   const model = useMemo(
     () =>
       deriveWorkspaceDashboardModel(projects, {
-        asOfDate,
+        currentDate,
         upNextLimit,
       }),
-    [asOfDate, projects, upNextLimit],
+    [currentDate, projects, upNextLimit],
   );
 
   useEffect(() => {

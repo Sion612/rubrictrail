@@ -4,6 +4,19 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-21
+
+### Fixed
+
+- Calendar **Today** navigation and its distinct marker now follow the actual
+  browser-local date, while the planning baseline remains stable and clearly
+  labelled.
+- Calendar, Project Tracker, Dashboard, and Up Next overdue states now advance
+  with real time without automatically moving existing task target dates.
+- Existing uploaded projects normalize their already-supported persisted
+  creation instant to a stable UTC calendar date; the original browser timezone
+  was not historically persisted.
+
 ## [0.8.0] - 2026-08-21
 
 ### Added

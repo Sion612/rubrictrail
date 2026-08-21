@@ -11,6 +11,7 @@
 .selected { outline: 2px solid var(--teal); }
 .outside .day { color: var(--muted); background: var(--surface-alt); }
 .flag { display: block; font-size: 0.62rem; }
+.todayFlag { font-weight: 700; color: var(--teal); }
 .chip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; }
 .completed { text-decoration: line-through; color: var(--muted); }
 .blocked { font-style: italic; }

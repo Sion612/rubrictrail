@@ -131,7 +131,7 @@ function HarnessContent() {
       {eventMessage ? <p role="status">{eventMessage}</p> : null}
       <MultiAssignmentWorkspaceShell
         projects={projects}
-        asOfDate="2026-08-20"
+      currentDate="2026-08-20"
         pendingProjectIds={pendingProjectIds}
         onNewAssignment={handleNewAssignment}
         onSelectionApplied={() => {

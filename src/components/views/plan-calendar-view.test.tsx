@@ -14,11 +14,16 @@ const assignment = {
   dueDate: SAMPLE_ASSIGNMENT.dueAt.slice(0, 10),
 };
 
-function renderCalendar(plan = generateActionPlan(DEFAULT_PLAN_INPUT), onToggleTask = vi.fn()) {
+function renderCalendar(
+  plan = generateActionPlan(DEFAULT_PLAN_INPUT),
+  onToggleTask = vi.fn(),
+  currentDate = "2026-08-26",
+) {
   return render(
     <PlanCalendarView
       plan={plan}
       assignment={assignment}
+      currentDate={currentDate}
       onToggleTask={onToggleTask}
       onOpenInList={vi.fn()}
     />,
@@ -123,6 +128,7 @@ describe("project tracker calendar", () => {
       <PlanCalendarView
         plan={plan}
         assignment={assignment}
+        currentDate="2026-08-26"
         onToggleTask={onToggleTask}
         onOpenInList={vi.fn()}
       />,
@@ -142,6 +148,7 @@ describe("project tracker calendar", () => {
       <PlanCalendarView
         plan={rebalancedPlan}
         assignment={assignment}
+        currentDate="2026-08-26"
         onToggleTask={onToggleTask}
         onOpenInList={vi.fn()}
       />,
@@ -152,5 +159,37 @@ describe("project tracker calendar", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "October 2026" })).toBeInTheDocument());
     expect(screen.getByTestId("calendar-day-2026-10-01")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText(/The assignment deadline is outside this month/)).toBeInTheDocument();
+  });
+
+  it("keeps planning date distinct while Today and overdue use the real current date", async () => {
+    const generated = generateActionPlan({
+      ...DEFAULT_PLAN_INPUT,
+      startDate: "2026-08-21",
+      asOfDate: "2026-08-21",
+      dueDate: "2026-09-07",
+    });
+    const plan = {
+      ...generated,
+      tasks: generated.tasks.map((task, index) =>
+        index === 0 ? { ...task, dueDate: "2026-08-24", completed: false } : task,
+      ),
+    };
+    renderCalendar(plan, vi.fn(), "2026-08-26");
+
+    expect(screen.getByTestId("calendar-day-2026-08-21")).toHaveAccessibleName(
+      /planning date/i,
+    );
+    expect(screen.getByTestId("calendar-day-2026-08-26")).toHaveAccessibleName(/today/i);
+    expect(screen.getByTestId("calendar-day-2026-08-24")).toHaveAccessibleName(/overdue/i);
+    expect(plan.profile.asOfDate).toBe("2026-08-21");
+    expect(plan.tasks[0]?.dueDate).toBe("2026-08-24");
+
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("calendar-day-2026-08-26")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
   });
 });

@@ -29,6 +29,7 @@ function TrackerHarness({ onOpenTask = vi.fn() }: { onOpenTask?: (taskId: string
         <ProjectTracker
           plan={plan}
           assignment={assignment}
+          currentDate="2026-08-26"
           openerRef={openerRef}
           onClose={() => setOpen(false)}
           onToggleTask={vi.fn()}

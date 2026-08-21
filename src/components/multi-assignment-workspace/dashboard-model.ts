@@ -64,6 +64,7 @@ function planStartFor(deadline: string, planningBaselineDate: string): string {
 
 function deriveProject(
   project: WorkspaceDashboardProject,
+  currentDate: string,
 ): {
   title: string;
   course: string;
@@ -83,7 +84,7 @@ function deriveProject(
   const title = uploaded?.title ?? SAMPLE_ASSIGNMENT.title;
   const course = uploaded?.course ?? SAMPLE_ASSIGNMENT.course;
   const deadline = uploaded?.dueDate ?? SAMPLE_ASSIGNMENT.dueAt.slice(0, 10);
-  const planningBaselineDate = projectPlanningBaselineDate(project.state);
+  const planningBaselineDate = projectPlanningBaselineDate(project.state, currentDate);
   const plan = generateActionPlan(
     {
       weeklyHours: project.state.weeklyHours,
@@ -151,7 +152,7 @@ export function deriveWorkspaceDashboardModel(
   const upNext: DashboardUpNextItem[] = [];
 
   projects.forEach((project, workspaceOrder) => {
-    const derived = deriveProject(project);
+    const derived = deriveProject(project, options.currentDate);
     if (!derived) return;
     const completedTaskIds = new Set(
       derived.plan.tasks

@@ -43,7 +43,7 @@ const shellZhCN = {
 
 export interface MultiAssignmentWorkspaceShellProps {
   projects: readonly WorkspaceDashboardProject[];
-  asOfDate: string;
+  currentDate: string;
   initialSelectedProjectId?: string | null;
   selectedProjectId?: string | null;
   creationMethod?: NewAssignmentMethod | null;
@@ -60,7 +60,7 @@ export interface MultiAssignmentWorkspaceShellProps {
 
 export function MultiAssignmentWorkspaceShell({
   projects,
-  asOfDate,
+  currentDate,
   initialSelectedProjectId = null,
   selectedProjectId: controlledSelectedProjectId,
   creationMethod = null,
@@ -101,8 +101,8 @@ export function MultiAssignmentWorkspaceShell({
     ? `new:${creationMethod}`
     : effectiveSelectedProjectId;
   const selectedSummary = selectedProject
-    ? deriveWorkspaceDashboardModel([selectedProject], {
-        asOfDate,
+      ? deriveWorkspaceDashboardModel([selectedProject], {
+        currentDate,
         upNextLimit: 0,
       }).assignments[0] ?? null
     : null;
@@ -227,7 +227,7 @@ export function MultiAssignmentWorkspaceShell({
       ) : (
         <MultiAssignmentDashboard
           projects={activeProjects}
-          asOfDate={asOfDate}
+          currentDate={currentDate}
           onOpenAssignment={openAssignment}
           onNewAssignment={onNewAssignment}
         />

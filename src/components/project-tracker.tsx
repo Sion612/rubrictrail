@@ -14,6 +14,7 @@ import styles from "./project-tracker.module.css";
 interface ProjectTrackerProps {
   plan: ActionPlan;
   assignment: CalendarExportAssignment;
+  currentDate: string;
   openerRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onToggleTask: (taskId: string) => void;
@@ -37,6 +38,7 @@ function focusableIn(node: HTMLElement | null): HTMLElement[] {
 export function ProjectTracker({
   plan,
   assignment,
+  currentDate,
   openerRef,
   onClose,
   onToggleTask,
@@ -55,7 +57,7 @@ export function ProjectTracker({
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
-  const summary = deriveProjectTrackerSummary(plan, assignment.dueDate);
+  const summary = deriveProjectTrackerSummary(plan, assignment.dueDate, currentDate);
   const dateLabel = (value: string) =>
     formatDate(new Date(`${value}T12:00:00`), { dateStyle: "medium" });
 
@@ -174,6 +176,7 @@ export function ProjectTracker({
           <PlanCalendarView
             plan={plan}
             assignment={assignment}
+            currentDate={currentDate}
             onToggleTask={onToggleTask}
             onOpenInList={openTask}
             onBusyChange={setCalendarBusy}

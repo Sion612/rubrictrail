@@ -242,7 +242,7 @@ export const planMessagesEn = {
   completedState: "Completed",
   upcomingState: "Upcoming",
   blockedState: "Blocked",
-  overdueState: "Overdue relative to the planning date",
+  overdueState: "Overdue",
   lateState: "Beyond the assignment deadline",
   legendTitle: "Task status",
   legendMultiple: "A task can show more than one status.",
@@ -272,8 +272,9 @@ export const planMessagesEn = {
   weekdayFri: "Fri",
   weekdaySat: "Sat",
   weekdaySun: "Sun",
-  dayCellAria: "{date}, {count} tasks{deadline}{planning}",
+  dayCellAria: "{date}, {count} tasks{deadline}{today}{planning}",
   deadlineMarker: ", assignment deadline",
+  todayMarker: ", today",
   planningMarker: ", planning date",
 } as const;
 
@@ -343,7 +344,7 @@ export const planMessagesZhCN = {
   completedState: "已完成",
   upcomingState: "未到期",
   blockedState: "被阻塞",
-  overdueState: "相对规划基准日已逾期",
+  overdueState: "已逾期",
   lateState: "已超过作业截止日期",
   legendTitle: "任务状态",
   legendMultiple: "一项任务可以同时有多个状态。",
@@ -373,8 +374,9 @@ export const planMessagesZhCN = {
   weekdayFri: "五",
   weekdaySat: "六",
   weekdaySun: "日",
-  dayCellAria: "{date}，{count} 项任务{deadline}{planning}",
+  dayCellAria: "{date}，{count} 项任务{deadline}{today}{planning}",
   deadlineMarker: "，作业截止日期",
+  todayMarker: "，今天",
   planningMarker: "，规划基准日",
 } satisfies MessageSet<typeof planMessagesEn>;
 

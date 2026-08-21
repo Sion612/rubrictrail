@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { createSampleAssignment, openUploadAssignment, reopenAssignment, resetWorkspace, workspaceLanguageSwitcher } from "./workspace-helpers";
 
-const FROZEN_NOW = "2026-08-17T12:00:00";
+const FROZEN_NOW = "2026-08-26T12:00:00";
 
 async function resetProject(page: Page) {
   await page.clock.install({ time: new Date(FROZEN_NOW) });
@@ -49,6 +49,16 @@ test("sample calendar stays transient and exports a local ICS snapshot", async (
   await openSampleCalendar(page);
   await expect(page.getByText(/target completion dates/)).toBeVisible();
   await expect(page.getByTestId("calendar-legend")).toBeVisible();
+  await expect(page.getByTestId("calendar-day-2026-08-17")).toHaveAccessibleName(
+    /planning date/i,
+  );
+  await expect(page.getByTestId("calendar-day-2026-08-26")).toHaveAccessibleName(/today/i);
+  await expect(page.getByTestId("calendar-task-p1")).toContainText("Overdue");
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await expect(page.getByTestId("calendar-day-2026-08-26")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(page.getByText(/The assignment deadline is outside this month/)).toBeVisible();
   await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByRole("heading", { name: "September 2026" })).toBeVisible();

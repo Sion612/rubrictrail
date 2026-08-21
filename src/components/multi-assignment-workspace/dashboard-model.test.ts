@@ -35,7 +35,7 @@ describe("deriveWorkspaceDashboardModel", () => {
     const before = JSON.stringify([pastDeadline, future]);
 
     const model = deriveWorkspaceDashboardModel([pastDeadline, future], {
-      asOfDate: "2026-08-20",
+      currentDate: "2026-08-20",
       upNextLimit: 4,
     });
 
@@ -46,7 +46,7 @@ describe("deriveWorkspaceDashboardModel", () => {
         course: "Operations Lab",
         deadline: "2026-08-19",
         blockedCount: 0,
-        overdueCount: 0,
+        overdueCount: 1,
         nextTarget: expect.objectContaining({ taskId: "submission-qa" }),
       }),
     );
@@ -57,7 +57,7 @@ describe("deriveWorkspaceDashboardModel", () => {
         projectId: future.projectId,
         title: "Fictional language presentation",
         progress: 0,
-        overdueCount: 0,
+        overdueCount: 1,
       }),
     );
     expect(model.assignments[1]?.blockedCount).toBeGreaterThan(0);
@@ -66,7 +66,7 @@ describe("deriveWorkspaceDashboardModel", () => {
         projectId: pastDeadline.projectId,
         taskId: "submission-qa",
         blocked: false,
-        overdue: false,
+        overdue: true,
       }),
     );
     expect(model.upNext.some((item) => item.projectId === future.projectId)).toBe(true);
@@ -83,7 +83,7 @@ describe("deriveWorkspaceDashboardModel", () => {
     });
 
     expect(
-      deriveWorkspaceDashboardModel([sample], { asOfDate: "2026-08-20" })
+      deriveWorkspaceDashboardModel([sample], { currentDate: "2026-08-20" })
         .assignments[0],
     ).toEqual(
       expect.objectContaining({
@@ -104,7 +104,7 @@ describe("deriveWorkspaceDashboardModel", () => {
     });
 
     const model = deriveWorkspaceDashboardModel([intakeOnly], {
-      asOfDate: "2026-08-20",
+      currentDate: "2026-08-20",
       upNextLimit: 0,
     });
     expect(model.assignments).toEqual([]);
@@ -126,7 +126,7 @@ describe("deriveWorkspaceDashboardModel", () => {
     };
 
     expect(() =>
-      deriveWorkspaceDashboardModel([inconsistent], { asOfDate: "2026-08-20" }),
+      deriveWorkspaceDashboardModel([inconsistent], { currentDate: "2026-08-20" }),
     ).toThrow("missing its project payload");
   });
 
@@ -169,5 +169,63 @@ describe("deriveWorkspaceDashboardModel", () => {
       "same-date-later-workspace",
     ]);
     expect(inputs[0]?.taskId).toBe("future");
+  });
+
+  it("advances overdue state with current date without sliding task targets", () => {
+    const near = buildDashboardProjectFixture({
+      projectId: "66666666-6666-4666-8666-666666666666",
+      title: "Fictional near-term analysis",
+      course: "Planning Lab",
+      dueDate: "2026-08-24",
+    });
+    const later = buildDashboardProjectFixture({
+      projectId: "77777777-7777-4777-8777-777777777777",
+      title: "Fictional later analysis",
+      course: "Planning Lab",
+      dueDate: "2026-09-28",
+    });
+
+    const onBaseline = deriveWorkspaceDashboardModel([near, later], {
+      currentDate: "2026-08-19",
+      upNextLimit: 20,
+    });
+    const afterTargets = deriveWorkspaceDashboardModel([near, later], {
+      currentDate: "2026-08-26",
+      upNextLimit: 20,
+    });
+
+    expect(
+      afterTargets.assignments.map((assignment) => assignment.nextTarget?.dueDate),
+    ).toEqual(onBaseline.assignments.map((assignment) => assignment.nextTarget?.dueDate));
+    expect(afterTargets.assignments.map((assignment) => assignment.progress)).toEqual(
+      onBaseline.assignments.map((assignment) => assignment.progress),
+    );
+    expect(
+      afterTargets.assignments.reduce(
+        (total, assignment) => total + assignment.overdueCount,
+        0,
+      ),
+    ).toBeGreaterThan(
+      onBaseline.assignments.reduce(
+        (total, assignment) => total + assignment.overdueCount,
+        0,
+      ),
+    );
+    expect(afterTargets.upNext.some((task) => task.overdue)).toBe(true);
+    expect(
+      afterTargets.upNext.map(({ projectId, taskId, dueDate }) => ({
+        projectId,
+        taskId,
+        dueDate,
+      })),
+    ).toEqual(
+      expect.arrayContaining(
+        onBaseline.upNext.map(({ projectId, taskId, dueDate }) => ({
+          projectId,
+          taskId,
+          dueDate,
+        })),
+      ),
+    );
   });
 });

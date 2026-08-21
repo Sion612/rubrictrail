@@ -15,7 +15,7 @@ describe("deriveProjectTrackerSummary", () => {
         task.id === "p2" ? { ...task, dueDate: "2026-09-01" } : task,
       ),
     };
-    const summary = deriveProjectTrackerSummary(overduePlan, "2026-09-07");
+    const summary = deriveProjectTrackerSummary(overduePlan, "2026-09-07", "2026-09-10");
 
     expect(summary.nextTask?.id).toBe("p2");
     expect(summary.incompleteCount).toBe(overduePlan.tasks.length - 1);
@@ -31,7 +31,7 @@ describe("deriveProjectTrackerSummary", () => {
       ...DEFAULT_PLAN_INPUT,
       completedTaskIds: seed.tasks.map((task) => task.id),
     });
-    const summary = deriveProjectTrackerSummary(plan, "2026-09-07");
+    const summary = deriveProjectTrackerSummary(plan, "2026-09-07", "2026-09-10");
 
     expect(summary.nextTask).toBeNull();
     expect(summary.incompleteCount).toBe(0);
@@ -61,7 +61,7 @@ describe("deriveProjectTrackerSummary", () => {
     const p3Index = patchedPlan.tasks.findIndex((task) => task.id === "p3");
     expect(p2Index).toBeLessThan(p3Index);
 
-    const summary = deriveProjectTrackerSummary(patchedPlan, "2026-09-07");
+    const summary = deriveProjectTrackerSummary(patchedPlan, "2026-09-07", "2026-09-10");
     expect(summary.nextTask?.id).toBe("p2");
 
     // Swap plan.tasks order so p3 appears before p2.
@@ -74,8 +74,49 @@ describe("deriveProjectTrackerSummary", () => {
     const swappedSummary = deriveProjectTrackerSummary(
       { ...patchedPlan, tasks: swappedTasks },
       "2026-09-07",
+      "2026-09-10",
     );
     // After swap, p3 is at the lower index → p3 should be nextTask.
     expect(swappedSummary.nextTask?.id).toBe("p3");
+  });
+
+  it("uses actual today for overdue status without changing task dates", () => {
+    const plan = generateActionPlan({
+      ...DEFAULT_PLAN_INPUT,
+      asOfDate: "2026-08-21",
+      startDate: "2026-08-21",
+      dueDate: "2026-09-07",
+    });
+    const taskDate = "2026-08-24";
+    const patchedPlan = {
+      ...plan,
+      tasks: plan.tasks.map((task) => ({
+        ...task,
+        dueDate: taskDate,
+        completed: false,
+      })),
+    };
+
+    expect(deriveProjectTrackerSummary(patchedPlan, "2026-09-07", "2026-08-22").overdueCount).toBe(0);
+    expect(deriveProjectTrackerSummary(patchedPlan, "2026-09-07", taskDate).overdueCount).toBe(0);
+    expect(deriveProjectTrackerSummary(patchedPlan, "2026-09-07", "2026-08-26").overdueCount).toBeGreaterThan(0);
+    expect(patchedPlan.profile.asOfDate).toBe("2026-08-21");
+    expect(patchedPlan.tasks[0]?.dueDate).toBe(taskDate);
+
+    const overdueCount = deriveProjectTrackerSummary(
+      patchedPlan,
+      "2026-09-07",
+      "2026-08-26",
+    ).overdueCount;
+    const completedPast = {
+      ...patchedPlan,
+      tasks: patchedPlan.tasks.map((task, index) =>
+        index === 0 ? { ...task, completed: true } : task,
+      ),
+    };
+    expect(
+      deriveProjectTrackerSummary(completedPast, "2026-09-07", "2026-08-26")
+        .overdueCount,
+    ).toBe(overdueCount - 1);
   });
 });

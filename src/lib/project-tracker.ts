@@ -19,6 +19,7 @@ function isBlocked(task: PlanTask, plan: ActionPlan): boolean {
 export function deriveProjectTrackerSummary(
   plan: ActionPlan,
   assignmentDeadline: string,
+  currentDate: string,
 ): ProjectTrackerSummary {
   const incomplete = plan.tasks.filter((task) => !task.completed);
   const nextTask = [...incomplete].sort((left, right) => {
@@ -31,7 +32,7 @@ export function deriveProjectTrackerSummary(
     incompleteCount: incomplete.length,
     blockedCount: incomplete.filter((task) => isBlocked(task, plan)).length,
     overdueCount: incomplete.filter(
-      (task) => compareDateOnly(task.dueDate, plan.profile.asOfDate) < 0,
+      (task) => compareDateOnly(task.dueDate, currentDate) < 0,
     ).length,
     deadline: assignmentDeadline,
     allComplete: incomplete.length === 0,

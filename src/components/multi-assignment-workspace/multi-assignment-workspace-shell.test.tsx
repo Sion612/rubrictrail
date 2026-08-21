@@ -33,7 +33,7 @@ function renderShell(
     <LocaleProvider>
       <MultiAssignmentWorkspaceShell
         projects={[projectA, projectB]}
-        asOfDate="2026-08-20"
+        currentDate="2026-08-20"
         pendingProjectIds={pendingProjectIds}
         onNewAssignment={vi.fn()}
         onSelectionApplied={onSelectionApplied}
@@ -84,7 +84,7 @@ describe("MultiAssignmentWorkspaceShell", () => {
       <LocaleProvider>
         <MultiAssignmentWorkspaceShell
           projects={[projectA, projectB]}
-          asOfDate="2026-08-20"
+          currentDate="2026-08-20"
           pendingProjectIds={[projectA.projectId]}
           onNewAssignment={vi.fn()}
           renderAssignment={() => <p>Independent assignment content</p>}
@@ -116,7 +116,7 @@ describe("MultiAssignmentWorkspaceShell", () => {
       <LocaleProvider>
         <MultiAssignmentWorkspaceShell
           projects={[projectA, projectB]}
-          asOfDate="2026-08-20"
+          currentDate="2026-08-20"
           pendingProjectIds={[]}
           onNewAssignment={vi.fn()}
           renderAssignment={() => <p>Independent assignment content</p>}
@@ -163,7 +163,7 @@ describe("MultiAssignmentWorkspaceShell", () => {
       <LocaleProvider>
         <MultiAssignmentWorkspaceShell
           projects={[projectA, projectB]}
-          asOfDate="2026-08-20"
+          currentDate="2026-08-20"
           selectedProjectId={null}
           onNewAssignment={vi.fn()}
           onSelectionRequested={requested}
@@ -189,7 +189,7 @@ describe("MultiAssignmentWorkspaceShell", () => {
       <LocaleProvider>
         <MultiAssignmentWorkspaceShell
           projects={[projectA, projectB]}
-          asOfDate="2026-08-20"
+          currentDate="2026-08-20"
           selectedProjectId={projectB.projectId}
           onNewAssignment={vi.fn()}
           onSelectionRequested={requested}
@@ -211,7 +211,7 @@ describe("MultiAssignmentWorkspaceShell", () => {
       <LocaleProvider>
         <MultiAssignmentWorkspaceShell
           projects={[projectA]}
-          asOfDate="2026-08-20"
+          currentDate="2026-08-20"
           selectedProjectId={null}
           creationMethod="paste"
           onNewAssignment={vi.fn()}

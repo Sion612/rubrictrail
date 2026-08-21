@@ -25,6 +25,7 @@ import styles from "./plan-calendar-view.module.css";
 interface PlanCalendarViewProps {
   plan: ActionPlan;
   assignment: CalendarExportAssignment;
+  currentDate: string;
   onToggleTask: (taskId: string) => void;
   onOpenInList: (taskId: string) => void;
   onBusyChange?: (busy: boolean) => void;
@@ -88,14 +89,19 @@ function scheduleSignature(plan: ActionPlan, assignment: CalendarExportAssignmen
   ].join("|");
 }
 
-function taskFlags(task: PlanTask, plan: ActionPlan, assignment: CalendarExportAssignment): CalendarTaskFlags {
+function taskFlags(
+  task: PlanTask,
+  plan: ActionPlan,
+  assignment: CalendarExportAssignment,
+  currentDate: string,
+): CalendarTaskFlags {
   const blocked = !task.completed && task.dependencies.some(
     (id) => !plan.tasks.find((candidate) => candidate.id === id)?.completed,
   );
   return {
     completed: task.completed,
     blocked,
-    overdue: !task.completed && compareDateOnly(task.dueDate, plan.profile.asOfDate) < 0,
+    overdue: !task.completed && compareDateOnly(task.dueDate, currentDate) < 0,
     beyondDeadline: !task.completed && (
       task.late || compareDateOnly(task.dueDate, assignment.dueDate) > 0
     ),
@@ -114,6 +120,7 @@ function flagClassNames(flags: CalendarTaskFlags): string {
 export function PlanCalendarView({
   plan,
   assignment,
+  currentDate,
   onToggleTask,
   onOpenInList,
   onBusyChange,
@@ -197,9 +204,9 @@ export function PlanCalendarView({
     setVisibleMonth(nextMonth);
   }
 
-  function goToPlanningDate() {
-    setSelectedDate(plan.profile.asOfDate);
-    setVisibleMonth(startOfMonth(plan.profile.asOfDate));
+  function goToToday() {
+    setSelectedDate(currentDate);
+    setVisibleMonth(startOfMonth(currentDate));
   }
 
   async function exportIcs() {
@@ -257,7 +264,7 @@ export function PlanCalendarView({
             {messages.previousMonth}
           </button>
           <h2 id="plan-calendar-title">{monthLabel}</h2>
-          <button type="button" className="button button-secondary" onClick={goToPlanningDate}>
+          <button type="button" className="button button-secondary" onClick={goToToday}>
             {messages.today}
           </button>
           <button type="button" className="button button-secondary" onClick={() => shiftMonth(1)}>
@@ -304,11 +311,14 @@ export function PlanCalendarView({
                 const outside = startOfMonth(date) !== visibleMonth;
                 const isDeadline = date === assignment.dueDate;
                 const isPlanning = date === plan.profile.asOfDate;
+                const isToday = date === currentDate;
                 const isSelected = date === selectedDate;
                 const visibleTasks = dayTasks.slice(0, 2);
                 const overflow = dayTasks.length - visibleTasks.length;
                 const longDate = formatDate(new Date(`${date}T12:00:00`), { dateStyle: "full" });
-                const stateText = dayTasks.flatMap((task) => flagLabels(taskFlags(task, plan, assignment))).join(", ");
+                const stateText = dayTasks.flatMap((task) =>
+                  flagLabels(taskFlags(task, plan, assignment, currentDate)),
+                ).join(", ");
                 return (
                   <td key={date} className={outside ? styles.outside : undefined}>
                     <button
@@ -320,6 +330,7 @@ export function PlanCalendarView({
                           date: longDate,
                           count: formatNumber(dayTasks.length),
                           deadline: isDeadline ? messages.deadlineMarker : "",
+                          today: isToday ? messages.todayMarker : "",
                           planning: isPlanning ? messages.planningMarker : "",
                         }),
                         stateText,
@@ -332,11 +343,12 @@ export function PlanCalendarView({
                     >
                       <span>{formatNumber(Number(date.slice(8)))}</span>
                       {isDeadline ? <span className={styles.flag}>{messages.assignmentDeadline}</span> : null}
+                      {isToday ? <span className={`${styles.flag} ${styles.todayFlag}`}>{messages.today}</span> : null}
                       {isPlanning ? <span className={styles.flag}>{messages.planningDate}</span> : null}
                       {visibleTasks.map((task) => (
                         <span
                           key={task.id}
-                          className={`${styles.chip} ${flagClassNames(taskFlags(task, plan, assignment))}`}
+                          className={`${styles.chip} ${flagClassNames(taskFlags(task, plan, assignment, currentDate))}`}
                         >
                           {localizeSystemText(task.title, locale)}
                         </span>
@@ -362,7 +374,7 @@ export function PlanCalendarView({
         ) : (
           <ol>
             {weekTasks.map(({ date, task }) => {
-              const flags = taskFlags(task, plan, assignment);
+              const flags = taskFlags(task, plan, assignment, currentDate);
               const title = localizeSystemText(task.title, locale);
               return (
                 <li key={task.id} className={styles.agendaItem} data-testid={`calendar-task-${task.id}`}>

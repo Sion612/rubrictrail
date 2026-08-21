@@ -6,6 +6,19 @@ export interface DateParts {
   day: number;
 }
 
+type LocalCalendarDate = Pick<Date, "getFullYear" | "getMonth" | "getDate">;
+
+/**
+ * Returns the calendar date observed in the browser's local timezone.
+ * Deliberately avoids toISOString(), whose UTC conversion can cross a date boundary.
+ */
+export function browserLocalDate(value: LocalCalendarDate = new Date()): string {
+  const year = value.getFullYear();
+  const month = value.getMonth() + 1;
+  const day = value.getDate();
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 function isRealCalendarDate(year: number, month: number, day: number): boolean {
   if (month < 1 || month > 12 || day < 1 || day > 31) return false;
   const utc = Date.UTC(year, month - 1, day);

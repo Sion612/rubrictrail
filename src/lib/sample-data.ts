@@ -7,6 +7,9 @@ import {
   type DraftSpan,
 } from "./domain";
 
+/** Stable baseline used to generate the fictional sample Action Plan. */
+export const SAMPLE_PLANNING_BASELINE_DATE = "2026-08-17";
+
 export const SAMPLE_ASSIGNMENT_BRIEF = `OM302 Operations Management
 Individual Operations Improvement Report
 

@@ -71,9 +71,10 @@ import {
   invalidateUploadedReviewAfterLocatorChange,
   isConfirmedUploadedReview,
   manualSourceLocatorsEqual,
-  todayIso,
 } from "@/lib/uploaded-project";
 import { deriveProjectTrackerSummary } from "@/lib/project-tracker";
+import { projectPlanningBaselineDate } from "@/lib/project-planning-date";
+import { useBrowserLocalDate } from "@/components/use-browser-local-date";
 import type {
   AssignmentFileIntakeError,
   AssignmentIntakeMode,
@@ -454,8 +455,8 @@ function backupProjectDetails(
   ].join("\n");
 }
 
-function planStartFor(dueDate: string, today: string): string {
-  return dueDate < today ? dueDate : today;
+function planStartFor(dueDate: string, planningBaselineDate: string): string {
+  return dueDate < planningBaselineDate ? dueDate : planningBaselineDate;
 }
 
 interface PersistenceWarningState {
@@ -1083,7 +1084,8 @@ export function RubricTrailApp({ workspaceSession }: RubricTrailAppProps) {
     [cancelPersistenceTimer],
   );
 
-  const today = todayIso();
+  const currentDate = useBrowserLocalDate();
+  const planningBaselineDate = projectPlanningBaselineDate(project, currentDate);
   const dueDate =
     project.projectKind === "uploaded" && project.uploadedProject
       ? project.uploadedProject.dueDate
@@ -1098,14 +1100,14 @@ export function RubricTrailApp({ workspaceSession }: RubricTrailAppProps) {
         {
           weeklyHours: project.weeklyHours,
           planningDepth: planningDepthFromLegacyTargetGrade(project.targetGrade),
-          startDate: planStartFor(dueDate, today),
+          startDate: planStartFor(dueDate, planningBaselineDate),
           dueDate,
-          asOfDate: today,
+          asOfDate: planningBaselineDate,
           completedTaskIds: project.completedTaskIds,
         },
         uploadedTemplates ?? undefined,
       ),
-    [dueDate, project.completedTaskIds, project.targetGrade, project.weeklyHours, today, uploadedTemplates],
+    [dueDate, planningBaselineDate, project.completedTaskIds, project.targetGrade, project.weeklyHours, uploadedTemplates],
   );
   const trackerAssignment = project.uploadedProject
     ? {
@@ -1121,8 +1123,8 @@ export function RubricTrailApp({ workspaceSession }: RubricTrailAppProps) {
         dueDate: SAMPLE_ASSIGNMENT.dueAt.slice(0, 10),
       };
   const trackerSummary = useMemo(
-    () => deriveProjectTrackerSummary(plan, trackerAssignment.dueDate),
-    [plan, trackerAssignment.dueDate],
+    () => deriveProjectTrackerSummary(plan, trackerAssignment.dueDate, currentDate),
+    [currentDate, plan, trackerAssignment.dueDate],
   );
   const currentDraftResult =
     project.draftResult &&
@@ -2383,6 +2385,7 @@ export function RubricTrailApp({ workspaceSession }: RubricTrailAppProps) {
         <ProjectTracker
           plan={plan}
           assignment={trackerAssignment}
+          currentDate={currentDate}
           openerRef={trackerOpenerRef}
           onClose={() => setTrackerOpen(false)}
           onToggleTask={toggleTask}

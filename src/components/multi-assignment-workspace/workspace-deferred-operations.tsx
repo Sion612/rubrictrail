@@ -22,6 +22,7 @@ import type {
   WorkspaceStorageProtection,
 } from "@/components/multi-assignment-workspace/workspace-lifecycle-panel";
 import type { PersistedProjectState } from "@/lib/ui-types";
+import { browserLocalDate } from "@/lib/date-only";
 import type { WorkspaceExclusiveLockRunner } from "@/lib/workspace-storage/coordinator";
 import type { WorkspaceProductionLifecycleDependencies } from "@/lib/workspace-storage/production-lifecycle-orchestrator";
 import type { WorkspaceLegacyDriftInspectionResult } from "@/lib/workspace-storage/production-legacy-drift";
@@ -71,14 +72,6 @@ interface WorkspaceManagementData {
 interface ReplacementSelection {
   state: PersistedProjectState;
   preview: WorkspaceReplacementPreview;
-}
-
-function todayDateOnly(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function selectedProjectDigest(
@@ -492,7 +485,7 @@ export function WorkspaceDeferredOperations({
     if (!ready || !selectedProjectId) return null;
     const model = deriveWorkspaceDashboardModel(
       dashboardProjectsFromWorkspaceSnapshot(ready.controller.authoritySnapshot()),
-      { asOfDate: todayDateOnly() },
+      { currentDate: browserLocalDate() },
     );
     const summary = model.assignments.find(
       (assignment) => assignment.projectId === selectedProjectId,
@@ -583,7 +576,7 @@ export function WorkspaceDeferredOperations({
   const exportWorkspaceDiagnostics = useCallback(() => {
     const current = managementData;
     downloadText(
-      `rubrictrail-workspace-diagnostics-${todayDateOnly()}.json`,
+      `rubrictrail-workspace-diagnostics-${browserLocalDate()}.json`,
       JSON.stringify({
         format: "rubrictrail-workspace-diagnostics",
         version: 1,

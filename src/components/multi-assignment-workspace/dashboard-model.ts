@@ -7,6 +7,7 @@ import {
 import { SAMPLE_ASSIGNMENT } from "@/lib/sample-data";
 import type { PersistedProjectState } from "@/lib/ui-types";
 import { buildUploadedPlanTemplates } from "@/lib/uploaded-project";
+import { projectPlanningBaselineDate } from "@/lib/project-planning-date";
 
 export interface WorkspaceDashboardProject {
   projectId: string;
@@ -14,7 +15,7 @@ export interface WorkspaceDashboardProject {
 }
 
 export interface WorkspaceDashboardDerivationOptions {
-  asOfDate: string;
+  currentDate: string;
   upNextLimit?: number;
 }
 
@@ -57,13 +58,12 @@ function taskIsBlocked(
   return task.dependencies.some((dependencyId) => !completedTaskIds.has(dependencyId));
 }
 
-function planStartFor(deadline: string, asOfDate: string): string {
-  return deadline < asOfDate ? deadline : asOfDate;
+function planStartFor(deadline: string, planningBaselineDate: string): string {
+  return deadline < planningBaselineDate ? deadline : planningBaselineDate;
 }
 
 function deriveProject(
   project: WorkspaceDashboardProject,
-  asOfDate: string,
 ): {
   title: string;
   course: string;
@@ -83,13 +83,14 @@ function deriveProject(
   const title = uploaded?.title ?? SAMPLE_ASSIGNMENT.title;
   const course = uploaded?.course ?? SAMPLE_ASSIGNMENT.course;
   const deadline = uploaded?.dueDate ?? SAMPLE_ASSIGNMENT.dueAt.slice(0, 10);
+  const planningBaselineDate = projectPlanningBaselineDate(project.state);
   const plan = generateActionPlan(
     {
       weeklyHours: project.state.weeklyHours,
       planningDepth: planningDepthFromLegacyTargetGrade(project.state.targetGrade),
-      startDate: planStartFor(deadline, asOfDate),
+      startDate: planStartFor(deadline, planningBaselineDate),
       dueDate: deadline,
-      asOfDate,
+      asOfDate: planningBaselineDate,
       completedTaskIds: project.state.completedTaskIds,
     },
     uploaded ? buildUploadedPlanTemplates(uploaded) : undefined,
@@ -100,15 +101,15 @@ function deriveProject(
 
 function dashboardTask(
   task: PlanTask,
-  plan: ActionPlan,
   completedTaskIds: ReadonlySet<string>,
+  currentDate: string,
 ): DashboardTaskSummary {
   return {
     taskId: task.id,
     title: task.title,
     dueDate: task.dueDate,
     blocked: taskIsBlocked(task, completedTaskIds),
-    overdue: compareDateOnly(task.dueDate, plan.profile.asOfDate) < 0,
+    overdue: compareDateOnly(task.dueDate, currentDate) < 0,
   };
 }
 
@@ -150,7 +151,7 @@ export function deriveWorkspaceDashboardModel(
   const upNext: DashboardUpNextItem[] = [];
 
   projects.forEach((project, workspaceOrder) => {
-    const derived = deriveProject(project, options.asOfDate);
+    const derived = deriveProject(project);
     if (!derived) return;
     const completedTaskIds = new Set(
       derived.plan.tasks
@@ -165,10 +166,10 @@ export function deriveWorkspaceDashboardModel(
         return dateOrder || left.taskOrder - right.taskOrder;
       });
     const tasks = incompleteTasks.map((task) =>
-      dashboardTask(task, derived.plan, completedTaskIds),
+      dashboardTask(task, completedTaskIds, options.currentDate),
     );
     const nextTarget = orderedIncomplete[0]
-      ? dashboardTask(orderedIncomplete[0].task, derived.plan, completedTaskIds)
+      ? dashboardTask(orderedIncomplete[0].task, completedTaskIds, options.currentDate)
       : null;
 
     assignments.push({
@@ -185,7 +186,7 @@ export function deriveWorkspaceDashboardModel(
     derived.plan.tasks.forEach((task, taskOrder) => {
       if (task.completed) return;
       upNext.push({
-        ...dashboardTask(task, derived.plan, completedTaskIds),
+        ...dashboardTask(task, completedTaskIds, options.currentDate),
         projectId: project.projectId,
         assignmentTitle: derived.title,
         workspaceOrder,

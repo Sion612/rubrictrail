@@ -13,6 +13,7 @@ import type {
   UploadedProjectSource,
   RubricWeightingStatus,
 } from "@/lib/ui-types";
+import { browserLocalDate } from "@/lib/date-only";
 
 export const UPLOADED_REVIEW_MAX_CHARACTERS = 40_000;
 
@@ -47,9 +48,7 @@ function slug(value: string): string {
 }
 
 export function todayIso(): string {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
+  return browserLocalDate();
 }
 
 export function maximumSupportedDueDate(baseDate = todayIso()): string {

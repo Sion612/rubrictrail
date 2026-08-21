@@ -13,9 +13,9 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
   labelled.
 - Calendar, Project Tracker, Dashboard, and Up Next overdue states now advance
   with real time without automatically moving existing task target dates.
-- Existing uploaded projects derive their stable planning baseline from the UTC
-  calendar date encoded in their canonical creation timestamp; the original
-  browser timezone was not historically persisted.
+- Existing uploaded projects normalize their already-supported persisted
+  creation instant to a stable UTC calendar date; the original browser timezone
+  was not historically persisted.
 
 ## [0.8.0] - 2026-08-21
 

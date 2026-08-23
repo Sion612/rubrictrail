@@ -295,12 +295,22 @@ rubric retains some known percentages. That equal planning share exists only
 inside the generated schedule: it is never persisted as a synthetic rubric
 weight, displayed as a percentage or described as equal marks.
 
-The plan engine schedules that graph from the real current date, deadline,
-weekly capacity and selected planning depth. Planning depth can include
-additional review tasks and changes the time allowance applied to the schedule;
-it does not correspond to a grading band or predict an outcome. UI checkboxes
-and the state update handler both block completion when dependencies are
-unfinished.
+The plan engine schedules that graph from a stable planning baseline, the
+deadline, weekly capacity and selected planning depth. The fictional sample
+uses its fixed sample baseline. An uploaded project validates its already
+supported offset-bearing creation timestamp and normalizes that creation
+instant to a stable UTC calendar date; the original browser timezone was never
+persisted. This derived baseline is not written back to persistence. Empty
+state may use the current date only until a project is created.
+
+The browser-local current date is a separate transient presentation input. It
+drives **Today** and incomplete-task overdue status in Calendar, Project
+Tracker, Dashboard and **Up Next**, refreshing across local midnight and when
+the page regains focus or visibility. It does not regenerate or slide existing
+task target dates. Planning depth can include additional review tasks and
+changes the time allowance applied to the schedule; it does not correspond to
+a grading band or predict an outcome. UI checkboxes and the state update
+handler both block completion when dependencies are unfinished.
 
 ## Honest workflow state
 

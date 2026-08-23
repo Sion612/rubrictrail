@@ -69,10 +69,35 @@ test("post-creation locator add, edit, and remove persist without confirming Che
   });
   await expect(page.getByRole("heading", { name: "Confirm what the assignment says." })).toBeVisible();
   await page.getByRole("button", { name: "Add missing criterion" }).click();
-  await page.getByTestId("criterion-name-2").fill("Unlinked manual criterion");
-  await page.getByTestId("criterion-weight-0").fill("45");
-  await page.getByTestId("criterion-weight-1").fill("45");
-  await page.getByTestId("criterion-weight-2").fill("10");
+  const manualCriterionName = page.getByTestId("criterion-name-2");
+  await expect(manualCriterionName).toBeFocused();
+  await manualCriterionName.fill("Unlinked manual criterion");
+  await expect(manualCriterionName).toHaveValue("Unlinked manual criterion");
+
+  const firstWeight = page.getByTestId("criterion-weight-0");
+  await firstWeight.focus();
+  await expect(firstWeight).toBeFocused();
+  await firstWeight.fill("45");
+  await expect(firstWeight).toHaveValue("45");
+  await expect(manualCriterionName).toHaveValue("Unlinked manual criterion");
+
+  const secondWeight = page.getByTestId("criterion-weight-1");
+  await secondWeight.focus();
+  await expect(secondWeight).toBeFocused();
+  await secondWeight.fill("45");
+  await expect(secondWeight).toHaveValue("45");
+
+  const thirdWeight = page.getByTestId("criterion-weight-2");
+  await thirdWeight.focus();
+  await expect(thirdWeight).toBeFocused();
+  await thirdWeight.fill("10");
+  await expect(thirdWeight).toHaveValue("10");
+
+  await expect(manualCriterionName).toHaveValue("Unlinked manual criterion");
+  await expect(firstWeight).toHaveValue("45");
+  await expect(secondWeight).toHaveValue("45");
+  await expect(thirdWeight).toHaveValue("10");
+  await expect(page.getByText("Published total: 100%", { exact: true })).toBeVisible();
   await page.getByTestId("create-project").click();
   await visibleWorkflowButton(page, "Rubric").click();
   await page.getByRole("button", { name: /Add source location: Unlinked manual criterion/ }).click();

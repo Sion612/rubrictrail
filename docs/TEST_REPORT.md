@@ -1,23 +1,81 @@
 # Verification report
 
-Report last updated: 21 August 2026
+Report last updated: 23 August 2026
 Runtime: bundled Node.js 24 locally; the repository remains pinned to pnpm
 11.9.0 for CI and contributor installs.
 Browser method: Playwright projects at desktop 1440×900 and narrow 390×844
 Chromium sizes against a fresh production build served by `next start`, plus
-the generated static demo served at `/rubrictrail`. Calendar scenarios freeze
-Playwright's clock at 2026-08-17 so month expectations do not depend on the
-wall-clock date.
+the generated static demo served at `/rubrictrail`. Deterministic Calendar
+fixtures freeze Playwright's clock where their month expectations require it;
+v0.8.1 also has explicit real-time date tests and a public smoke observation
+using the browser's actual local date.
+
+## v0.8.1 real-date correction and release-recovery evidence
+
+Date: 23 August 2026
+
+The v0.8.1 product revision is merged, deployed from its exact replacement
+`main` SHA and independently verified on public Pages. The final annotated
+`v0.8.1` tag and GitHub Release remain pending until this docs-only evidence
+change passes its own exact-head, exact-main, Pages and public gates.
+
+### Date semantics
+
+- **Planning baseline is stable.** The fictional sample uses
+  `2026-08-17`. Uploaded projects validate every offset-bearing ISO timestamp
+  already accepted by the persisted schema, parse its creation instant and use
+  that instant's UTC calendar date. Equivalent offsets therefore produce the
+  same plan; the original creation timezone was never persisted.
+- **Today is transient and browser-local.** It refreshes across local midnight
+  and when the page regains focus or visibility. Calendar, Project Tracker,
+  Dashboard and **Up Next** use the same current date for overdue status.
+- **Target dates remain stable.** Passing time, marking a task complete and
+  Calendar navigation do not regenerate or slide Action Plan targets. Existing
+  explicit rebalance/regeneration remains the operation that can change them.
+  Backup v1, the workspace storage protocol, persisted schemas and ICS task
+  dates are unchanged.
+
+### Product and recovery gates
+
+| Gate | Exact evidence |
+| --- | --- |
+| PR #50 exact head | PR #50 head `f9cd40da13b92bc764f0db21e1b0bc3459a6d5e3`; [CI run 32464079330](https://github.com/Sion612/rubrictrail/actions/runs/32464079330) succeeded for `quality`, `browser` and `pages-static` |
+| First product merge | Squash main `1c5f54c51824bd3a1738e849ef16af8b34be762c`; [CI run 32466164927](https://github.com/Sion612/rubrictrail/actions/runs/32466164927) passed `quality` and `browser` but failed `pages-static`, so Deploy Pages run 32466754705 was skipped and the release correctly stopped |
+| Failure diagnosis | The same source-locator scenario passed in the production mobile project and static desktop project. In static mobile, the test could fill the first weight before the existing requestAnimationFrame autofocus settled, appending `45` to the new criterion name and leaving weights at 105%. This was a deterministic E2E synchronization defect, not evidence of a product regression |
+| Test-only correction | PR #51 changed only `tests/e2e/source-locator-edit.spec.ts` (29 additions, 4 deletions): it waits for the existing autofocus, explicitly focuses each weight field and verifies exact values and the 100% total. No production, persistence, date, dependency, lockfile, workflow, timeout or retry change was made |
+| Focused local stability | Corrected production desktop/mobile passed 2/2; corrected static desktop/mobile passed 2/2; static mobile passed 10/10 sequential repeats with retries disabled |
+| Full local gates | Frozen install and `pnpm audit --prod` passed with no lockfile change or known production vulnerability; lint and typecheck passed; 59 Vitest files / 783 tests plus 3 OCR asset-audit tests passed; production and static Playwright each passed 60/60; deployment smoke passed 14/14; `pnpm check` and `git diff --check` passed |
+| Static artifact | The local `/rubrictrail` audit passed for 84 files: 15 initial JS/CSS assets totalled 1,208,683 raw / 340,909 gzip bytes; 10 deferred OCR files totalled 16,850,033 bytes and were absent from initial HTML |
+| PR #51 exact head | PR #51 head `5280862de00cfaa996b43c1a961c91870a8f4549`; [CI run 32642013632](https://github.com/Sion612/rubrictrail/actions/runs/32642013632) succeeded for `quality`, `browser` and `pages-static` |
+| Replacement exact-main CI | Squash main `bfb6ba4585817eafc853f4439e5ea03a290edd82`; [CI run 32642391109](https://github.com/Sion612/rubrictrail/actions/runs/32642391109) was a `push` run on that exact SHA and all three required jobs succeeded |
+| Exact-SHA Pages | [Deploy Pages run 32642715318](https://github.com/Sion612/rubrictrail/actions/runs/32642715318) was a `workflow_run` for `bfb6ba4585817eafc853f4439e5ea03a290edd82`; freshness, build, deploy and post-deploy smoke all succeeded |
+| Independent public artifact smoke | `deployment.txt` matched all 40 lowercase hexadecimal bytes of `bfb6ba4585817eafc853f4439e5ea03a290edd82`; homepage, discovered same-origin assets and disabled Live assignment/draft GET and POST `{}` boundaries passed on the first bounded attempt |
+| Independent public product smoke | The fictional LumaLane flow loaded Dashboard, reopened the assignment and opened Tracker/Calendar. In a real `Asia/Shanghai` browser on 23 August 2026, Today was `2026-08-23`, Planning date remained `2026-08-17`, task `p1` was overdue, and task `p13` remained `28 Aug 2026` across completion and month navigation. Dashboard and Calendar had zero document-level overflow at desktop and 320px; no off-origin request or page error was observed |
+
+The first English public product-smoke draft used an unconfigured-locale
+browser and correctly failed to find the English Dashboard because the browser
+selected Simplified Chinese. A minimal diagnostic returned HTTP 200, the
+localized **我的作业** heading and no page error. The final product smoke fixed
+the test context to `en-GB` without overriding timezone; two further strict
+selector diagnostics corrected case and close-button ambiguity before the
+complete evidence run above passed. These diagnostic script failures were not
+hidden or described as product failures.
+
+This section distinguishes local/regression evidence, exact-head CI,
+replacement exact-main CI, exact-SHA deployment and independent public
+execution. The final tag will target the later docs-only merge SHA only after
+that SHA repeats the exact-main, Pages, marker and public gates.
 
 ## v0.8.0 multi-assignment product and release evidence
 
 Date: 21 August 2026
 
-The product activation has passed exact-head CI, merged to `main`, deployed
-from its exact merge revision, and passed independent public verification. The
-final `v0.8.0` tag and GitHub Release are intentionally still pending while this
-docs-only evidence change passes its own exact-head, exact-main, Pages and
-public gates. This section does not describe the release as published early.
+The product activation passed exact-head CI, merged to `main`, deployed from
+its exact merge revision and passed independent public verification. The later
+docs-only evidence merge became annotated tag `v0.8.0`; the non-draft,
+non-prerelease
+[GitHub Release](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.0)
+was published on 20 August 2026.
 
 ### Completed prerequisite PR evidence
 
@@ -92,9 +150,10 @@ public-only command therefore passed 58/58, while the complete 60/60 suite had
 separately passed both the local production and local static-export gates.
 
 The product-deployment evidence above belongs to the product merge SHA
-`a8f479b98589df86db4e64efd7c9238ecf81e281`. The eventual release tag will
-target the later docs-only evidence merge SHA after that revision passes its
-own exact-main CI, exact-SHA Pages deployment and final public check.
+`a8f479b98589df86db4e64efd7c9238ecf81e281`. After the docs-only evidence merge
+passed its own exact-main CI, exact-SHA Pages deployment and final public check,
+annotated tag `v0.8.0` was published for
+`1d3e79de99cacd56c896618b3edd71cf09322c59`.
 
 During development, an initial dev-server browser run passed 34/60 and exposed
 both incomplete test migration and two real controlled-state/storage-event

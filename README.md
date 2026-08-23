@@ -33,6 +33,24 @@ The production screenshot above and the mobile viewport are reviewed in
 
 ## What works today
 
+### v0.8.1: real-time Calendar status
+
+v0.8.1 separates the stable date used to generate an Action Plan from the
+browser-local date used for live status. **Today** now advances with the
+browser's local calendar date, while Calendar, Project Tracker, Dashboard and
+**Up Next** classify incomplete targets against that same transient date.
+Existing task target dates do not slide as time passes: the fictional sample
+uses its fixed sample baseline, and an uploaded project normalizes its already
+supported persisted creation instant to a stable UTC calendar date. The
+original creation timezone was never persisted.
+
+The merged v0.8.1 product revision has passed replacement exact-main CI,
+exact-SHA Pages deployment and independent public verification. The final
+`v0.8.1` annotated tag and GitHub Release remain pending until this docs-only
+release-evidence change passes its own exact-head, exact-main, Pages and public
+gates. See the [verification report](./docs/TEST_REPORT.md) for the initial
+main failure, test-only correction and exact revisions.
+
 ### v0.8.0: multi-assignment workspace
 
 v0.8.0 makes **My Assignments** the product home. Assignment
@@ -53,11 +71,11 @@ user explicitly confirms cleanup. Each assignment then uses an isolated local
 record beneath a small workspace index; Web Locks remain mandatory for
 authoritative mutation, and conflicting older-tab writes fail visibly.
 
-The merged v0.8.0 product revision has passed exact-head and exact-main CI,
-exact-SHA Pages deployment, and independent public-demo verification. The
-final tag and GitHub Release remain pending until the docs-only release-evidence
-change completes its own main and Pages gates. See the
-[verification report](./docs/TEST_REPORT.md) for exact revisions, runs, and
+v0.8.0 passed exact-head and exact-main CI, exact-SHA Pages deployment and
+independent public-demo verification before the annotated tag and
+[GitHub Release](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.0)
+were published on 20 August 2026. See the
+[verification report](./docs/TEST_REPORT.md) for exact revisions, runs and
 evidence boundaries.
 
 ### v0.7.1: Project Tracker, source editing and local ICS
@@ -74,9 +92,9 @@ project state.
 Plan remains focused on weekly hours, planning depth, rebalance, dependencies
 and task completion. Calendar dates remain target completion dates, not
 appointments, and `.ics` import may be stored by an external calendar
-provider. The public Pages demo now serves the merged v0.7.1 revision; exact
-main CI, Pages and public-smoke evidence is recorded in
-[the verification report](./docs/TEST_REPORT.md).
+provider. The v0.7.1 exact-main CI, Pages and public-smoke evidence remains
+recorded in [the verification report](./docs/TEST_REPORT.md); the public demo
+now follows the later verified v0.8.1 product revision described above.
 
 ### v0.7.0: source editing, Calendar and local ICS
 

@@ -2,8 +2,10 @@
 
 ## Supported version
 
-Security fixes target the latest code on the default branch. RubricTrail has not
-yet published a stable release line.
+Security fixes target the latest tagged release and the current default branch.
+RubricTrail does not currently offer long-term-support branches or guarantee
+backports to older releases. Reports should identify the exact affected version
+or commit SHA.
 
 ## Reporting a vulnerability
 

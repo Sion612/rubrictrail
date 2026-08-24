@@ -28,8 +28,12 @@ criterion, or predict a grade.
 
 ![RubricTrail rubric workspace](./docs/assets/rubrictrail-workspace.png)
 
-The production screenshot above and the mobile viewport are reviewed in
-[the visual QA report](./docs/VISUAL_QA_REPORT.md).
+The screenshot above and the saved mobile viewport are historical
+assignment-workspace references. They predate the v0.8 **My Assignments**
+Dashboard and v0.8.1 date semantics, so they are not current visual
+certification. See the [visual QA report](./docs/VISUAL_QA_REPORT.md) for that
+historical scope and the [verification report](./docs/TEST_REPORT.md) for
+current functional and responsive evidence.
 
 ## What works today
 
@@ -44,12 +48,15 @@ uses its fixed sample baseline, and an uploaded project normalizes its already
 supported persisted creation instant to a stable UTC calendar date. The
 original creation timezone was never persisted.
 
-The merged v0.8.1 product revision has passed replacement exact-main CI,
-exact-SHA Pages deployment and independent public verification. The final
-`v0.8.1` annotated tag and GitHub Release remain pending until this docs-only
-release-evidence change passes its own exact-head, exact-main, Pages and public
-gates. See the [verification report](./docs/TEST_REPORT.md) for the initial
-main failure, test-only correction and exact revisions.
+v0.8.1 is published. Its annotated tag resolves to
+`39eedac6a04a0b955184e26a7148ccb21efb742d`, and the
+[GitHub Release](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.1)
+records the released state. That exact tagged revision passed
+[final main CI](https://github.com/Sion612/rubrictrail/actions/runs/32644021633)
+and [final Pages deployment](https://github.com/Sion612/rubrictrail/actions/runs/32644355890).
+These release facts remain tied to the tag even if the default branch later
+advances. See the [verification report](./docs/TEST_REPORT.md) for the initial
+main failure, test-only correction and complete chronology.
 
 ### v0.8.0: multi-assignment workspace
 

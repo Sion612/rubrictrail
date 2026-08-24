@@ -1,5 +1,13 @@
 # Visual QA report
 
+> **Current status (24 August 2026):** The saved screenshots below are
+> historical assignment-workspace references. They predate the v0.8 **My
+> Assignments** Dashboard and v0.8.1 date semantics, and they are not current
+> visual certification. Current automated functional and responsive evidence
+> is recorded in [`docs/TEST_REPORT.md`](./TEST_REPORT.md). External student
+> usability testing remains outstanding. No screenshot was created or replaced
+> for this consistency update.
+
 Date: 12 August 2026  
 Targets: desktop 1440×900 and mobile 390×844  
 Method: production build served on `127.0.0.1`; Browser plugin unavailable, so

@@ -15,9 +15,17 @@ RubricTrail 是一个本地优先的作业规划工具。它把作业说明和�
 或付费服务。选中的文件内容、文件名和项目状态保留在浏览器中；GitHub Pages
 仍会像普通网站托管服务一样接收页面和静态资源请求信息。
 
-> 当前公开 Demo 已部署并独立验证 v0.8.1 实时日历状态对应的精确产品合并版本。
-> 最终 `v0.8.1` 标签与 GitHub Release 仍需等待本次仅文档的发布证据变更通过自己的
-> exact-head、main、Pages 与公网门禁，因此此处不提前声称正式 Release 已发布。
+> v0.8.1 已正式发布。annotated tag 对应精确版本
+> `39eedac6a04a0b955184e26a7148ccb21efb742d`，并已发布
+> [GitHub Release](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.1)。
+> 该版本的 [final main CI](https://github.com/Sion612/rubrictrail/actions/runs/32644021633)
+> 与 [final Pages 部署](https://github.com/Sion612/rubrictrail/actions/runs/32644355890)
+> 均已通过；这些发布事实绑定于标签，不会因默认分支以后继续前进而失效。
+
+仓库当前保存的桌面与移动截图只是历史作业工作区参考，早于 v0.8 **我的作业**
+Dashboard 和 v0.8.1 日期语义，不代表当前视觉或全浏览器认证。当前功能与响应式证据见
+[验证报告](./docs/TEST_REPORT.md)，历史截图范围见
+[视觉 QA 报告](./docs/VISUAL_QA_REPORT.md)。
 
 ## 适合谁
 
@@ -40,10 +48,11 @@ v0.8.1 把“生成行动计划时采用的稳定日期”和“用于实时状�
 滑动：虚构示例使用固定示例基线；上传项目则把既有持久化格式已支持的创建瞬时归一为稳定
 UTC 日历日期。历史版本从未保存原始创建时区。
 
-v0.8.1 产品合并版本已通过替换后的 exact-main CI、exact-SHA Pages 部署与独立公网
-验证。最终 `v0.8.1` annotated tag 与 GitHub Release 仍需等待本次仅文档的发布证据
-变更完成自身 exact-head、main、Pages 与公网门禁。首次 main 失败、仅测试修正和精确
-版本证据见[验证报告](./docs/TEST_REPORT.md)。
+v0.8.1 已正式发布；最终 tagged SHA 为
+`39eedac6a04a0b955184e26a7148ccb21efb742d`。首次 main 失败、仅测试修正、
+最终 exact-main CI、exact-SHA Pages、annotated tag 与 Release 证据见
+[验证报告](./docs/TEST_REPORT.md)。Chromium 自动化是回归证据，不代表 Firefox、
+Safari 或其他浏览器已获得认证。
 
 ## v0.8.0：多作业工作区
 

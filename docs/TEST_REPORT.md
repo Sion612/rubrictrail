@@ -1,6 +1,6 @@
 # Verification report
 
-Report last updated: 23 August 2026
+Report last updated: 24 August 2026
 Runtime: bundled Node.js 24 locally; the repository remains pinned to pnpm
 11.9.0 for CI and contributor installs.
 Browser method: Playwright projects at desktop 1440×900 and narrow 390×844
@@ -14,10 +14,11 @@ using the browser's actual local date.
 
 Date: 23 August 2026
 
-The v0.8.1 product revision is merged, deployed from its exact replacement
-`main` SHA and independently verified on public Pages. The final annotated
-`v0.8.1` tag and GitHub Release remain pending until this docs-only evidence
-change passes its own exact-head, exact-main, Pages and public gates.
+The v0.8.1 product revision was merged, deployed from its exact replacement
+`main` SHA and independently verified on public Pages. At that product-recovery
+checkpoint the final tag and Release had not yet been created. The final
+documentation, tagged-release and deployment evidence below records their
+later publication without rewriting that chronology.
 
 ### Date semantics
 
@@ -52,6 +53,17 @@ change passes its own exact-head, exact-main, Pages and public gates.
 | Independent public artifact smoke | `deployment.txt` matched all 40 lowercase hexadecimal bytes of `bfb6ba4585817eafc853f4439e5ea03a290edd82`; homepage, discovered same-origin assets and disabled Live assignment/draft GET and POST `{}` boundaries passed on the first bounded attempt |
 | Independent public product smoke | The fictional LumaLane flow loaded Dashboard, reopened the assignment and opened Tracker/Calendar. In a real `Asia/Shanghai` browser on 23 August 2026, Today was `2026-08-23`, Planning date remained `2026-08-17`, task `p1` was overdue, and task `p13` remained `28 Aug 2026` across completion and month navigation. Dashboard and Calendar had zero document-level overflow at desktop and 320px; no off-origin request or page error was observed |
 
+### Final documentation, tagged-release and deployment evidence
+
+| Gate | Exact evidence |
+| --- | --- |
+| Documentation PR #52 | PR #52 head `fc5bd1796730545ca9b61941235662c0bef2c3f7` contained release-evidence documentation only and squash-merged as `39eedac6a04a0b955184e26a7148ccb21efb742d` |
+| Final exact-main CI | [CI run 32644021633](https://github.com/Sion612/rubrictrail/actions/runs/32644021633) was a `push` run on `main` at exact SHA `39eedac6a04a0b955184e26a7148ccb21efb742d`; `quality`, `browser` and `pages-static` all succeeded |
+| Final static artifact | The final `pages-static` job audited 84 files. Its 15 initial JS/CSS assets totalled 1,208,729 raw bytes and 340,941 gzip bytes, leaving 16,059 bytes below the 357,000-byte gzip budget. Ten deferred OCR files totalled 16,850,033 bytes, and static Chromium passed 60/60 tests |
+| Final exact-SHA Pages | [Deploy Pages run 32644355890](https://github.com/Sion612/rubrictrail/actions/runs/32644355890) was triggered for exact SHA `39eedac6a04a0b955184e26a7148ccb21efb742d`; freshness, build, deploy and post-deploy smoke all succeeded |
+| Annotated tag | Annotated tag object `40a83b8badfd16fb9d56d0de71323f22b1dab1d0` peels to exact commit `39eedac6a04a0b955184e26a7148ccb21efb742d` |
+| Published Release | [RubricTrail v0.8.1 — Real-Time Calendar Status](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.1) was published on 23 August 2026 at `2026-08-23T14:10:42Z`; it is neither a draft nor a prerelease |
+
 The first English public product-smoke draft used an unconfigured-locale
 browser and correctly failed to find the English Dashboard because the browser
 selected Simplified Chinese. A minimal diagnostic returned HTTP 200, the
@@ -63,8 +75,8 @@ hidden or described as product failures.
 
 This section distinguishes local/regression evidence, exact-head CI,
 replacement exact-main CI, exact-SHA deployment and independent public
-execution. The final tag will target the later docs-only merge SHA only after
-that SHA repeats the exact-main, Pages, marker and public gates.
+execution. The later docs-only merge repeated the exact-main and Pages gates
+and became the published annotated tag and Release recorded above.
 
 ## v0.8.0 multi-assignment product and release evidence
 
@@ -504,7 +516,14 @@ asset request metadata.
 - Source scan found no committed key, token, private key, email or user-specific
   absolute path.
 
-## Production visual evidence
+## Historical visual evidence
+
+The saved screenshots in this repository predate the v0.8 **My Assignments**
+Dashboard and v0.8.1 date semantics. They remain useful historical
+assignment-workspace references, but they are not current visual or
+cross-browser certification. Current automated functional and responsive
+evidence is recorded in the v0.8.0 and v0.8.1 sections above. External student
+usability testing remains outstanding.
 
 - Local v0.6.0 candidate captures cover the Simplified Chinese welcome and
   sample workspace at 1440×900, 390×844 and 320×700. All six captures reported
@@ -516,7 +535,8 @@ asset request metadata.
   source-linked rubric and the evidence drawer open.
 - `docs/assets/rubrictrail-mobile.png`: 390×844 production viewport with the
   active workflow state, project context, confirmed weight and rubric summary.
-- The existing production captures have no development badge, stale toast,
+- In their recorded historical runs, the existing production captures had no
+  development badge, stale toast,
   preserved old scroll position or document-level horizontal overflow. The
   paste, mixed-batch, complete/not-complete weighting and v2/v3 conflict flows
   are functionally covered in CI but were not recaptured locally.

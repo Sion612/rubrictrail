@@ -57,7 +57,7 @@ later publication without rewriting that chronology.
 
 | Gate | Exact evidence |
 | --- | --- |
-| Documentation PR #52 | PR #52 head `fc5bd1796730545ca9b61941235662c0bef2c3f7` contained release-evidence documentation only and squash-merged as `39eedac6a04a0b955184e26a7148ccb21efb742d` |
+| Documentation PR #52 | PR #52 head `fc5bd5f178b5287cacb8606c0275434d85fdede7` contained release-evidence documentation only and squash-merged as `39eedac6a04a0b955184e26a7148ccb21efb742d` |
 | Final exact-main CI | [CI run 32644021633](https://github.com/Sion612/rubrictrail/actions/runs/32644021633) was a `push` run on `main` at exact SHA `39eedac6a04a0b955184e26a7148ccb21efb742d`; `quality`, `browser` and `pages-static` all succeeded |
 | Final static artifact | The final `pages-static` job audited 84 files. Its 15 initial JS/CSS assets totalled 1,208,729 raw bytes and 340,941 gzip bytes, leaving 16,059 bytes below the 357,000-byte gzip budget. Ten deferred OCR files totalled 16,850,033 bytes, and static Chromium passed 60/60 tests |
 | Final exact-SHA Pages | [Deploy Pages run 32644355890](https://github.com/Sion612/rubrictrail/actions/runs/32644355890) was triggered for exact SHA `39eedac6a04a0b955184e26a7148ccb21efb742d`; freshness, build, deploy and post-deploy smoke all succeeded |

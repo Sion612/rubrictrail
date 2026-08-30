@@ -75,7 +75,7 @@ describe("activated workspace storage boundary", () => {
     const packageJson = JSON.parse(
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),
     ) as { version?: unknown };
-    expect(packageJson.version).toBe("0.8.1");
+    expect(packageJson.version).toBe("0.8.2");
     const rootPage = readFileSync(join(repositoryRoot, "src", "app", "page.tsx"), "utf8");
     expect(rootPage).toContain("WorkspaceActivationRoot");
     expect(rootPage).not.toContain("workspace-storage");

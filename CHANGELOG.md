@@ -4,6 +4,51 @@ All notable changes will be recorded here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-08-31
+
+### Added
+
+- Added GitHub Pages-only sharing and crawler metadata: the exact public-demo
+  canonical, Open Graph and Twitter cards, the existing same-origin favicon,
+  project-level robots guidance, and a one-URL sitemap.
+- Added a deterministic 1200 × 630 social image generated from the repository's
+  fictional LumaLane sample during the static-demo build.
+- Added a reproducible browser checklist with dated Firefox and Playwright
+  WebKit evidence for public revision
+  `0d9255bfe7724d1de72a8027ea3b1c9582a33962`. This evidence predates the
+  v0.8.2 release target; Playwright WebKit is not Safari and the checklist is
+  not a blanket browser-support claim.
+
+### Fixed
+
+- Creating a new assignment or restoring a backup as new now safely reactivates
+  a strictly cleared empty workspace after whole-workspace privacy deletion.
+  The cleared index remains authoritative until the new project record and
+  active target index have passed the existing lock, journal, digest, reserve,
+  and readback checks.
+- Reflowed the Project Tracker summary at 320 px so its existing metrics sit
+  below the title and the task summary retains readable width in English and
+  Simplified Chinese without document overflow.
+
+### Privacy / Integrity
+
+- Public-demo metadata and preview assets remain same-origin and use only
+  fictional repository material. No account, analytics, telemetry, remote
+  storage, or public Live AI runtime was added.
+- No persistence schema, project-state version, single-project backup v1
+  format, or dependency change was introduced.
+
+### Limitations
+
+- Metadata can improve link previews and crawler clarity but does not guarantee
+  preview refresh, indexing, ranking, or adoption. A project-level
+  `/rubrictrail/robots.txt` cannot control the user-site origin-root
+  `robots.txt`.
+- The dated Firefox and Playwright WebKit checklist covers one pre-release
+  public revision on Windows. It adds neither browser to CI and provides no
+  Safari, macOS, iOS, physical-device, accessibility, or blanket compatibility
+  certification.
+
 ## [0.8.1] - 2026-08-21
 
 ### Fixed

@@ -673,9 +673,6 @@ async function createWorkspaceProjectWithKind(
       if (!indexBaselineMatches(authority.snapshot, request.baseline)) {
         return { ok: false, reason: "workspace-conflict" };
       }
-      if (authority.snapshot.index.status !== "active") {
-        return { ok: false, reason: "workspace-not-active" };
-      }
       if (request.state.projectKind === "none") {
         return { ok: false, reason: "invalid-state" };
       }
@@ -754,6 +751,11 @@ async function createWorkspaceProjectWithKind(
       const serializedIndex = serializeWorkspaceIndex({
         ...authority.snapshot.index,
         revision: authority.snapshot.index.revision + 1,
+        // Whole-workspace privacy deletion leaves a strict, content-free
+        // cleared generation as a stale-tab guard. A later explicit create or
+        // restore-as-new reactivates that same authority only when this
+        // journaled membership target commits.
+        status: "active",
         projects: [
           ...authority.snapshot.index.projects,
           { projectId: generated.projectId, kind: "active" as const },

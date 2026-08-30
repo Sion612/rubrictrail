@@ -30,12 +30,41 @@ criterion, or predict a grade.
 
 The screenshot above and the saved mobile viewport are historical
 assignment-workspace references. They predate the v0.8 **My Assignments**
-Dashboard and v0.8.1 date semantics, so they are not current visual
-certification. See the [visual QA report](./docs/VISUAL_QA_REPORT.md) for that
+Dashboard, v0.8.1 date semantics and v0.8.2 mobile/recovery polish, so they are
+not current visual certification. See the
+[visual QA report](./docs/VISUAL_QA_REPORT.md) for that
 historical scope and the [verification report](./docs/TEST_REPORT.md) for
 current functional and responsive evidence.
 
 ## What works today
+
+### v0.8.2: sharing, recovery and mobile reliability
+
+v0.8.2 lets an explicit **New assignment** or **Restore as new** operation
+reactivate a strictly cleared workspace without reviving deleted projects. It
+also keeps the Project Tracker summary readable at 320 px in English and
+Simplified Chinese.
+
+The GitHub Pages demo now publishes one exact canonical URL, same-origin Open
+Graph/Twitter preview image and favicon, project-level robots guidance, and a
+one-URL sitemap. These Pages-only files do not add a false canonical to the
+self-hostable application, send project content to another service, or
+guarantee indexing, ranking, link-preview refresh or adoption.
+
+v0.8.2 is published. Its annotated tag object
+`9424dd50a73fa63bf6565c4994f9e50b71c3ba49` resolves to exact commit
+`e1b6ff6e7fd12096411e450335220383d9d4a22c`, and the
+[GitHub Release](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.2)
+records the released state. That exact tagged revision passed
+[final main CI](https://github.com/Sion612/rubrictrail/actions/runs/33325380028),
+[final Pages deployment](https://github.com/Sion612/rubrictrail/actions/runs/33325695189),
+and an independent public Chromium smoke using fictional data. The release
+adds no persistence migration, backup-format change, dependency upgrade,
+analytics, account or remote storage. Dated Firefox and Playwright WebKit
+evidence remains limited to its recorded revision; WebKit is not Safari and
+is not blanket browser certification. See the
+[verification report](./docs/TEST_REPORT.md) for the complete chronology and
+evidence boundaries.
 
 ### v0.8.1: real-time Calendar status
 
@@ -101,7 +130,7 @@ and task completion. Calendar dates remain target completion dates, not
 appointments, and `.ics` import may be stored by an external calendar
 provider. The v0.7.1 exact-main CI, Pages and public-smoke evidence remains
 recorded in [the verification report](./docs/TEST_REPORT.md); the public demo
-now follows the later verified v0.8.1 product revision described above.
+now follows the later verified v0.8.2 product revision described above.
 
 ### v0.7.0: source editing, Calendar and local ICS
 

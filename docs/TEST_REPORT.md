@@ -1,6 +1,6 @@
 # Verification report
 
-Report last updated: 24 August 2026
+Report last updated: 31 August 2026
 Runtime: bundled Node.js 24 locally; the repository remains pinned to pnpm
 11.9.0 for CI and contributor installs.
 Browser method: Playwright projects at desktop 1440×900 and narrow 390×844
@@ -9,6 +9,124 @@ the generated static demo served at `/rubrictrail`. Deterministic Calendar
 fixtures freeze Playwright's clock where their month expectations require it;
 v0.8.1 also has explicit real-time date tests and a public smoke observation
 using the browser's actual local date.
+
+## v0.8.2 sharing, recovery and mobile reliability release evidence
+
+Date: 31 August 2026
+
+The v0.8.2 release was assembled from four changes, rehearsed as one combined
+tree, merged sequentially, and then released from a separate release-metadata
+preparation PR. Annotated tag `v0.8.2` resolves to
+exact commit `e1b6ff6e7fd12096411e450335220383d9d4a22c`. The public, non-draft,
+non-prerelease
+[GitHub Release](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.2)
+was published at `2026-08-30T18:00:57Z`.
+
+### Scope and compatibility boundaries
+
+- Explicit **New assignment** and **Restore as new** operations can reactivate
+  a strictly cleared workspace only after the new record and target index pass
+  the existing lock, journal, digest, reserve and readback checks. Deleted
+  projects are not silently resurrected.
+- The Project Tracker summary reflows at 320 px without hiding or reordering
+  its existing metrics in English or Simplified Chinese.
+- The static GitHub Pages demo has one exact canonical, local social image and
+  favicon, project-path robots guidance, and a one-URL sitemap. The self-hosted
+  application has no Pages canonical, and the static demo has no Live routes,
+  remote image/font, analytics or tracking asset.
+- Dated Firefox and Playwright WebKit evidence remains tied to public revision
+  `0d9255bfe7724d1de72a8027ea3b1c9582a33962`. Playwright WebKit is not Safari,
+  and the evidence is not a blanket browser-support claim.
+- The release adds no persistence schema or project-state migration, backup
+  format change, dependency/lockfile update, account, telemetry, analytics or
+  remote storage.
+
+### Sequential merge evidence
+
+| Change | Exact heads | Exact-head CI | Resulting main and gates |
+| --- | --- | --- | --- |
+| Cleared-workspace reactivation, PR #58 | Original/final `11b3faa9d68261b6e3d942bd3b9286e5ba7cbe20` | [33313595502](https://github.com/Sion612/rubrictrail/actions/runs/33313595502): `quality`, `browser`, `pages-static` succeeded | Squash main `70e7bcdc93543e9a8b421c37359c2e6865017007`; [CI 33318659246](https://github.com/Sion612/rubrictrail/actions/runs/33318659246) and [Pages 33318965042](https://github.com/Sion612/rubrictrail/actions/runs/33318965042) succeeded |
+| 320 px Tracker reflow, PR #59 | Original `69130f2e0091c6ea0e5258c8a0791a6d6ee17103`; integrated `f618eab1fbf0e8c5b5c54c6550f0de4a5d1ed915` | [33319466290](https://github.com/Sion612/rubrictrail/actions/runs/33319466290): all three jobs succeeded | Squash main `1667eb906c0540e587d1a07bf15cd856747dd378`; [CI 33319863853](https://github.com/Sion612/rubrictrail/actions/runs/33319863853) and [Pages 33320177269](https://github.com/Sion612/rubrictrail/actions/runs/33320177269) succeeded |
+| Pages sharing/crawler metadata, PR #57 | Original `7affd8df207a7b68f4073648ed7ff3e644acd460`; integrated `8d7ec4ff17dc7facc9c9383b9929a158ab46e09f` | [33320997367](https://github.com/Sion612/rubrictrail/actions/runs/33320997367): all three jobs succeeded | Squash main `5565c75d7a33547b545d33daa873930830b45171`; [CI 33321402556](https://github.com/Sion612/rubrictrail/actions/runs/33321402556) and [Pages 33321715052](https://github.com/Sion612/rubrictrail/actions/runs/33321715052) succeeded; Issue #24 auto-closed |
+| Dated browser evidence, PR #56 | Original `0a1931ba6eaa253be815a16a9aad0169748c9994`; integrated `fb79a4dea1db795d77f6b2f777afac967e4fd195` | [33322075049](https://github.com/Sion612/rubrictrail/actions/runs/33322075049): all three jobs succeeded | Squash main `443767e8e36061d02777ca28aab3d4f1d849927f`; [CI 33322550552](https://github.com/Sion612/rubrictrail/actions/runs/33322550552) and [Pages 33322853584](https://github.com/Sion612/rubrictrail/actions/runs/33322853584) succeeded; Issue #25 remained open |
+
+PRs #59, #57 and #56 were updated by merging the preceding green `main` into
+their branches rather than by rebasing. Their PR descriptions retained the
+pre-integration SHA/test wording, but replacement CI ran on each actual final
+head. Each later squash commit is single-parent and has the exact tree of its
+corresponding integrated PR head, so the deviation did not change the released
+content or make `main` non-linear.
+
+### Combined release rehearsal
+
+The temporary integration branch applied #58, #59, #57 and #56 in that order
+without a conflict. Its exact tree was
+`3ca25558c6552439969b66fecc1473e91ba74277`; the final combined product main
+`443767e8e36061d02777ca28aab3d4f1d849927f` had the same tree.
+
+| Gate | Exact result |
+| --- | --- |
+| Install and dependency audit | `pnpm install --frozen-lockfile` reused 477 packages; `pnpm audit --prod` found no known production vulnerability; the lockfile remained unchanged |
+| Static checks and unit tests | `pnpm lint` and `pnpm typecheck` passed; 59 Vitest files / 786 tests, 3 OCR audits and 25 metadata audits passed |
+| Builds and static audit | Production build and `/rubrictrail` export passed; 87 exported files contained 15 initial JS/CSS assets totalling 1,208,858 raw / 340,930 gzip bytes; 10 deferred OCR files totalling 16,850,033 bytes were absent from initial HTML |
+| Deployment regression | `pnpm test:deployment-smoke` passed 14/14 |
+| Complete browser regression | Production Chromium passed 62/62; static-demo Chromium passed 62/62 at `/rubrictrail/`, each with one worker across desktop/mobile projects |
+| Focused recovery | Coordinator/recovery cases passed 3/3; an additional noncommitted strict cleared-to-restore browser journey passed 1/1, preserving workspace ID/generation, incrementing revision once, assigning a fresh project ID and leaving no journal |
+| Diff/worktree integrity | `git diff --check` passed and the exact-main worktree ended clean |
+
+An initial static-browser invocation omitted
+`PLAYWRIGHT_APP_PATH=/rubrictrail/`, so `/` correctly returned the static
+server's `Not found` page. That invalid invocation was stopped; the complete
+62-case command then passed with the required base path and without changing
+product code, committed tests or thresholds.
+
+### Release preparation, final main and publication
+
+| Gate | Exact evidence |
+| --- | --- |
+| Release preparation PR #60 | Exact base/head `443767e8e36061d02777ca28aab3d4f1d849927f` / `0345ac8a5e6cf2f1707a4bc56b88d912336c34f4`; only `package.json`, `CHANGELOG.md` and the required package-version assertion changed; no lockfile or product-code change |
+| Release-prep local verification | Frozen install, production audit, lint, typecheck, 786 Vitest / 3 OCR / 25 metadata tests, production build, static build/audit, 14/14 deployment smoke and `git diff --check` passed |
+| PR #60 exact-head CI | [CI run 33325026749](https://github.com/Sion612/rubrictrail/actions/runs/33325026749) succeeded for `quality`, `browser` and `pages-static` |
+| Final release main | PR #60 squash-merged as `e1b6ff6e7fd12096411e450335220383d9d4a22c`; [CI run 33325380028](https://github.com/Sion612/rubrictrail/actions/runs/33325380028) succeeded for all three required jobs on that exact SHA |
+| Exact-SHA Pages | [Deploy Pages run 33325695189](https://github.com/Sion612/rubrictrail/actions/runs/33325695189) succeeded for freshness, build, deploy and post-deploy smoke at exact SHA `e1b6ff6e7fd12096411e450335220383d9d4a22c` |
+| Annotated tag | Tag object `9424dd50a73fa63bf6565c4994f9e50b71c3ba49` peels to exact release commit `e1b6ff6e7fd12096411e450335220383d9d4a22c` |
+| Published Release | [RubricTrail v0.8.2 — Sharing, Recovery & Mobile Reliability](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.2) was published at `2026-08-30T18:00:57Z`; it is neither a draft nor a prerelease |
+
+### Independent public verification
+
+- `deployment.txt` contained exactly the final 40-character SHA
+  `e1b6ff6e7fd12096411e450335220383d9d4a22c`.
+- The homepage, local favicon, robots file and one-URL sitemap returned HTTP
+  200. The canonical was exactly
+  `https://sion612.github.io/rubrictrail/`; Open Graph/Twitter used the same
+  local 77,739-byte 1200×630 PNG. All discovered initial assets were same-origin
+  beneath `/rubrictrail/`, and public HTML contained no Live API or OpenAI URL.
+- One isolated Playwright Chromium journey passed with fictional data. It
+  created two assignments, switched between them, preserved a completed task
+  across reload, downloaded a backup, performed confirmed whole-workspace
+  deletion, restored the backup as new, deleted again, and created after a
+  cleared state. English and Simplified Chinese Tracker summaries remained
+  contained at 320×568.
+- Browser-wide monitoring observed no off-origin, OpenAI, Live API,
+  wrong-base-path, failed-request, HTTP error, console-error or page-error
+  event in the passing run. The temporary context ended with localStorage,
+  sessionStorage and cookies cleared.
+
+The public product audit initially encoded two incorrect UI assumptions about
+the multi-assignment reset/management controls, and one complete attempt
+exceeded its temporary 180-second whole-test budget after the restore path had
+passed. Only the noncommitted harness routing, hydration wait and timeout were
+corrected; per-action failures remained bounded, and the final unchanged
+product journey passed. Two separate browser launches also received transient
+`ERR_CONNECTION_CLOSED` before page load while an independent HTTP request
+returned 200; a later clean connectivity check and complete public run passed.
+These harness/infrastructure observations are preserved rather than presented
+as product failures.
+
+This release evidence distinguishes the exact combined product main, the
+later release-preparation main, remote CI, exact-SHA deployment and independent
+public execution. This post-release documentation reconciliation occurs after
+the tag and does not move or redefine the tagged release commit.
 
 ## v0.8.1 real-date correction and release-recovery evidence
 
@@ -432,7 +550,7 @@ The earlier v0.6.0 Pages record remains
 [Deploy Pages run 31881113364](https://github.com/Sion612/rubrictrail/actions/runs/31881113364)
 for SHA `67ff04a`.
 
-## Current release browser coverage
+## v0.7.0 release browser coverage
 
 The following scenarios describe the exact-main v0.7.0 runs shown in the
 automated-gates table, including the inherited v0.6.0 coverage.
@@ -519,11 +637,11 @@ asset request metadata.
 ## Historical visual evidence
 
 The saved screenshots in this repository predate the v0.8 **My Assignments**
-Dashboard and v0.8.1 date semantics. They remain useful historical
-assignment-workspace references, but they are not current visual or
-cross-browser certification. Current automated functional and responsive
-evidence is recorded in the v0.8.0 and v0.8.1 sections above. External student
-usability testing remains outstanding.
+Dashboard, v0.8.1 date semantics and v0.8.2 mobile/recovery polish. They remain
+useful historical assignment-workspace references, but they are not current
+visual or cross-browser certification. Current automated functional and
+responsive evidence is recorded in the v0.8.0, v0.8.1 and v0.8.2 sections
+above. External student usability testing remains outstanding.
 
 - Local v0.6.0 candidate captures cover the Simplified Chinese welcome and
   sample workspace at 1440×900, 390×844 and 320×700. All six captures reported

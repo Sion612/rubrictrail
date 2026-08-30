@@ -319,6 +319,14 @@ the same boundary is published at
 <https://sion612.github.io/rubrictrail/> after the exact `main` revision passes
 all required CI checks.
 
+Canonical, Open Graph/Twitter, favicon, crawler and sitemap metadata belongs
+only to that GitHub Pages demo. The social image is generated locally from the
+repository's fictional sample screenshot; no analytics, tracking or remote
+asset was added. The self-hostable Node application does not inherit the Pages
+canonical. Because this project is published beneath `/rubrictrail/`, its
+generated `/rubrictrail/robots.txt` cannot replace or control the user site's
+origin-root <https://sion612.github.io/robots.txt>.
+
 ## Verification
 
 Run the non-browser gate:

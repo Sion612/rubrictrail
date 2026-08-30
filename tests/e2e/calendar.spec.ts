@@ -1,6 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { createSampleAssignment, openUploadAssignment, reopenAssignment, resetWorkspace, workspaceLanguageSwitcher } from "./workspace-helpers";
+import {
+  createSampleAssignment,
+  expectNoHorizontalOverflow,
+  openUploadAssignment,
+  reopenAssignment,
+  resetWorkspace,
+  workspaceLanguageSwitcher,
+} from "./workspace-helpers";
 
 const FROZEN_NOW = "2026-08-26T12:00:00";
 
@@ -20,6 +27,28 @@ function visibleTrackerButton(page: Page) {
   return page.locator(
     '[data-testid="mobile-open-project-tracker"]:visible, [data-testid="rail-open-project-tracker"]:visible, [data-testid="open-project-tracker"]:visible',
   ).first();
+}
+
+async function expectUsableMobileTrackerSummary(page: Page) {
+  const trigger = page.getByTestId("mobile-open-project-tracker");
+  await expect(trigger).toBeVisible();
+  const layout = await trigger.evaluate((button) => {
+    const taskSummary = button.querySelector("small");
+    if (!(taskSummary instanceof HTMLElement)) {
+      throw new Error("Mobile tracker task summary is missing");
+    }
+    const buttonBounds = button.getBoundingClientRect();
+    const taskBounds = taskSummary.getBoundingClientRect();
+    return {
+      buttonHeight: buttonBounds.height,
+      taskHeight: taskBounds.height,
+      taskWidth: taskBounds.width,
+    };
+  });
+
+  expect(layout.taskWidth, "task summary should retain a readable text column").toBeGreaterThanOrEqual(160);
+  expect(layout.taskHeight, "task summary should not wrap into a tall character column").toBeLessThanOrEqual(60);
+  expect(layout.buttonHeight, "tracker summary should remain compact at 320px").toBeLessThanOrEqual(120);
 }
 
 async function closeTracker(page: Page) {
@@ -182,6 +211,20 @@ test("calendar remains usable at 320px", async ({ page }) => {
   await openSampleCalendar(page);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("mobile tracker summary stays readable at 320px in both interface languages", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await createSampleAssignment(page);
+  await visibleWorkflowButton(page, "Plan").click();
+
+  await expectUsableMobileTrackerSummary(page);
+  await expectNoHorizontalOverflow(page);
+
+  await workspaceLanguageSwitcher(page).selectOption("zh-CN");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expectUsableMobileTrackerSummary(page);
+  await expectNoHorizontalOverflow(page);
 });
 
 test("project tracker is reachable from every workspace view without persistence", async ({ page }) => {

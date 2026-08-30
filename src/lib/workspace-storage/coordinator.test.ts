@@ -30,6 +30,8 @@ import {
   type SecureUuidSource,
 } from "@/lib/workspace-storage/keys";
 import {
+  parseWorkspaceIndex,
+  parseWorkspaceJournal,
   parseWorkspacePreferences,
   serializeWorkspaceIndex,
   serializeWorkspaceJournal,
@@ -894,6 +896,112 @@ describe("dormant workspace coordinator create and restore-as-new", () => {
       CANONICAL_WORKSPACE_RESERVE,
     );
     expect(locks.names).toEqual([WORKSPACE_LOCK_NAME]);
+  });
+
+  for (const kind of ["create-project", "restore-as-new"] as const) {
+    it(`reactivates a valid cleared workspace through ${kind}`, async () => {
+      const { storage, snapshot } = await seededWorkspace([], {
+        status: "cleared",
+      });
+      const state = fictionalState(`cleared-${kind}`, { view: "plan" });
+      const locks = new SerialWorkspaceLockRunner();
+
+      const created =
+        kind === "create-project"
+          ? await createWorkspaceProject(storage, locks, {
+              baseline: workspaceIndexBaseline(snapshot),
+              state,
+              intentStillCurrent: () => true,
+              pendingSavesDrained: () => true,
+              uuidSource: new SequenceUuidSource([PROJECT_C, OPERATION_D]),
+            })
+          : await restoreWorkspaceProjectAsNew(storage, locks, {
+              baseline: workspaceIndexBaseline(snapshot),
+              backup: { state },
+              intentStillCurrent: () => true,
+              pendingSavesDrained: () => true,
+              uuidSource: new SequenceUuidSource([PROJECT_C, OPERATION_D]),
+            });
+
+      expect(created).toMatchObject({ ok: true, projectId: PROJECT_C });
+      if (!created.ok) return;
+      expect(created.snapshot.index).toMatchObject({
+        workspaceId: snapshot.index.workspaceId,
+        workspaceGeneration: snapshot.index.workspaceGeneration,
+        revision: snapshot.index.revision + 1,
+        status: "active",
+        projects: [{ projectId: PROJECT_C, kind: "active" }],
+        legacyFingerprints: NULL_LEGACY_FINGERPRINTS,
+      });
+      expect(activeState(created.snapshot, PROJECT_C)).toEqual(state);
+      expect(storage.getItem(WORKSPACE_INDEX_KEY)).toBe(
+        created.snapshot.indexRaw,
+      );
+      expect(storage.getItem(WORKSPACE_OPERATION_KEY)).toBeNull();
+      expect(storage.getItem(WORKSPACE_RESERVE_KEY)).toBe(
+        CANONICAL_WORKSPACE_RESERVE,
+      );
+      expect(locks.names).toEqual([WORKSPACE_LOCK_NAME]);
+    });
+  }
+
+  it("keeps cleared authority until the journaled reactivation index commits", async () => {
+    const { storage, snapshot } = await seededWorkspace([], {
+      status: "cleared",
+    });
+    storage.faults.armAtCheckpoint(
+      `before:setItem:${WORKSPACE_INDEX_KEY}`,
+      "security",
+    );
+
+    const created = await createWorkspaceProject(
+      storage,
+      new SerialWorkspaceLockRunner(),
+      {
+        baseline: workspaceIndexBaseline(snapshot),
+        state: fictionalState("cleared-index-failure"),
+        intentStillCurrent: () => true,
+        pendingSavesDrained: () => true,
+        uuidSource: new SequenceUuidSource([PROJECT_C, OPERATION_D]),
+      },
+    );
+
+    expect(created).toEqual({ ok: false, reason: "commit-incomplete" });
+    expect(storage.getItem(WORKSPACE_INDEX_KEY)).toBe(snapshot.indexRaw);
+    expect(snapshot.index.status).toBe("cleared");
+    expect(
+      storage.getItem(
+        workspaceProjectRecordKey(
+          snapshot.index.workspaceId,
+          snapshot.index.workspaceGeneration,
+          PROJECT_C,
+        ),
+      ),
+    ).not.toBeNull();
+    const journalRaw = storage.getItem(WORKSPACE_OPERATION_KEY);
+    expect(journalRaw).not.toBeNull();
+    if (journalRaw === null) return;
+    const journal = parseWorkspaceJournal(journalRaw);
+    expect(journal.ok).toBe(true);
+    if (!journal.ok) return;
+    const targetIndex = parseWorkspaceIndex(
+      journal.value.targetIndex.serializedValue,
+    );
+    expect(targetIndex).toMatchObject({
+      ok: true,
+      value: {
+        workspaceGeneration: snapshot.index.workspaceGeneration,
+        revision: snapshot.index.revision + 1,
+        status: "active",
+        projects: [{ projectId: PROJECT_C, kind: "active" }],
+      },
+    });
+    await expect(
+      classifyWorkspaceRecovery(storage, journalRaw),
+    ).resolves.toMatchObject({
+      status: "roll-forward",
+      kind: "create-project",
+    });
   });
 
   it("rejects no-project state for create and restore-as-new", async () => {

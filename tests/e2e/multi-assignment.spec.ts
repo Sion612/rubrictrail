@@ -50,6 +50,8 @@ interface StoredWorkspaceProjectEntry {
 
 interface StoredWorkspaceIndex {
   workspaceId: string;
+  workspaceGeneration: number;
+  revision: number;
   status: "active" | "cleared";
   projects: StoredWorkspaceProjectEntry[];
 }
@@ -254,7 +256,7 @@ test("an exact v0.7 active record migrates once without deleting its legacy sour
     .toBe(fixture.legacyRaw);
 });
 
-test("the real lifecycle dialogs preserve active-empty and cleared workspace semantics at 320px", async ({ page }) => {
+test("the real lifecycle dialogs preserve active-empty, cleared and reactivated workspace semantics at 320px", async ({ page }) => {
   await createSampleAssignment(page);
   await page.setViewportSize({ width: 320, height: 700 });
   await page.getByRole("button", { name: "Manage local workspace" }).click();
@@ -311,6 +313,22 @@ test("the real lifecycle dialogs preserve active-empty and cleared workspace sem
   expect(cleared.status).toBe("cleared");
   expect(cleared.projects).toEqual([]);
   await expect(page.getByRole("button", { name: "New assignment" }).first()).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  await createSampleAssignment(page);
+  await expect(assignmentPageHeading(
+    page,
+    "Reducing Collection Delays at LumaLane Market",
+  )).toBeVisible();
+  const reactivated = await readWorkspaceIndex(page);
+  expect(reactivated).toMatchObject({
+    workspaceId: cleared.workspaceId,
+    workspaceGeneration: cleared.workspaceGeneration,
+    revision: cleared.revision + 1,
+    status: "active",
+  });
+  expect(reactivated.projects.filter((entry) => entry.kind === "active"))
+    .toHaveLength(1);
   await expectNoHorizontalOverflow(page);
 });
 

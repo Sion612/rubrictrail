@@ -1239,6 +1239,9 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .app-header .start-own-project-button span { display: none; }
   .app-header .start-own-project-button { width: 44px; padding: 0; }
   .header-actions .icon-button { width: 34px; height: 34px; }
+  .mobile-tracker-strip button { grid-template-columns: 22px minmax(0, 1fr); }
+  .mobile-tracker-strip button > svg { grid-row: 1 / span 2; }
+  .mobile-tracker-metrics { grid-column: 2; text-align: left; }
   .workspace-main { padding: 26px 16px 60px; }
   .workspace-context-line { flex-wrap: wrap; margin-bottom: 20px; }
   .workspace-context-line strong { max-width: calc(100% - 30px); }

@@ -131,7 +131,10 @@
     <https://sion612.github.io/rubrictrail/>, omits the Live API and Node
     response-header configuration, and is subject to GitHub Pages' HTTPS,
     caching and response-header policy. GitHub still receives ordinary page and
-    asset request metadata.
+    asset request metadata. The dated
+    [Firefox and Playwright WebKit checklist](./BROWSER_COMPATIBILITY.md) is
+    narrow evidence rather than a blanket support claim; Playwright WebKit is
+    not Safari.
 21. **Browser storage is origin-scoped.** `localStorage` is shared by scripts on
     the same origin; the `/rubrictrail` path is not an isolation boundary. Do not
     colocate the demo with unrelated or untrusted scripts when project content is

@@ -8,6 +8,7 @@ playwright-report/
 test-results/
 public/ocr/
 demo/public/ocr/
+demo/public/opengraph-image.png
 .env*
 !.env.example
 *.tsbuildinfo

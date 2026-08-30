@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { auditOcrAssets } from "./ocr-asset-audit.mjs";
+import { auditStaticDemoMetadata } from "./static-demo-metadata-audit.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputRoot = path.join(repositoryRoot, "demo", "out");
@@ -55,6 +56,13 @@ for (const file of files) {
 }
 
 const indexHtml = await readFile(indexPath, "utf8");
+const metadataAudit = await auditStaticDemoMetadata({
+  outputRoot,
+  selfHostedRoots: [
+    path.join(repositoryRoot, "src", "app"),
+    path.join(repositoryRoot, ".next", "server", "app"),
+  ],
+});
 const ocrAssets = await auditOcrAssets(outputRoot, indexHtml);
 const initialAssets = new Set();
 for (const match of indexHtml.matchAll(/(?:src|href)="([^"]+)"/giu)) {
@@ -98,6 +106,9 @@ console.log(
 );
 console.log(
   `Deferred local OCR assets: ${ocrAssets.fileCount} files, ${ocrAssets.totalBytes} bytes (not referenced by initial HTML).`,
+);
+console.log(
+  `Public demo metadata: ${metadataAudit.canonical}, local favicon, and ${metadataAudit.socialImageWidth}x${metadataAudit.socialImageHeight} PNG (${metadataAudit.socialImageBytes} bytes).`,
 );
 if (initialGzipBytes > INITIAL_ASSET_GZIP_BUDGET_BYTES) {
   throw new Error(

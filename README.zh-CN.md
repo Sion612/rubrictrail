@@ -15,15 +15,17 @@ RubricTrail 是一个本地优先的作业规划工具。它把作业说明和�
 或付费服务。选中的文件内容、文件名和项目状态保留在浏览器中；GitHub Pages
 仍会像普通网站托管服务一样接收页面和静态资源请求信息。
 
-> v0.8.1 已正式发布。annotated tag 对应精确版本
-> `39eedac6a04a0b955184e26a7148ccb21efb742d`，并已发布
-> [GitHub Release](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.1)。
-> 该版本的 [final main CI](https://github.com/Sion612/rubrictrail/actions/runs/32644021633)
-> 与 [final Pages 部署](https://github.com/Sion612/rubrictrail/actions/runs/32644355890)
+> v0.8.2 已正式发布。annotated tag object
+> `9424dd50a73fa63bf6565c4994f9e50b71c3ba49` 精确指向提交
+> `e1b6ff6e7fd12096411e450335220383d9d4a22c`，并已发布
+> [GitHub Release](https://github.com/Sion612/rubrictrail/releases/tag/v0.8.2)。
+> 该版本的 [final main CI](https://github.com/Sion612/rubrictrail/actions/runs/33325380028)
+> 与 [final Pages 部署](https://github.com/Sion612/rubrictrail/actions/runs/33325695189)
 > 均已通过；这些发布事实绑定于标签，不会因默认分支以后继续前进而失效。
 
 仓库当前保存的桌面与移动截图只是历史作业工作区参考，早于 v0.8 **我的作业**
-Dashboard 和 v0.8.1 日期语义，不代表当前视觉或全浏览器认证。当前功能与响应式证据见
+Dashboard、v0.8.1 日期语义和 v0.8.2 移动端/恢复修正，不代表当前视觉或全浏览器认证。
+当前功能与响应式证据见
 [验证报告](./docs/TEST_REPORT.md)，历史截图范围见
 [视觉 QA 报告](./docs/VISUAL_QA_REPORT.md)。
 
@@ -34,11 +36,29 @@ RubricTrail 面向需要根据作业说明和评分标准安排工作的学生�
 
 ## 两分钟体验
 
-1. 当前公开 v0.8.1 Demo 首页显示 **我的作业**，并可新建虚构的 LumaLane 示例。
+1. 当前公开 v0.8.2 Demo 首页显示 **我的作业**，并可新建虚构的 LumaLane 示例。
 2. 依次查看 **作业说明 → 评分标准 → 计划 → 自检 → 进度**。
 3. 可使用醒目的 **新建作业** 上传可信的 TXT、DOCX、文本型 PDF、
    PNG、JPG/JPEG 或 WebP，粘贴作业说明与评分标准，或把单项目备份恢复为新作业。
 4. 核对识别出的截止日期、字数、引用格式和每个评分项后再创建作业。
+
+## v0.8.2：分享、恢复与移动端可靠性
+
+v0.8.2 允许用户通过明确的 **新建作业** 或 **作为新作业恢复** 操作安全地重新激活
+严格清空的工作区，不会让已删除项目复活；Project Tracker 汇总在 320 px 的英文和简体
+中文界面中也保持可读。
+
+GitHub Pages Demo 现在发布唯一且精确的 canonical、同源 Open Graph/Twitter 预览图与
+favicon、项目子路径 robots 指引，以及只包含一个 URL 的 sitemap。这些内容只属于 Pages
+静态 Demo，不会让可自托管应用声明错误 canonical，也不会把项目内容发送到其他服务；
+metadata 不能保证收录、排名、预览刷新或使用量。
+
+v0.8.2 的 annotated tag object
+`9424dd50a73fa63bf6565c4994f9e50b71c3ba49` 精确指向
+`e1b6ff6e7fd12096411e450335220383d9d4a22c`。最终 main CI、Pages 四阶段部署与使用虚构
+数据的独立公网 Chromium smoke 均已通过。本版本没有持久化迁移、备份格式变更、依赖升级、
+分析、账户或远程存储。Firefox 与 Playwright WebKit 证据只绑定于文档注明的日期和版本；
+WebKit 不是 Safari，也不构成广泛浏览器认证。完整证据见[验证报告](./docs/TEST_REPORT.md)。
 
 ## v0.8.1：实时日历状态
 
@@ -80,7 +100,7 @@ Tracker（项目追踪）**，可在作业说明、评分标准、计划、自�
 并保留浏览器本地 `.ics` 导出。“在任务列表中打开”会关闭追踪面板、回到计划页并聚焦
 准确的任务。追踪面板是临时界面状态，不会加入项目导航、备份或项目保存数据；v0.7.1
 已通过自己的 main/Pages 门禁，相关 CI、Pages 和公网 smoke 证据仍见
-[验证报告](./docs/TEST_REPORT.md)。当前公开 Demo 已跟随上文经过验证的 v0.8.1 产品版本。
+[验证报告](./docs/TEST_REPORT.md)。当前公开 Demo 已跟随上文经过验证的 v0.8.2 产品版本。
 
 计划页仍专注于每周学习时数、计划深度、重新排程、依赖关系和任务完成。日历日期是目标
 完成日期，不是预约时段；导入 `.ics` 后，外部日历服务可能保存作业元数据。

@@ -55,7 +55,7 @@
     "react-dom": "19.2.7",
     "tesseract.js": "7.0.0",
     "tesseract.js-core": "7.0.0",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",
@@ -65,10 +65,10 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.3.0",
+    "eslint-config-next": "16.4.1",
     "jsdom": "29.1.1",
     "typescript": "6.0.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.12"
   },
   "engines": {
     "node": ">=24.0.0"

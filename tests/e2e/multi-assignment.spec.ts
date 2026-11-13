@@ -110,6 +110,24 @@ test.beforeEach(async ({ page }) => {
   await resetWorkspace(page);
 });
 
+test("narrow assignment intake keeps the sample action clickable", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await openNewAssignment(page, "paste");
+  const sample = page.getByTestId("try-sample");
+  await sample.evaluate((button) => button.scrollIntoView({ block: "end" }));
+  await expect(sample).toBeInViewport({ ratio: 0.9 });
+
+  // Use a real pointer click without Playwright scrolling the button away from an overlay.
+  const bounds = await sample.boundingBox();
+  if (!bounds) throw new Error("The fictional sample action has no visible bounds");
+  await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await expect(assignmentPageHeading(
+    page,
+    "Reducing Collection Delays at LumaLane Market",
+  )).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
 test("My assignments keeps two independent local assignments across dashboard, reload, locale and viewports", async ({ page }, testInfo) => {
   test.setTimeout(90_000);
   const externalRequests: string[] = [];

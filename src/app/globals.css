@@ -1215,7 +1215,7 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
   .welcome-header .header-actions { display: contents; }
   .welcome-header .mode-indicator { order: 3; width: 100%; justify-content: center; }
   .language-switcher--compact > svg { display: none; }
-  .language-switcher--compact select { width: 96px; min-height: 44px; max-width: 96px; }
+  .language-switcher--compact select { width: 7rem; min-height: 44px; max-width: 7rem; }
   .welcome-footer { justify-content: center; }
   .welcome-footer > span { display: none; }
   .welcome-footer .community-links { width: 100%; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 4px; }
@@ -1387,8 +1387,8 @@ input:not([type="checkbox"]):not([type="radio"]):hover, select:hover, textarea:h
 @media (max-width: 360px) {
   .welcome-header .brand-lockup > span:last-child { display: none; }
   .app-header .project-identity { display: none; }
-  .app-header { grid-template-columns: auto 1fr; }
-  .app-header .header-actions { justify-self: end; }
+  .app-header { grid-template-columns: auto 1fr; padding-inline: 4px; }
+  .app-header .header-actions { justify-self: end; gap: 4px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

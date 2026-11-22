@@ -6,6 +6,7 @@
 
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 4rem;
   align-items: center;
   justify-content: space-between;

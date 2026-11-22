@@ -253,8 +253,10 @@
   }
 
   .utility {
-    right: 12px;
-    bottom: max(12px, env(safe-area-inset-bottom));
+    position: static;
+    display: flex;
+    justify-content: flex-end;
+    padding: 12px 12px max(12px, env(safe-area-inset-bottom));
   }
 
   .utility button {
